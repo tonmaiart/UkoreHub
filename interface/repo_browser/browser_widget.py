@@ -6,7 +6,6 @@ from pathlib import Path
 from PySide6.QtCore import QDir, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QFileSystemModel,
     QHBoxLayout,
     QHeaderView,
@@ -21,14 +20,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.git_service import GitService
 from core.os_utils import open_in_file_explorer, open_with_default_app
 from interface.repo_browser.file_table_proxy import FileTableFilterProxy
+from interface.repo_browser.path_commit_history_panel import PathCommitHistoryPanel
 
 COLUMN_COUNT = 5
 
 
 class RepoBrowserWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, git_service: GitService):
         super().__init__(parent)
         self._root: Path | None = None
         self._current_path: Path | None = None
@@ -49,15 +50,12 @@ class RepoBrowserWidget(QWidget):
         self.search_timer.setInterval(200)
         self.search_timer.timeout.connect(self._apply_search)
         self.search_edit.textChanged.connect(lambda _t: self.search_timer.start())
-        self.latest_version_checkbox = QCheckBox("Latest version only")
-        self.latest_version_checkbox.toggled.connect(self.proxy.set_latest_version_only)
         self.open_folder_button = QPushButton("Open Folder")
         self.open_folder_button.clicked.connect(self._on_open_folder)
 
-        top_row = QHBoxLayout()
-        top_row.addWidget(self.back_button)
-        top_row.addWidget(self.breadcrumb, stretch=1)
-        top_row.addWidget(self.latest_version_checkbox)
+        nav_row = QHBoxLayout()
+        nav_row.addWidget(self.back_button)
+        nav_row.addWidget(self.breadcrumb, stretch=1)
 
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(self.search_edit, stretch=1)
@@ -87,16 +85,24 @@ class RepoBrowserWidget(QWidget):
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(22)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.table.doubleClicked.connect(self._on_table_double_clicked)
+        self.table.selectionModel().currentRowChanged.connect(self._on_table_selection_changed)
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(top_row)
-        layout.addLayout(columns_row)
-        layout.addWidget(self.table)
-        layout.addLayout(bottom_row)
+        browser_column = QVBoxLayout()
+        browser_column.addLayout(columns_row, stretch=0)
+        browser_column.addLayout(nav_row, stretch=0)
+        browser_column.addWidget(self.table, stretch=1)
+        browser_column.addLayout(bottom_row, stretch=0)
+
+        self.commit_panel = PathCommitHistoryPanel(git_service)
+
+        layout = QHBoxLayout(self)
+        layout.addLayout(browser_column, stretch=1)
+        layout.addWidget(self.commit_panel)
 
     def set_root(self, path: Path) -> None:
         path = Path(path)
@@ -117,6 +123,26 @@ class RepoBrowserWidget(QWidget):
         index = self.fs_model.index(str(path))
         self.table.setRootIndex(self.proxy.mapFromSource(index))
         self._sync_columns_from_path(path)
+        self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
+
+    def _relative_path_str(self, path: Path) -> str:
+        if self._root is None:
+            return ""
+        try:
+            rel = path.relative_to(self._root)
+        except ValueError:
+            return ""
+        rel_str = str(rel)
+        return "" if rel_str == "." else rel_str
+
+    def _on_table_selection_changed(self, current, _previous) -> None:
+        if not current.isValid():
+            return
+        source_index = self.proxy.mapToSource(current)
+        path = Path(self.fs_model.filePath(source_index))
+        if self.fs_model.isDir(source_index):
+            return  # folder-level history is already shown by _navigate_to
+        self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
 
     def _on_back(self) -> None:
         if self._current_path is None or self._root is None or self._current_path == self._root:

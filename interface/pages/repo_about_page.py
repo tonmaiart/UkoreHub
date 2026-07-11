@@ -1,17 +1,39 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
+    QFormLayout,
+    QGroupBox,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from core.exceptions import NotFoundError
 from core.git_service import GitService
 from core.models import Project, Repo
 from core.os_utils import open_in_file_explorer
 from core.paths import resolve_repo_path
+from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 
 
 class RepoAboutPage(QWidget):
-    def __init__(self, parent=None, *, store: MetadataStore, local_config_store: LocalConfigStore, git_service: GitService):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        store: MetadataStore,
+        local_config_store: LocalConfigStore,
+        program_store: ProgramStore,
+        git_service: GitService,
+    ):
         super().__init__(parent)
+        self.program_store = program_store
         self._project: Project | None = None
         self._repo: Repo | None = None
         self._workspace_root: str | None = None
@@ -36,10 +58,16 @@ class RepoAboutPage(QWidget):
         self.open_folder_button = QPushButton("Open Folder")
         self.open_folder_button.clicked.connect(self._on_open_folder)
 
+        self.requirements_group = QGroupBox("Requirements")
+        self.requirements_list = QListWidget()
+        requirements_layout = QVBoxLayout(self.requirements_group)
+        requirements_layout.addWidget(self.requirements_list)
+
         self.content_widget = QWidget()
         content_layout = QVBoxLayout(self.content_widget)
         content_layout.addLayout(form)
         content_layout.addWidget(self.open_folder_button)
+        content_layout.addWidget(self.requirements_group)
         content_layout.addStretch()
 
         layout = QVBoxLayout(self)
@@ -63,6 +91,18 @@ class RepoAboutPage(QWidget):
         self.local_path_label.setText(str(abs_path))
         self.last_synced_label.setText(repo.last_synced or "Never")
         self.status_label.setText(repo.status)
+
+        self.requirements_list.clear()
+        for program_id in repo.required_program_ids:
+            try:
+                program = self.program_store.get_program(program_id)
+            except NotFoundError:
+                continue
+            item = QListWidgetItem(program.name)
+            icon_path = self.program_store.resolve_icon_path(program)
+            if icon_path and icon_path.exists():
+                item.setIcon(QIcon(str(icon_path)))
+            self.requirements_list.addItem(item)
 
     def _on_open_folder(self) -> None:
         if self._repo is None:

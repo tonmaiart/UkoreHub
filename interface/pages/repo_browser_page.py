@@ -16,7 +16,7 @@ class RepoBrowserPage(QWidget):
 
         self.empty_label = QLabel("Select a repo to see this information.")
         self.not_cloned_label = QLabel("Repo not yet cloned — use Repo Git Status to sync.")
-        self.browser = RepoBrowserWidget()
+        self.browser = RepoBrowserWidget(git_service=git_service)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.empty_label)

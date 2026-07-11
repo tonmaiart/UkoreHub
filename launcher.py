@@ -62,6 +62,7 @@ def main() -> None:
         )
 
     from core.git_service import GitService
+    from core.program_store import ProgramStore
     from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
     from core.token_store import TokenStore
     from interface.main_window import MainWindow
@@ -70,17 +71,24 @@ def main() -> None:
     data_dir = REPO_ROOT / "data"
     data_dir.mkdir(exist_ok=True)
 
-    # projects.json and system_config.json are shared/tracked in this repo;
-    # local_config.json and github_token.json are per-machine and gitignored.
+    # projects.json, system_config.json, and programs.json are shared/tracked
+    # in this repo; local_config.json and github_token.json are per-machine
+    # and gitignored.
     store = MetadataStore(data_dir / "projects.json")
     system_config_store = SystemConfigStore(data_dir / "system_config.json")
+    program_store = ProgramStore(data_dir / "programs.json")
     local_config_store = LocalConfigStore(data_dir / "local_config.json")
+    if not local_config_store.workspace_root:
+        # Sensible out-of-the-box default so a fresh install isn't blocked on
+        # manually picking a folder before doing anything — still editable
+        # any time via Setting > Common.
+        local_config_store.set_workspace_root(str(REPO_ROOT / "projects"))
     git_service = GitService()
     token_store = TokenStore(data_dir / "github_token.json")
 
     apply_theme(app, local_config_store.theme)
 
-    window = MainWindow(store, local_config_store, system_config_store, git_service, token_store)
+    window = MainWindow(store, local_config_store, system_config_store, program_store, git_service, token_store)
     window.show()
     sys.exit(app.exec())
 

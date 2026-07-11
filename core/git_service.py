@@ -45,6 +45,9 @@ class GitService:
         credentials exactly as before."""
         self._github_token = token
 
+    def get_github_token(self) -> str | None:
+        return self._github_token
+
     def _github_auth_args_and_env(self, git_url: str) -> tuple[list[str], dict]:
         if not self._github_token:
             return [], {}
@@ -212,6 +215,50 @@ class GitService:
             hash_, author, email, date, message = line.split(_FIELD_SEP, 4)
             commits.append(CommitInfo(hash=hash_, author=author, email=email, date=date, message=message))
         return commits
+
+    def get_commit_log_for_path(self, repo_path: Path, relative_path: str, limit: int = 30) -> list[CommitInfo]:
+        args = [
+            "log",
+            f"--max-count={limit}",
+            f"--pretty=format:%H{_FIELD_SEP}%an{_FIELD_SEP}%ae{_FIELD_SEP}%aI{_FIELD_SEP}%s",
+        ]
+        # An empty pathspec is invalid ("fatal: empty string is not a valid
+        # pathspec") — omit it entirely to mean "whole repo" (viewing the
+        # repo root), only scope to a path when one was actually given.
+        if relative_path:
+            args += ["--", relative_path]
+        try:
+            output = self._run_capture(args, cwd=Path(repo_path))
+        except GitOperationError:
+            return []
+        commits = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            hash_, author, email, date, message = line.split(_FIELD_SEP, 4)
+            commits.append(CommitInfo(hash=hash_, author=author, email=email, date=date, message=message))
+        return commits
+
+    def get_github_owner_repo(self, repo_path: Path) -> tuple[str, str] | None:
+        """Parses `origin`'s URL for an owner/repo pair, handling both SSH
+        (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git)
+        forms. Returns None if origin isn't a github.com remote at all."""
+        try:
+            remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=Path(repo_path)).strip()
+        except GitOperationError:
+            return None
+        remote_url = remote_url[: -len(".git")] if remote_url.endswith(".git") else remote_url
+        if remote_url.startswith("git@github.com:"):
+            path = remote_url[len("git@github.com:") :]
+        else:
+            parsed = urllib.parse.urlparse(remote_url)
+            if parsed.hostname not in _GITHUB_HOSTS:
+                return None
+            path = parsed.path.lstrip("/")
+        parts = path.split("/")
+        if len(parts) != 2 or not all(parts):
+            return None
+        return parts[0], parts[1]
 
     def _run_capture(self, args: list[str], cwd: Path) -> str:
         result = subprocess.run(

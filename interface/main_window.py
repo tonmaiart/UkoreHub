@@ -18,11 +18,13 @@ from PySide6.QtWidgets import (
 from core import self_update
 from core.exceptions import NotFoundError, UkoreHubError
 from core.git_service import GitService
+from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from core.token_store import TokenStore, TokenStoreFallbackUsed
 from core.version import APP_NAME, APP_VERSION
 from interface.github_auth_widget import GitHubAuthWidget
 from interface.github_login_dialog import GitHubLoginDialog
+from interface.launch_dialog import LaunchDialog
 from interface.pages.project_info_page import ProjectInfoPage
 from interface.pages.repo_about_page import RepoAboutPage
 from interface.pages.repo_browser_page import RepoBrowserPage
@@ -50,6 +52,7 @@ class MainWindow(QMainWindow):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         system_config_store: SystemConfigStore,
+        program_store: ProgramStore,
         git_service: GitService,
         token_store: TokenStore,
     ):
@@ -57,6 +60,7 @@ class MainWindow(QMainWindow):
         self.store = store
         self.local_config_store = local_config_store
         self.system_config_store = system_config_store
+        self.program_store = program_store
         self.git_service = git_service
         self.token_store = token_store
 
@@ -76,7 +80,9 @@ class MainWindow(QMainWindow):
             SectionKey.PROJECT_INFO: ProjectInfoPage(store=store, local_config_store=local_config_store, git_service=git_service),
             SectionKey.REPO_BROWSER: RepoBrowserPage(store=store, local_config_store=local_config_store, git_service=git_service),
             SectionKey.REPO_GIT_STATUS: RepoGitStatusPage(store=store, local_config_store=local_config_store, git_service=git_service),
-            SectionKey.REPO_ABOUT: RepoAboutPage(store=store, local_config_store=local_config_store, git_service=git_service),
+            SectionKey.REPO_ABOUT: RepoAboutPage(
+                store=store, local_config_store=local_config_store, program_store=program_store, git_service=git_service
+            ),
         }
         self.pages[SectionKey.REPO_GIT_STATUS].sync_started.connect(self._on_sync_started)
         self.pages[SectionKey.REPO_GIT_STATUS].sync_finished.connect(self._on_sync_finished)
@@ -102,9 +108,29 @@ class MainWindow(QMainWindow):
         self._restore_active_repo()
         self._apply_to_current_page()
         self.sidebar.refresh_repo_choices(self.store)
+
+        if not (self.local_config_store.github_username and self.token_store.load_token()):
+            self._show_launch_dialog()
+            # LaunchDialog may have changed workspace root, active repo, or
+            # login state — re-sync everything it could have touched.
+            self._restore_active_repo()
+            self._apply_to_current_page()
+            self.sidebar.refresh_repo_choices(self.store)
+
         self._restore_github_login_state()
         self._check_for_update()
         QTimer.singleShot(0, self._start_auto_sync)
+
+    def _show_launch_dialog(self) -> None:
+        dialog = LaunchDialog(
+            self,
+            store=self.store,
+            local_config_store=self.local_config_store,
+            system_config_store=self.system_config_store,
+            git_service=self.git_service,
+            token_store=self.token_store,
+        )
+        dialog.exec()
 
     def _build_status_bar(self) -> None:
         status_bar = self.statusBar()
@@ -222,6 +248,7 @@ class MainWindow(QMainWindow):
             store=self.store,
             local_config_store=self.local_config_store,
             system_config_store=self.system_config_store,
+            program_store=self.program_store,
             git_service=self.git_service,
         )
         dialog.exec()
@@ -296,12 +323,15 @@ class MainWindow(QMainWindow):
         # still running (e.g. an update check or sync in flight when the user
         # closes the window) — terminate and wait for any live worker first.
         git_status_page = self.pages[SectionKey.REPO_GIT_STATUS]
+        repo_browser_widget = self.pages[SectionKey.REPO_BROWSER].browser
         workers = (
             self._update_worker,
             git_status_page._git_worker,
             git_status_page._status_worker,
             git_status_page._stream_worker,
             git_status_page._commit_log_worker,
+            repo_browser_widget.commit_panel._worker,
+            self.github_auth_widget._avatar_worker,
         )
         for thread in workers:
             if thread is not None and thread.isRunning():

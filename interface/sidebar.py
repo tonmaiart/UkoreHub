@@ -24,6 +24,7 @@ class Sidebar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("sidebarContainer")
         self.setFixedWidth(300)
 
         layout = QVBoxLayout(self)
@@ -34,10 +35,9 @@ class Sidebar(QWidget):
         self.thumbnail_widget.setFixedHeight(200)
         thumb_layout = QVBoxLayout(self.thumbnail_widget)
         thumb_layout.addStretch()
-        self.project_label = QLabel("Current Project: —")
-        self.repo_label = QLabel("Current Repo: —")
-        thumb_layout.addWidget(self.project_label)
-        thumb_layout.addWidget(self.repo_label)
+        self.repo_name_label = QLabel("—")
+        self.repo_name_label.setObjectName("activeRepoLabel")
+        thumb_layout.addWidget(self.repo_name_label)
 
         self.select_repo_button = QPushButton("Select Repo...")
         self.select_repo_button.clicked.connect(self.repo_picker_requested.emit)
@@ -70,8 +70,9 @@ class Sidebar(QWidget):
         layout.addStretch()
 
     def set_active_labels(self, project_name: str | None, repo_name: str | None) -> None:
-        self.project_label.setText(f"Current Project: {project_name or '—'}")
-        self.repo_label.setText(f"Current Repo: {repo_name or '—'}")
+        # project_name is intentionally unused now — only the repo name is
+        # shown here (project context still visible via the dropdown below).
+        self.repo_name_label.setText(repo_name or "—")
 
     def set_thumbnail(self, path: Path | None) -> None:
         self.thumbnail_widget.set_image(path)

@@ -154,6 +154,11 @@ class MetadataStore:
         repo.thumbnail_filename = filename
         self.save()
 
+    def set_repo_requirements(self, project_id: str, repo_id: str, program_ids: list[str]) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.required_program_ids = list(program_ids)
+        self.save()
+
     @property
     def thumbnails_dir(self) -> Path:
         return self.json_path.parent / "thumbnails"

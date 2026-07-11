@@ -29,28 +29,36 @@ python launcher.py
 
 On first run, UkoreHub checks for its Python package dependencies (PySide6,
 keyring) and installs any that are missing automatically — no manual
-`pip install` step required. Open Setting > Common to choose a workspace folder
-(where cloned repos will live). Managers add Projects/Repos via
-Setting > Project Data Editor; anyone can check sync status read-only via
-Setting > Project Status. Whatever's added there becomes available to pick
-from "Select Repo..." in the sidebar.
+`pip install` step required. The workspace folder (where cloned repos live)
+defaults to `<this repo>/projects` and can be changed any time in
+Setting > Common. If you're not logged in yet, a Quick Start dialog offers
+GitHub login, the workspace folder, and picking a project up front — every
+field is optional and a single Continue skips all of it. Managers add
+Projects/Repos via Setting > Project Data Editor; anyone can check sync
+status read-only via Setting > Project Status. Whatever's added there becomes
+available to pick from the sidebar (a dropdown once at least one repo has
+been cloned, otherwise "Select Repo...").
+
+Setting > Program Database keeps a shared catalog of pipeline software (name,
+icon, description) that repos can list as requirements in Project Data
+Editor — shown on the Repo About tab for each repo.
 
 ## System config vs. local config
 
 Settings are split into two files with different sharing behavior:
 
 - **System config** — `data/projects.json` (the Project/Repo registry, including
-  each repo's thumbnail filename), `data/system_config.json` (GitHub OAuth
-  Client ID), and `data/thumbnails/` (the actual repo thumbnail images set via
-  Setting > Project Data Editor). These are **tracked in this git repo**, not
-  gitignored, because they're meant to be the same for everyone at the studio
-  — thumbnails are accepted as binary/larger files here deliberately, same
-  reasoning as the registry itself. When a manager adds a Project/Repo, sets
-  a thumbnail, or sets the Client ID, someone needs to `git add`/`commit`/`push`
-  those files for the change to reach other machines — other artists then get
-  it the normal way, e.g. by clicking **Update and Restart** (which runs
-  `git pull`) or any other `git pull` of this repo. UkoreHub itself does not
-  auto-commit or push on your behalf.
+  each repo's thumbnail filename and required Program IDs), `data/system_config.json`
+  (GitHub OAuth Client ID), `data/thumbnails/` (repo thumbnail images), and
+  `data/programs.json` + `data/program_icons/` (the shared Program Database).
+  These are **tracked in this git repo**, not gitignored, because they're meant
+  to be the same for everyone at the studio — images are accepted as binary/
+  larger files here deliberately, same reasoning as the registry itself. When
+  a manager changes any of these, someone needs to `git add`/`commit`/`push`
+  for the change to reach other machines — other artists then get it the
+  normal way, e.g. by clicking **Update and Restart** (which runs `git pull`)
+  or any other `git pull` of this repo. UkoreHub itself does not auto-commit
+  or push on your behalf.
 - **Local config** — `data/local_config.json` (workspace folder, color theme,
   which repo you currently have selected, cached GitHub username) and
   `data/github_token.json` (GitHub token, only if the OS keyring isn't
@@ -92,9 +100,12 @@ setting instead of attempting to log in.
 
 - `core/` — metadata store, git operations, theming, GitHub auth; no UI code.
 - `interface/` — PySide6 GUI (sidebar, content pages, settings dialog, repo browser).
-- `data/` — `projects.json`, `system_config.json`, `thumbnails/` (tracked,
-  shared); `local_config.json` and `github_token.json` (gitignored, per-machine).
+- `data/` — `projects.json`, `system_config.json`, `thumbnails/`, `programs.json`,
+  `program_icons/` (tracked, shared); `local_config.json` and `github_token.json`
+  (gitignored, per-machine).
 - `launcher.py` — entry point.
+- `projects/` — default workspace folder (gitignored; actual cloned repos live
+  here unless you point Setting > Common elsewhere).
 
 ## Tests
 

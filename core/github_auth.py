@@ -116,3 +116,15 @@ def fetch_username(access_token: str) -> str:
     if "login" not in data:
         raise GitHubAuthError(f"Unexpected response fetching user: {data}")
     return data["login"]
+
+
+def fetch_avatar_bytes(username: str) -> bytes | None:
+    # Stable public convenience URL — no API auth/rate limit needed, works
+    # even for just showing your own avatar without a Client ID configured.
+    url = f"https://github.com/{username}.png"
+    request = urllib.request.Request(url, headers={"User-Agent": "UkoreHub"}, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.read()
+    except urllib.error.URLError:
+        return None

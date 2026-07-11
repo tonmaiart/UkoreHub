@@ -8,6 +8,7 @@ class ThemeColors:
     background: str
     surface: str
     surface_alt: str
+    sidebar_background: str
     accent: str
     accent_hover: str
     text_primary: str
@@ -24,6 +25,7 @@ THEMES: dict[str, ThemeColors] = {
         background="#1e1f22",
         surface="#2b2d31",
         surface_alt="#232428",
+        sidebar_background="#35373c",
         accent="#5865f2",
         accent_hover="#4752c4",
         text_primary="#dcddde",
@@ -79,6 +81,13 @@ def build_stylesheet(colors: ThemeColors) -> str:
         color: {colors.text_secondary};
         background-color: {colors.surface_alt};
     }}
+    QWidget#sidebarContainer {{
+        background-color: {colors.sidebar_background};
+    }}
+    QLabel#activeRepoLabel {{
+        font-size: 18px;
+        font-weight: bold;
+    }}
     QPushButton#sectionButton {{
         text-align: left;
         padding: 10px 14px;
@@ -93,6 +102,13 @@ def build_stylesheet(colors: ThemeColors) -> str:
         background-color: {colors.accent};
         color: white;
         font-weight: bold;
+    }}
+    QFrame#commitCard {{
+        background-color: {colors.surface};
+        border: 1px solid {colors.border};
+        border-radius: 4px;
+        padding: 6px;
+        margin-bottom: 4px;
     }}
     QLineEdit, QPlainTextEdit, QTextEdit {{
         background-color: {colors.surface_alt};

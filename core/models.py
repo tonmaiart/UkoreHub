@@ -12,6 +12,7 @@ class Repo:
     last_synced: str | None = None
     status: str = "not_cloned"
     thumbnail_filename: str | None = None
+    required_program_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -26,6 +27,27 @@ class Repo:
             last_synced=data.get("last_synced"),
             status=data.get("status", "not_cloned"),
             thumbnail_filename=data.get("thumbnail_filename"),
+            required_program_ids=data.get("required_program_ids", []),
+        )
+
+
+@dataclass
+class Program:
+    id: str
+    name: str
+    icon_filename: str | None = None
+    description: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Program":
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            icon_filename=data.get("icon_filename"),
+            description=data.get("description", ""),
         )
 
 

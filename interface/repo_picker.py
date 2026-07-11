@@ -29,15 +29,19 @@ class RepoPickerDialog(QDialog):
         self.tree.setHeaderLabels(["Project / Repo", "Status", "Last Synced"])
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
         populate_project_tree(self.tree, store)
-        self.tree.itemSelectionChanged.connect(self._update_ok_enabled)
         self.tree.itemDoubleClicked.connect(self._on_double_clicked)
 
-        if selected_project_id and selected_repo_id:
-            self._select_repo(selected_project_id, selected_repo_id)
-
+        # Must exist before anything can select a tree item — setCurrentItem()
+        # below fires itemSelectionChanged synchronously, and its handler
+        # reads self.buttons.
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+
+        self.tree.itemSelectionChanged.connect(self._update_ok_enabled)
+
+        if selected_project_id and selected_repo_id:
+            self._select_repo(selected_project_id, selected_repo_id)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.tree)

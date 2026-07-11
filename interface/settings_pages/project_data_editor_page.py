@@ -13,16 +13,25 @@ from PySide6.QtWidgets import (
 )
 
 from core.exceptions import UkoreHubError
+from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 from interface.dialogs import ProjectDialog, RepoDialog
 from interface.project_repo_tree import PROJECT_ROLE, REPO_ROLE, populate_project_tree
 
 
 class ProjectDataEditorPage(QWidget):
-    def __init__(self, parent=None, *, store: MetadataStore, local_config_store: LocalConfigStore):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        store: MetadataStore,
+        local_config_store: LocalConfigStore,
+        program_store: ProgramStore,
+    ):
         super().__init__(parent)
         self.store = store
         self.local_config_store = local_config_store
+        self.program_store = program_store
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Project / Repo", "Status", "Last Synced"])
@@ -84,7 +93,7 @@ class ProjectDataEditorPage(QWidget):
                 self, "Add Repo", "Set and save a workspace folder in the Common tab first."
             )
             return
-        dialog = RepoDialog(self)
+        dialog = RepoDialog(self, program_store=self.program_store)
         if dialog.exec():
             try:
                 repo = self.store.add_repo(project_id, dialog.name(), dialog.git_url(), workspace_root)
@@ -93,6 +102,7 @@ class ProjectDataEditorPage(QWidget):
                 return
             if dialog.chosen_thumbnail_path():
                 self._save_thumbnail(project_id, repo.id, dialog.chosen_thumbnail_path())
+            self.store.set_repo_requirements(project_id, repo.id, dialog.selected_program_ids())
             self.refresh_tree()
 
     def _on_edit(self) -> None:
@@ -104,7 +114,12 @@ class ProjectDataEditorPage(QWidget):
         if repo_id:
             repo = self.store.get_repo(project_id, repo_id)
             dialog = RepoDialog(
-                self, name=repo.name, git_url=repo.git_url, thumbnail_path=self.store.resolve_thumbnail_path(repo)
+                self,
+                name=repo.name,
+                git_url=repo.git_url,
+                thumbnail_path=self.store.resolve_thumbnail_path(repo),
+                program_store=self.program_store,
+                selected_program_ids=repo.required_program_ids,
             )
             if dialog.exec():
                 try:
@@ -114,6 +129,7 @@ class ProjectDataEditorPage(QWidget):
                     return
                 if dialog.chosen_thumbnail_path():
                     self._save_thumbnail(project_id, repo_id, dialog.chosen_thumbnail_path())
+                self.store.set_repo_requirements(project_id, repo_id, dialog.selected_program_ids())
                 self.refresh_tree()
         else:
             project = self.store.get_project(project_id)

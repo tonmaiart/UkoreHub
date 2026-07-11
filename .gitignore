@@ -8,3 +8,6 @@ __pycache__/
 data/local_config.json
 data/github_token.json
 .pytest_cache/
+# Default workspace_root (see launcher.py) — actual cloned target repos live
+# here, per-machine and potentially huge; never tracked.
+/projects/

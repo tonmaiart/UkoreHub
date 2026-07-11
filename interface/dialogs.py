@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -11,9 +12,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QVBoxLayout,
 )
+
+from core.program_store import ProgramStore
 
 
 class ProjectDialog(QDialog):
@@ -45,7 +50,16 @@ class ProjectDialog(QDialog):
 
 
 class RepoDialog(QDialog):
-    def __init__(self, parent=None, *, name: str = "", git_url: str = "", thumbnail_path: Path | None = None):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        name: str = "",
+        git_url: str = "",
+        thumbnail_path: Path | None = None,
+        program_store: ProgramStore | None = None,
+        selected_program_ids: list[str] | None = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Edit Repo" if name else "Add Repo")
         self._chosen_thumbnail_path: Path | None = None
@@ -69,6 +83,20 @@ class RepoDialog(QDialog):
         form.addRow("Name:", self.name_edit)
         form.addRow("Git URL:", self.git_url_edit)
         form.addRow("Thumbnail:", thumbnail_row)
+
+        self.requirements_list = QListWidget()
+        if program_store is not None:
+            selected_ids = set(selected_program_ids or [])
+            for program in program_store.list_programs():
+                item = QListWidgetItem(program.name)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked if program.id in selected_ids else Qt.Unchecked)
+                item.setData(Qt.UserRole, program.id)
+                icon_path = program_store.resolve_icon_path(program)
+                if icon_path and icon_path.exists():
+                    item.setIcon(QIcon(str(icon_path)))
+                self.requirements_list.addItem(item)
+            form.addRow("Requirements:", self.requirements_list)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)
@@ -98,3 +126,11 @@ class RepoDialog(QDialog):
 
     def chosen_thumbnail_path(self) -> Path | None:
         return self._chosen_thumbnail_path
+
+    def selected_program_ids(self) -> list[str]:
+        selected = []
+        for row in range(self.requirements_list.count()):
+            item = self.requirements_list.item(row)
+            if item.checkState() == Qt.Checked:
+                selected.append(item.data(Qt.UserRole))
+        return selected

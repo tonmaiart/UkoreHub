@@ -11,14 +11,16 @@ from PySide6.QtWidgets import (
 )
 
 from core.git_service import GitService
+from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from interface.settings_pages.color_theme_page import ColorThemePage
 from interface.settings_pages.common_settings_page import CommonSettingsPage
+from interface.settings_pages.program_database_page import ProgramDatabasePage
 from interface.settings_pages.project_data_editor_page import ProjectDataEditorPage
 from interface.settings_pages.project_status_page import ProjectStatusPage
 from interface.theme_apply import apply_theme
 
-TAB_NAMES = ["Common", "Project Status", "Project Data Editor", "Color Theme"]
+TAB_NAMES = ["Common", "Project Status", "Project Data Editor", "Program Database", "Color Theme"]
 
 
 class SettingsDialog(QDialog):
@@ -29,6 +31,7 @@ class SettingsDialog(QDialog):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         system_config_store: SystemConfigStore,
+        program_store: ProgramStore,
         git_service: GitService,
     ):
         super().__init__(parent)
@@ -47,13 +50,17 @@ class SettingsDialog(QDialog):
             github_client_id=system_config_store.github_client_id or "",
         )
         self.project_status_page = ProjectStatusPage(store=store, local_config_store=local_config_store)
-        self.project_data_page = ProjectDataEditorPage(store=store, local_config_store=local_config_store)
+        self.project_data_page = ProjectDataEditorPage(
+            store=store, local_config_store=local_config_store, program_store=program_store
+        )
+        self.program_database_page = ProgramDatabasePage(program_store=program_store)
         self.color_theme_page = ColorThemePage(current_theme=local_config_store.theme)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self.common_page)
         self.stack.addWidget(self.project_status_page)
         self.stack.addWidget(self.project_data_page)
+        self.stack.addWidget(self.program_database_page)
         self.stack.addWidget(self.color_theme_page)
 
         self.tab_list.currentRowChanged.connect(self.stack.setCurrentIndex)
