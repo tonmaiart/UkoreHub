@@ -11,6 +11,7 @@ class Repo:
     local_path: str
     last_synced: str | None = None
     status: str = "not_cloned"
+    thumbnail_filename: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -24,6 +25,7 @@ class Repo:
             local_path=data["local_path"],
             last_synced=data.get("last_synced"),
             status=data.get("status", "not_cloned"),
+            thumbnail_filename=data.get("thumbnail_filename"),
         )
 
 

@@ -10,8 +10,27 @@
           "name": "KafkaProj",
           "git_url": "https://github.com/tonmaiart/KafkaProj.git",
           "local_path": "MerderaProject/KafkaProj",
-          "last_synced": "2026-07-11T04:47:09.498343+00:00",
-          "status": "cloned"
+          "last_synced": "2026-07-11T05:47:32.998451+00:00",
+          "status": "cloned",
+          "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png"
+        },
+        {
+          "id": "8e92493d-21e1-4833-b6fa-88708a783806",
+          "name": "KafkaProjUE",
+          "git_url": "https://github.com/tonmaiart/KafkaProjUE.git",
+          "local_path": "MerderaProject/KafkaProjUE",
+          "last_synced": null,
+          "status": "not_cloned",
+          "thumbnail_filename": null
+        },
+        {
+          "id": "f16f1268-b444-4006-9c35-764e51790aa0",
+          "name": "KafkaUnity",
+          "git_url": "https://github.com/tonmaiart/KafkaUnity.git",
+          "local_path": "MerderaProject/KafkaUnity",
+          "last_synced": null,
+          "status": "not_cloned",
+          "thumbnail_filename": null
         }
       ]
     }

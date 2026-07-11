@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFileSystemModel,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLineEdit,
     QListWidget,
@@ -31,7 +32,6 @@ class RepoBrowserWidget(QWidget):
         super().__init__(parent)
         self._root: Path | None = None
         self._current_path: Path | None = None
-        self._history: list[Path] = []
 
         self.fs_model = QFileSystemModel()
         self.fs_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
@@ -51,12 +51,17 @@ class RepoBrowserWidget(QWidget):
         self.search_edit.textChanged.connect(lambda _t: self.search_timer.start())
         self.latest_version_checkbox = QCheckBox("Latest version only")
         self.latest_version_checkbox.toggled.connect(self.proxy.set_latest_version_only)
+        self.open_folder_button = QPushButton("Open Folder")
+        self.open_folder_button.clicked.connect(self._on_open_folder)
 
         top_row = QHBoxLayout()
         top_row.addWidget(self.back_button)
         top_row.addWidget(self.breadcrumb, stretch=1)
-        top_row.addWidget(self.search_edit)
         top_row.addWidget(self.latest_version_checkbox)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.addWidget(self.search_edit, stretch=1)
+        bottom_row.addWidget(self.open_folder_button)
 
         self.columns: list[QListWidget] = []
         self.column_filters: list[QLineEdit] = []
@@ -80,6 +85,9 @@ class RepoBrowserWidget(QWidget):
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.table.doubleClicked.connect(self._on_table_double_clicked)
@@ -88,15 +96,15 @@ class RepoBrowserWidget(QWidget):
         layout.addLayout(top_row)
         layout.addLayout(columns_row)
         layout.addWidget(self.table)
+        layout.addLayout(bottom_row)
 
     def set_root(self, path: Path) -> None:
         path = Path(path)
         self._root = path
-        self._history.clear()
         self.fs_model.setRootPath(str(path))
-        self._navigate_to(path, push_history=False)
+        self._navigate_to(path)
 
-    def _navigate_to(self, path: Path, *, push_history: bool = True) -> None:
+    def _navigate_to(self, path: Path) -> None:
         path = Path(path)
         if self._root is None:
             return
@@ -104,8 +112,6 @@ class RepoBrowserWidget(QWidget):
             path.relative_to(self._root)
         except ValueError:
             return
-        if push_history and self._current_path is not None and self._current_path != path:
-            self._history.append(self._current_path)
         self._current_path = path
         self.breadcrumb.setText(str(path))
         index = self.fs_model.index(str(path))
@@ -113,10 +119,13 @@ class RepoBrowserWidget(QWidget):
         self._sync_columns_from_path(path)
 
     def _on_back(self) -> None:
-        if not self._history:
+        if self._current_path is None or self._root is None or self._current_path == self._root:
             return
-        previous = self._history.pop()
-        self._navigate_to(previous, push_history=False)
+        self._navigate_to(self._current_path.parent)
+
+    def _on_open_folder(self) -> None:
+        if self._current_path is not None:
+            open_in_file_explorer(self._current_path)
 
     def _on_breadcrumb_entered(self) -> None:
         typed_path = Path(self.breadcrumb.text().strip())
@@ -204,8 +213,6 @@ class RepoBrowserWidget(QWidget):
         menu.addSeparator()
         act_rename = menu.addAction("Rename")
         act_delete = menu.addAction("Delete")
-        menu.addSeparator()
-        act_open_explorer = menu.addAction("Open in File Explorer")
 
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == act_copy_name:
@@ -216,8 +223,6 @@ class RepoBrowserWidget(QWidget):
             self._rename(path)
         elif action == act_delete:
             self._delete(path)
-        elif action == act_open_explorer:
-            open_in_file_explorer(path)
 
     def _rename(self, path: Path) -> None:
         new_name, ok = QInputDialog.getText(self, "Rename", "New name:", text=path.name)

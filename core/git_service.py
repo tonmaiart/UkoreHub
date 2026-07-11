@@ -118,8 +118,17 @@ class GitService:
         except GitOperationError:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
+        # --no-rebase: explicitly request a merge (not rebase) reconciliation.
+        # Without this, modern git refuses to pull at all on diverged branches
+        # ("Need to specify how to reconcile divergent branches") unless the
+        # user has a global pull.rebase/pull.ff default configured — we can't
+        # rely on that being set, and our conflict-resolution workflow below
+        # is built around a real merge commit, not a rebase.
         self._run_streaming(
-            [*auth_args, "pull", "--progress"], cwd=Path(local_path), on_output=on_output, extra_env=auth_env
+            [*auth_args, "pull", "--no-rebase", "--progress"],
+            cwd=Path(local_path),
+            on_output=on_output,
+            extra_env=auth_env,
         )
 
     def open_or_sync(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> str:
@@ -129,6 +138,80 @@ class GitService:
             return "cloned"
         self.pull(dest, on_output=on_output)
         return "pulled"
+
+    def push(self, local_path: Path, on_output: OutputCallback = None) -> None:
+        local_path = Path(local_path)
+        try:
+            remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=local_path).strip()
+        except GitOperationError:
+            remote_url = ""
+        auth_args, auth_env = self._github_auth_args_and_env(remote_url)
+        self._run_streaming(
+            [*auth_args, "push", "--progress"], cwd=local_path, on_output=on_output, extra_env=auth_env
+        )
+
+    def stage_paths(self, repo_path: Path, paths: list[str]) -> None:
+        if not paths:
+            return
+        self._run_capture(["add", "--", *paths], cwd=Path(repo_path))
+
+    def commit(self, repo_path: Path, message: str, amend: bool = False) -> None:
+        args = ["commit"]
+        message = message.strip()
+        if amend:
+            args.append("--amend")
+            if message:
+                args += ["-m", message]
+            else:
+                args.append("--no-edit")
+        else:
+            args += ["-m", message]
+        self._run_capture(args, cwd=Path(repo_path))
+
+    def has_unresolved_merge(self, repo_path: Path) -> bool:
+        return (Path(repo_path) / ".git" / "MERGE_HEAD").exists()
+
+    _CONFLICT_CODES = {"UU", "AA", "DD", "AU", "UA", "UD", "DU"}
+
+    def get_conflicted_files(self, repo_path: Path) -> list[str]:
+        output = self._run_capture(["status", "--porcelain=v1"], cwd=Path(repo_path))
+        conflicted = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            if line[:2] in self._CONFLICT_CODES:
+                conflicted.append(line[3:])
+        return conflicted
+
+    def resolve_conflict_file(self, repo_path: Path, file_path: str, keep: str) -> None:
+        side = "--ours" if keep == "ours" else "--theirs"
+        repo_path = Path(repo_path)
+        self._run_capture(["checkout", side, "--", file_path], cwd=repo_path)
+        self._run_capture(["add", "--", file_path], cwd=repo_path)
+
+    def complete_merge(self, repo_path: Path) -> None:
+        self._run_capture(["commit", "--no-edit"], cwd=Path(repo_path))
+
+    def get_commit_log(self, repo_path: Path, skip: int = 0, limit: int = 30) -> list[CommitInfo]:
+        try:
+            output = self._run_capture(
+                [
+                    "log",
+                    f"--skip={skip}",
+                    f"--max-count={limit}",
+                    f"--pretty=format:%H{_FIELD_SEP}%an{_FIELD_SEP}%ae{_FIELD_SEP}%aI{_FIELD_SEP}%s",
+                ],
+                cwd=Path(repo_path),
+            )
+        except GitOperationError:
+            return []
+        commits = []
+        for line in output.splitlines():
+            if not line:
+                continue
+            hash_, author, email, date, message = line.split(_FIELD_SEP, 4)
+            commits.append(CommitInfo(hash=hash_, author=author, email=email, date=date, message=message))
+        return commits
 
     def _run_capture(self, args: list[str], cwd: Path) -> str:
         result = subprocess.run(

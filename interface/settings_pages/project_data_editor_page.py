@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -85,10 +87,12 @@ class ProjectDataEditorPage(QWidget):
         dialog = RepoDialog(self)
         if dialog.exec():
             try:
-                self.store.add_repo(project_id, dialog.name(), dialog.git_url(), workspace_root)
+                repo = self.store.add_repo(project_id, dialog.name(), dialog.git_url(), workspace_root)
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Add Repo", str(exc))
                 return
+            if dialog.chosen_thumbnail_path():
+                self._save_thumbnail(project_id, repo.id, dialog.chosen_thumbnail_path())
             self.refresh_tree()
 
     def _on_edit(self) -> None:
@@ -99,13 +103,17 @@ class ProjectDataEditorPage(QWidget):
             return
         if repo_id:
             repo = self.store.get_repo(project_id, repo_id)
-            dialog = RepoDialog(self, name=repo.name, git_url=repo.git_url)
+            dialog = RepoDialog(
+                self, name=repo.name, git_url=repo.git_url, thumbnail_path=self.store.resolve_thumbnail_path(repo)
+            )
             if dialog.exec():
                 try:
                     self.store.edit_repo(project_id, repo_id, name=dialog.name(), git_url=dialog.git_url())
                 except UkoreHubError as exc:
                     QMessageBox.warning(self, "Edit Repo", str(exc))
                     return
+                if dialog.chosen_thumbnail_path():
+                    self._save_thumbnail(project_id, repo_id, dialog.chosen_thumbnail_path())
                 self.refresh_tree()
         else:
             project = self.store.get_project(project_id)
@@ -126,15 +134,39 @@ class ProjectDataEditorPage(QWidget):
             return
         if repo_id:
             repo = self.store.get_repo(project_id, repo_id)
-            confirm = QMessageBox.question(self, "Delete Repo", f"Delete repo '{repo.name}' from the registry?")
+            confirm = QMessageBox.warning(
+                self,
+                "Delete Repo",
+                f"Delete repo '{repo.name}' from the registry for EVERYONE at the studio?\n\n"
+                "This removes it from the shared registry immediately and cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
             if confirm == QMessageBox.Yes:
                 self.store.delete_repo(project_id, repo_id)
                 self.refresh_tree()
         else:
             project = self.store.get_project(project_id)
-            confirm = QMessageBox.question(
-                self, "Delete Project", f"Delete project '{project.name}' and all its repos from the registry?"
+            confirm = QMessageBox.warning(
+                self,
+                "Delete Project",
+                f"Delete project '{project.name}' and ALL its repos from the registry for EVERYONE at the studio?\n\n"
+                "This removes them from the shared registry immediately and cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
             )
             if confirm == QMessageBox.Yes:
                 self.store.delete_project(project_id)
                 self.refresh_tree()
+
+    def _save_thumbnail(self, project_id: str, repo_id: str, source_path) -> None:
+        thumbnails_dir = self.store.thumbnails_dir
+        thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        ext = source_path.suffix or ".png"
+        dest_path = thumbnails_dir / f"{repo_id}{ext}"
+        try:
+            shutil.copyfile(source_path, dest_path)
+        except OSError as exc:
+            QMessageBox.warning(self, "Thumbnail", f"Could not save thumbnail: {exc}")
+            return
+        self.store.set_repo_thumbnail(project_id, repo_id, dest_path.name)

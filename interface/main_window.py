@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.sidebar.repo_picker_requested.connect(self._on_select_repo)
         self.sidebar.section_changed.connect(self._on_section_changed)
+        self.sidebar.combo_repo_selected.connect(self._on_combo_repo_selected)
 
         self.pages = {
             SectionKey.PROJECT_INFO: ProjectInfoPage(store=store, local_config_store=local_config_store, git_service=git_service),
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
 
         self._restore_active_repo()
         self._apply_to_current_page()
+        self.sidebar.refresh_repo_choices(self.store)
         self._restore_github_login_state()
         self._check_for_update()
         QTimer.singleShot(0, self._start_auto_sync)
@@ -146,6 +148,7 @@ class MainWindow(QMainWindow):
         self._active_project = project
         self._active_repo = repo
         self.sidebar.set_active_labels(project.name, repo.name)
+        self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(repo))
 
     def _apply_to_current_page(self) -> None:
         page = self.content_stack.currentWidget()
@@ -168,12 +171,17 @@ class MainWindow(QMainWindow):
         )
         if not dialog.exec():
             return
-        project_id = dialog.selected_project_id()
-        repo_id = dialog.selected_repo_id()
+        self._set_active_repo(dialog.selected_project_id(), dialog.selected_repo_id())
+
+    def _on_combo_repo_selected(self, project_id: str, repo_id: str) -> None:
+        self._set_active_repo(project_id, repo_id)
+
+    def _set_active_repo(self, project_id: str, repo_id: str) -> None:
         self.local_config_store.set_active_repo(project_id, repo_id)
         self._active_project = self.store.get_project(project_id)
         self._active_repo = self.store.get_repo(project_id, repo_id)
         self.sidebar.set_active_labels(self._active_project.name, self._active_repo.name)
+        self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
         self._apply_to_current_page()
         self._start_auto_sync()
 
@@ -200,6 +208,7 @@ class MainWindow(QMainWindow):
     def _on_sync_finished(self) -> None:
         self.statusBar().clearMessage()
         self.sync_progress_bar.setVisible(False)
+        self.sidebar.refresh_repo_choices(self.store)
 
     def _on_sync_failed(self, _message: str) -> None:
         self.statusBar().clearMessage()
@@ -217,6 +226,9 @@ class MainWindow(QMainWindow):
         )
         dialog.exec()
         self._apply_to_current_page()
+        self.sidebar.refresh_repo_choices(self.store)
+        if self._active_repo is not None:
+            self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
 
     # -- GitHub login -------------------------------------------------------
 
@@ -284,7 +296,14 @@ class MainWindow(QMainWindow):
         # still running (e.g. an update check or sync in flight when the user
         # closes the window) — terminate and wait for any live worker first.
         git_status_page = self.pages[SectionKey.REPO_GIT_STATUS]
-        for thread in (self._update_worker, git_status_page._git_worker, git_status_page._status_worker):
+        workers = (
+            self._update_worker,
+            git_status_page._git_worker,
+            git_status_page._status_worker,
+            git_status_page._stream_worker,
+            git_status_page._commit_log_worker,
+        )
+        for thread in workers:
             if thread is not None and thread.isRunning():
                 thread.terminate()
                 thread.wait(3000)

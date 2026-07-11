@@ -1,9 +1,10 @@
 .venv/
 __pycache__/
 *.pyc
-# data/projects.json and data/system_config.json are intentionally NOT
-# ignored — they're the shared studio-wide registry/settings, tracked in
-# this repo so everyone gets them via git pull / Update and Restart.
+# data/projects.json, data/system_config.json, and data/thumbnails/ are
+# intentionally NOT ignored — they're shared studio-wide (registry, settings,
+# repo thumbnail images), tracked in this repo so everyone gets them via
+# git pull / Update and Restart.
 data/local_config.json
 data/github_token.json
 .pytest_cache/

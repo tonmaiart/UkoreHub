@@ -149,6 +149,20 @@ class MetadataStore:
         repo.status = status
         self.save()
 
+    def set_repo_thumbnail(self, project_id: str, repo_id: str, filename: str | None) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.thumbnail_filename = filename
+        self.save()
+
+    @property
+    def thumbnails_dir(self) -> Path:
+        return self.json_path.parent / "thumbnails"
+
+    def resolve_thumbnail_path(self, repo: Repo) -> Path | None:
+        if not repo.thumbnail_filename:
+            return None
+        return self.thumbnails_dir / repo.thumbnail_filename
+
     def refresh_statuses_from_disk(self, workspace_root: str) -> None:
         for project in self.projects:
             for repo in project.repos:

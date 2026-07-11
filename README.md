@@ -3,11 +3,15 @@
 Pipeline tool to launch project in Ukore Studio.
 
 UkoreHub is a Git repo launcher: it keeps a database-driven registry of Projects,
-each containing one or more Repos. Click "Select Repo..." in the sidebar to pick
-one — it's cloned (first time) or pulled (every time after) automatically into a
-workspace folder of your choosing, no manual `git clone`/`git pull` needed. From
-there you can browse the repo's files, check its git status (latest commit,
-untracked/modified/staged files), and see repo details, all from the sidebar tabs.
+each containing one or more Repos. Pick a repo from the sidebar — a dropdown of
+already-cloned repos once you have at least one, or "Select Repo..." the first
+time — and it's cloned (first time) or pulled (every time after) automatically
+into a workspace folder of your choosing, no manual `git clone`/`git pull`
+needed. From there you can browse the repo's files, and on the Repo Git Status
+tab: scroll through its full commit history, stage modified files, and commit →
+pull → push back to the remote — including a file-level (not line-level)
+conflict resolution prompt if a pull produces a merge conflict, appropriate for
+mostly-binary animation production assets.
 
 ## Prerequisites
 
@@ -35,15 +39,18 @@ from "Select Repo..." in the sidebar.
 
 Settings are split into two files with different sharing behavior:
 
-- **System config** — `data/projects.json` (the Project/Repo registry) and
-  `data/system_config.json` (GitHub OAuth Client ID). These are **tracked in
-  this git repo**, not gitignored, because they're meant to be the same for
-  everyone at the studio. When a manager adds a Project/Repo or sets the
-  Client ID, someone needs to `git add`/`commit`/`push` those two files for
-  the change to reach other machines — other artists then get it the normal
-  way, e.g. by clicking **Update and Restart** (which runs `git pull`) or any
-  other `git pull` of this repo. UkoreHub itself does not auto-commit or push
-  on your behalf.
+- **System config** — `data/projects.json` (the Project/Repo registry, including
+  each repo's thumbnail filename), `data/system_config.json` (GitHub OAuth
+  Client ID), and `data/thumbnails/` (the actual repo thumbnail images set via
+  Setting > Project Data Editor). These are **tracked in this git repo**, not
+  gitignored, because they're meant to be the same for everyone at the studio
+  — thumbnails are accepted as binary/larger files here deliberately, same
+  reasoning as the registry itself. When a manager adds a Project/Repo, sets
+  a thumbnail, or sets the Client ID, someone needs to `git add`/`commit`/`push`
+  those files for the change to reach other machines — other artists then get
+  it the normal way, e.g. by clicking **Update and Restart** (which runs
+  `git pull`) or any other `git pull` of this repo. UkoreHub itself does not
+  auto-commit or push on your behalf.
 - **Local config** — `data/local_config.json` (workspace folder, color theme,
   which repo you currently have selected, cached GitHub username) and
   `data/github_token.json` (GitHub token, only if the OS keyring isn't
@@ -85,8 +92,8 @@ setting instead of attempting to log in.
 
 - `core/` — metadata store, git operations, theming, GitHub auth; no UI code.
 - `interface/` — PySide6 GUI (sidebar, content pages, settings dialog, repo browser).
-- `data/` — `projects.json` and `system_config.json` (tracked, shared);
-  `local_config.json` and `github_token.json` (gitignored, per-machine).
+- `data/` — `projects.json`, `system_config.json`, `thumbnails/` (tracked,
+  shared); `local_config.json` and `github_token.json` (gitignored, per-machine).
 - `launcher.py` — entry point.
 
 ## Tests
