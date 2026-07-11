@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+
+from core.exceptions import GitOperationError
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _git(args: list[str], cwd: Path) -> str:
+    git_executable = shutil.which("git") or "git"
+    result = subprocess.run(
+        [git_executable, *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise GitOperationError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def check_for_update(repo_root: Path = REPO_ROOT) -> bool:
+    _git(["fetch"], cwd=repo_root)
+    local_head = _git(["rev-parse", "HEAD"], cwd=repo_root)
+    upstream_head = _git(["rev-parse", "@{u}"], cwd=repo_root)
+    return local_head != upstream_head
+
+
+def pull_update(repo_root: Path = REPO_ROOT) -> None:
+    _git(["pull"], cwd=repo_root)

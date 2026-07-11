@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QWidget,
+)
+
+
+class CommonSettingsPage(QWidget):
+    def __init__(self, parent=None, *, workspace_root: str = "", github_client_id: str = ""):
+        super().__init__(parent)
+
+        self.path_edit = QLineEdit(workspace_root)
+        browse_btn = QPushButton("Browse...")
+        browse_btn.clicked.connect(self._browse)
+
+        path_row = QHBoxLayout()
+        path_row.addWidget(self.path_edit)
+        path_row.addWidget(browse_btn)
+        path_row_widget = QWidget()
+        path_row_widget.setLayout(path_row)
+
+        self.client_id_edit = QLineEdit(github_client_id)
+        self.client_id_edit.setPlaceholderText("From github.com/settings/developers (Device Flow enabled)")
+
+        form = QFormLayout(self)
+        form.addRow("Workspace folder:", path_row_widget)
+        form.addRow("GitHub OAuth Client ID:", self.client_id_edit)
+        hint = QLabel(
+            "Optional — needed only for the Login button in the status bar to work.\n"
+            "Register a public OAuth App and enable \"Device Flow\" to get one."
+        )
+        hint.setProperty("secondary", True)
+        hint.setWordWrap(True)
+        form.addRow("", hint)
+
+    def _browse(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Choose Workspace Folder", self.path_edit.text())
+        if directory:
+            self.path_edit.setText(directory)
+
+    def workspace_root(self) -> str:
+        return self.path_edit.text().strip()
+
+    def github_client_id(self) -> str:
+        return self.client_id_edit.text().strip()

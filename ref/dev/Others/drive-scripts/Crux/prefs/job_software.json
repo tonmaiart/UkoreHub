@@ -1,0 +1,28 @@
+
+{"model": {
+    "proxy": "Maya",
+    "hi": "Maya",
+    "texture": "Blender"
+    }
+    ,
+    "rig": {
+        "proxy": "Maya",
+        "hi": "Maya"
+    },
+  
+    "map": {
+        "layout": "Blender",
+        "hi": "Blender"
+    }
+    ,
+
+    "anim": {
+        "layout": "Maya",
+        "blocking": "Maya",
+        "polish": "Maya"
+    }
+    ,
+    "render": {
+        "render": "Blender"
+      }
+}
