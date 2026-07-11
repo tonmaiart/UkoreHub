@@ -221,11 +221,14 @@ class MainWindow(QMainWindow):
     # -- GitHub login -------------------------------------------------------
 
     def _restore_github_login_state(self) -> None:
-        if self.local_config_store.github_username and self.token_store.load_token():
+        token = self.token_store.load_token()
+        if self.local_config_store.github_username and token:
             self.github_auth_widget.set_state(self.local_config_store.github_username)
+            self.git_service.set_github_token(token)
         else:
             self.local_config_store.set_github_username(None)
             self.github_auth_widget.set_state(None)
+            self.git_service.set_github_token(None)
 
     def _on_login_requested(self) -> None:
         if not self.system_config_store.github_client_id:
@@ -248,11 +251,13 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "GitHub Login", str(exc))
             self.local_config_store.set_github_username(username)
             self.github_auth_widget.set_state(username)
+            self.git_service.set_github_token(token)
 
     def _on_logout_requested(self) -> None:
         self.token_store.clear_token()
         self.local_config_store.set_github_username(None)
         self.github_auth_widget.set_state(None)
+        self.git_service.set_github_token(None)
 
     # -- self-update --------------------------------------------------------
 

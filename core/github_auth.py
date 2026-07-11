@@ -60,7 +60,7 @@ def _get_json(url: str, token: str) -> dict:
         raise GitHubAuthError(f"Network error contacting GitHub: {exc}") from exc
 
 
-def request_device_code(client_id: str, scope: str = "read:user") -> DeviceCodeResponse:
+def request_device_code(client_id: str, scope: str = "read:user repo") -> DeviceCodeResponse:
     if not client_id:
         raise GitHubAuthError(
             "GitHub Client ID not configured — set it in Setting > Common."

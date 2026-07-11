@@ -50,15 +50,26 @@ Settings are split into two files with different sharing behavior:
   available). These are gitignored and stay per-machine — everyone picks
   their own workspace folder and theme.
 
-## GitHub Login Setup (optional)
+## GitHub Login Setup (optional, needed for private repos)
 
-The status bar's Login button uses GitHub's OAuth Device Flow to display your
-GitHub identity. It does not affect git clone/pull, which always uses your
-system git credentials (SSH key or credential helper) regardless of whether
-you're logged in here — a Client ID is required only for the Login button
-itself to work; everything else in UkoreHub works without it.
+The status bar's Login button uses GitHub's OAuth Device Flow. Logging in
+does two things:
 
-To enable it, register a public GitHub OAuth App (free, no approval needed):
+1. Shows your GitHub identity in the status bar.
+2. **Lets UkoreHub clone/pull private `github.com` repos you have access to**,
+   using your logged-in token automatically — no separate token or credential
+   setup needed. This only applies to HTTPS `github.com` URLs; SSH URLs and
+   any non-GitHub host still rely entirely on your system git credentials
+   (SSH key / credential helper), exactly as before. If you're not logged in,
+   private-repo clone/pull falls back to your system git credentials too — so
+   logging in is optional, not required, if you already have those set up
+   (e.g. an SSH key added to your GitHub account).
+
+The token is stored via your OS keyring (or a gitignored local file if the
+keyring isn't available) — never in `data/system_config.json` or
+`data/projects.json`, since those are shared with the whole team via git.
+
+To enable Login, register a public GitHub OAuth App (free, no approval needed):
 
 1. Go to https://github.com/settings/developers → "New OAuth App".
 2. Fill in any name/homepage URL (a callback URL is required by the form but

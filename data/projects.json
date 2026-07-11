@@ -1,4 +1,19 @@
 {
   "schema_version": 1,
-  "projects": []
+  "projects": [
+    {
+      "id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+      "name": "MerderaProject",
+      "repos": [
+        {
+          "id": "d930b619-2774-4ab4-b381-899e0464e121",
+          "name": "KafkaProj",
+          "git_url": "https://github.com/tonmaiart/KafkaProj.git",
+          "local_path": "MerderaProject/KafkaProj",
+          "last_synced": "2026-07-11T04:47:09.498343+00:00",
+          "status": "cloned"
+        }
+      ]
+    }
+  ]
 }

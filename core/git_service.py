@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import urllib.parse
 from pathlib import Path
 from typing import Callable
 
@@ -12,22 +14,64 @@ OutputCallback = Callable[[str], None] | None
 
 _FIELD_SEP = "\x1f"
 
+_GITHUB_TOKEN_ENV_VAR = "UKOREHUB_GITHUB_TOKEN"
+_GITHUB_HOSTS = {"github.com", "www.github.com"}
+
+
+def _non_interactive_env(extra: dict | None = None) -> dict:
+    """Environment that makes git fail fast with a visible error instead of
+    silently hanging forever waiting for a username/password/passphrase on a
+    terminal nobody is watching (the classic "clone just sits there" trap
+    when git is launched from a GUI app with no real TTY to prompt on)."""
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    ssh_command = env.get("GIT_SSH_COMMAND", "ssh")
+    env["GIT_SSH_COMMAND"] = f"{ssh_command} -o BatchMode=yes"
+    if extra:
+        env.update(extra)
+    return env
+
 
 class GitService:
     def __init__(self, git_executable: str | None = None):
         self.git_executable = git_executable or shutil.which("git") or "git"
+        self._github_token: str | None = None
+
+    def set_github_token(self, token: str | None) -> None:
+        """Token from the app's GitHub login (see interface/main_window.py),
+        used to authenticate github.com HTTPS clone/pull for private repos
+        without needing a separate credential setup. Never touches SSH URLs
+        or non-GitHub hosts — those still rely on the user's own system git
+        credentials exactly as before."""
+        self._github_token = token
+
+    def _github_auth_args_and_env(self, git_url: str) -> tuple[list[str], dict]:
+        if not self._github_token:
+            return [], {}
+        parsed = urllib.parse.urlparse(git_url)
+        if parsed.scheme != "https" or parsed.hostname not in _GITHUB_HOSTS:
+            return [], {}
+        # Credentials are passed via an environment variable, never on the
+        # command line or written to disk, so they can't leak through `ps aux`
+        # or a leftover temp file.
+        helper = f'!f() {{ echo username=x-access-token; echo "password=${_GITHUB_TOKEN_ENV_VAR}"; }}; f'
+        return ["-c", f"credential.helper={helper}"], {_GITHUB_TOKEN_ENV_VAR: self._github_token}
 
     def is_cloned(self, local_path: Path) -> bool:
         return (Path(local_path) / ".git").exists()
 
-    def _run_streaming(self, args: list[str], cwd: Path | None, on_output: OutputCallback) -> None:
+    def _run_streaming(
+        self, args: list[str], cwd: Path | None, on_output: OutputCallback, extra_env: dict | None = None
+    ) -> None:
         process = subprocess.Popen(
             [self.git_executable, *args],
             cwd=str(cwd) if cwd else None,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=_non_interactive_env(extra_env),
         )
         assert process.stdout is not None
         # git's progress meter ("Receiving objects: 42% (420/1000)...") uses
@@ -56,12 +100,27 @@ class GitService:
     def clone(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> None:
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
+        auth_args, auth_env = self._github_auth_args_and_env(git_url)
         # --progress forces git to emit its progress meter even though stdout
         # is a pipe, not a terminal (git suppresses it by default otherwise).
-        self._run_streaming(["clone", "--progress", git_url, str(dest)], cwd=dest.parent, on_output=on_output)
+        self._run_streaming(
+            [*auth_args, "clone", "--progress", git_url, str(dest)],
+            cwd=dest.parent,
+            on_output=on_output,
+            extra_env=auth_env,
+        )
 
     def pull(self, local_path: Path, on_output: OutputCallback = None) -> None:
-        self._run_streaming(["pull", "--progress"], cwd=Path(local_path), on_output=on_output)
+        # Read the remote URL from the repo itself so the same github.com
+        # credential check applies whether it was cloned via HTTPS or SSH.
+        try:
+            remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=Path(local_path)).strip()
+        except GitOperationError:
+            remote_url = ""
+        auth_args, auth_env = self._github_auth_args_and_env(remote_url)
+        self._run_streaming(
+            [*auth_args, "pull", "--progress"], cwd=Path(local_path), on_output=on_output, extra_env=auth_env
+        )
 
     def open_or_sync(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> str:
         dest = Path(dest)
@@ -75,8 +134,10 @@ class GitService:
         result = subprocess.run(
             [self.git_executable, *args],
             cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            env=_non_interactive_env(),
         )
         if result.returncode != 0:
             raise GitOperationError(f"git {' '.join(args)} failed: {result.stderr.strip()}")

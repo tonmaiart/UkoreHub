@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from core.exceptions import GitOperationError
+from core.git_service import _non_interactive_env
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -14,8 +15,10 @@ def _git(args: list[str], cwd: Path) -> str:
     result = subprocess.run(
         [git_executable, *args],
         cwd=str(cwd),
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
+        env=_non_interactive_env(),
     )
     if result.returncode != 0:
         raise GitOperationError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
