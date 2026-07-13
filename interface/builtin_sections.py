@@ -72,7 +72,7 @@ def register_builtin_sections(
     registry.register(
         SectionSpec(
             key=PROJECT_INFO,
-            label="Project Information",
+            label="Repo",
             order=0,
             page_factory=lambda: ProjectInfoPage(
                 store=store,
@@ -85,16 +85,17 @@ def register_builtin_sections(
     registry.register(
         SectionSpec(
             key=REPO_BROWSER,
-            label="Repo Browser",
+            label="Explorer",
             order=10,
             page_factory=lambda: repo_browser_page,
             background_threads=lambda page: [page.browser.commit_panel._worker],
+            standalone=True,
         )
     )
     registry.register(
         SectionSpec(
             key=REPO_GIT_STATUS,
-            label="Repo Git Status",
+            label="Submit",
             order=20,
             page_factory=lambda: repo_git_status_page,
             background_threads=lambda page: [
@@ -103,8 +104,9 @@ def register_builtin_sections(
                 page._stream_worker,
                 page._commit_log_worker,
             ],
+            standalone=True,
         )
     )
-    registry.register(SectionSpec(key=REPO_ABOUT, label="Repo About", order=30, page_factory=lambda: repo_about_page))
+    registry.register(SectionSpec(key=REPO_ABOUT, label="About", order=30, page_factory=lambda: repo_about_page))
 
     return pages

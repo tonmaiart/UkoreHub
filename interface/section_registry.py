@@ -18,6 +18,11 @@ class SectionSpec:
     # workers it owns, so MainWindow.closeEvent can terminate them safely
     # without needing to know a plugin page's internals.
     background_threads: Callable[[QWidget], list] | None = None
+    # False (default): page is shown inside the shared sidebar + content
+    # stack (Repo, About). True: page gets its own full-width top-level view
+    # with no sidebar (Explorer, Submit) — see main_window.py's view_stack
+    # construction.
+    standalone: bool = False
 
 
 class SectionRegistry:

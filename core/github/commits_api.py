@@ -12,8 +12,10 @@ class GitHubCommitsApiError(Exception):
     pass
 
 
-def fetch_commits_for_path(owner: str, repo: str, path: str, token: str | None, limit: int = 30) -> list[dict]:
-    params = {"per_page": str(limit)}
+def fetch_commits_for_path(
+    owner: str, repo: str, path: str, token: str | None, limit: int = 30, page: int = 1
+) -> list[dict]:
+    params = {"per_page": str(limit), "page": str(page)}
     if path:
         params["path"] = path
     url = COMMITS_API_URL.format(owner=owner, repo=repo) + "?" + urllib.parse.urlencode(params)

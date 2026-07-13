@@ -63,6 +63,28 @@
           "C:\\Tonmai\\UkoreHub\\add-on\\mGear\\mgear-custom-component"
         ]
       }
+    },
+    "ukore_browser": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\UkoreBrowser\\maya-scripts",
+          "C:\\Tonmai\\UkoreHub"
+        ]
+      }
+    },
+    "dreamwall_picker": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\DreamwallPicker\\maya-scripts"
+        ]
+      }
+    },
+    "studio_library": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\StudioLibrary\\maya-scripts"
+        ]
+      }
     }
   }
 }

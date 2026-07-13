@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QDialog,
-    QFileDialog,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -22,7 +19,7 @@ from interface.repo_picker import RepoPickerDialog
 
 class LaunchDialog(QDialog):
     """Skippable "Quick Start" shown while the user isn't logged in yet —
-    GitHub login, workspace folder, and a quick project pick, all optional."""
+    GitHub login and a quick project pick, all optional."""
 
     def __init__(
         self,
@@ -52,13 +49,6 @@ class LaunchDialog(QDialog):
         self.github_auth_widget.logout_requested.connect(self._on_logout_requested)
         self._refresh_login_display()
 
-        self.workspace_edit = QLineEdit(local_config_store.workspace_root or "")
-        browse_btn = QPushButton("Browse...")
-        browse_btn.clicked.connect(self._on_browse_workspace)
-        workspace_row = QHBoxLayout()
-        workspace_row.addWidget(self.workspace_edit, stretch=1)
-        workspace_row.addWidget(browse_btn)
-
         choose_project_btn = QPushButton("Choose Project...")
         choose_project_btn.clicked.connect(self._on_choose_project)
 
@@ -67,7 +57,6 @@ class LaunchDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("GitHub:", self.github_auth_widget)
-        form.addRow("Workspace Folder:", workspace_row)
         form.addRow("", choose_project_btn)
 
         layout = QVBoxLayout(self)
@@ -81,11 +70,6 @@ class LaunchDialog(QDialog):
             self.github_auth_widget.set_state(self.local_config_store.github_username)
         else:
             self.github_auth_widget.set_state(None)
-
-    def _on_browse_workspace(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Choose Workspace Folder", self.workspace_edit.text())
-        if directory:
-            self.workspace_edit.setText(directory)
 
     def _on_choose_project(self) -> None:
         dialog = RepoPickerDialog(self, store=self.store)
@@ -120,7 +104,4 @@ class LaunchDialog(QDialog):
         self.github_auth_widget.set_state(None)
 
     def _on_continue(self) -> None:
-        typed_path = self.workspace_edit.text().strip()
-        if typed_path:
-            self.local_config_store.set_workspace_root(typed_path)
         self.accept()

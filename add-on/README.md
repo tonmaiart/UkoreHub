@@ -11,6 +11,24 @@ Every immediate subfolder here (`add-on/<YourAddonName>/`) is discovered
 independently — no nesting, no `studio/`/`local/` split like `plugins/` has
 (everything under `add-on/` is git-tracked/shared, on purpose).
 
+## Working on a single add-on — stay inside its folder
+
+When a task names a specific add-on (or the target path is under
+`add-on/<Name>/`), read and edit **only that folder**. Don't open sibling
+add-ons "just in case" — each one is an independent, often-large, often
+vendored tool tree (e.g. `DreamwallPicker/maya-scripts/dwpicker/` alone is
+dozens of files) with zero information value for working on a different
+one. Check the add-on's own `README.md` first if it has one (same
+folder-README convention as `core/`/`interface/` — see root `CLAUDE.md`).
+
+If a task genuinely needs data from another add-on, that's almost always
+the shared-`plugin_config_store` convention below (a plugin_id string + a
+documented JSON shape), not a reason to read the other add-on's source. The
+one real exception is explicit cross-add-on debugging ("why doesn't
+MayaLauncher pick up UkoreBrowser's contribution") — say so and read both
+deliberately, rather than defaulting to broad exploration for a
+single-add-on task. See the `ukorehub-addon` skill for the fuller writeup.
+
 ## Minimum folder shape
 
 ```

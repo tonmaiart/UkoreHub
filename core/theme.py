@@ -88,17 +88,16 @@ def build_stylesheet(colors: ThemeColors) -> str:
         font-size: 18px;
         font-weight: bold;
     }}
-    QPushButton#sectionButton {{
-        text-align: left;
-        padding: 10px 14px;
+    QPushButton#topTabButton {{
+        padding: 6px 14px;
         border: none;
-        border-radius: 0;
+        border-radius: 4px;
         background-color: {colors.surface_alt};
     }}
-    QPushButton#sectionButton:hover {{
+    QPushButton#topTabButton:hover {{
         background-color: {colors.hover};
     }}
-    QPushButton#sectionButton:checked {{
+    QPushButton#topTabButton:checked {{
         background-color: {colors.accent};
         color: white;
         font-weight: bold;

@@ -10,15 +10,20 @@ from interface.github_auth_widget import GitHubAuthWidget
 class MenuBar(QWidget):
     """Top row of the main window — what used to be the bottom status bar
     (app label, sync status, Update button, GitHub login) before Settings
-    stopped being a modal dialog and this whole row moved up. Not Qt's
+    stopped being a modal dialog and this whole row moved up. Now also hosts
+    the repo-scoped TopTabBar (Repo/Explorer/Submit/About) right after the
+    app label, and a separate Setting button after GitHub login/logout —
+    Setting is an app-level control, not a repo-scoped tab, so it
+    deliberately sits apart from TopTabBar's button group. Not Qt's
     QMenuBar/dropdown-menu widget — just a plain widget row, since its
     contents are buttons/labels/a progress bar, not QActions."""
 
     login_requested = Signal()
     logout_requested = Signal()
     update_requested = Signal()
+    settings_requested = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, tab_bar: QWidget | None = None):
         super().__init__(parent)
 
         self.app_label = QLabel(f"{APP_NAME} {APP_VERSION}")
@@ -37,13 +42,21 @@ class MenuBar(QWidget):
         self.github_auth_widget.login_requested.connect(self.login_requested.emit)
         self.github_auth_widget.logout_requested.connect(self.logout_requested.emit)
 
+        self.setting_button = QPushButton("Setting")
+        self.setting_button.setObjectName("topTabButton")
+        self.setting_button.setCheckable(True)
+        self.setting_button.clicked.connect(self.settings_requested.emit)
+
         layout = QHBoxLayout(self)
         layout.addWidget(self.app_label)
+        if tab_bar is not None:
+            layout.addWidget(tab_bar)
         layout.addWidget(self.status_label)
         layout.addStretch()
         layout.addWidget(self.update_button)
         layout.addWidget(self.sync_progress_bar)
         layout.addWidget(self.github_auth_widget)
+        layout.addWidget(self.setting_button)
 
     def set_sync_message(self, text: str) -> None:
         self.status_label.setText(text)

@@ -5,7 +5,6 @@ from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from interface.settings_pages.addon_settings_page import AddonSettingsPage
-from interface.settings_pages.color_theme_page import ColorThemePage
 from interface.settings_pages.common_settings_page import CommonSettingsPage
 from interface.settings_pages.plugin_catalog_page import PluginCatalogPage
 from interface.settings_pages.program_database_page import ProgramDatabasePage
@@ -17,7 +16,6 @@ COMMON = "common"
 PROJECT_STATUS = "project_status"
 PROJECT_DATA_EDITOR = "project_data_editor"
 PROGRAM_DATABASE = "program_database"
-COLOR_THEME = "color_theme"
 PLUGINS = "plugins"
 ADDONS = "addons"
 
@@ -95,14 +93,6 @@ def register_builtin_settings_tabs(
             label="Program Database",
             order=30,
             page_factory=lambda: ProgramDatabasePage(program_store=program_store),
-        )
-    )
-    registry.register(
-        SettingsTabSpec(
-            key=COLOR_THEME,
-            label="Color Theme",
-            order=40,
-            page_factory=lambda: ColorThemePage(local_config_store=local_config_store),
         )
     )
     registry.register(

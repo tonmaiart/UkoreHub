@@ -10,19 +10,47 @@ description: Reference for UkoreHub's interface/ layer (C:\Tonmai\UkoreHub) — 
 first for the current file listing — this skill is the architecture and the
 *why*, kept deliberately shorter than a file index.
 
+## Scoped editing
+
+A task about `interface/` stays inside `interface/` — don't open `core/` or
+`add-on/` files unless the change genuinely needs a new `core/` primitive
+to build on. Within `interface/`, `pages/` and `settings_pages/` are each a
+flat directory of independent, mostly-unrelated files (one file per
+sidebar section / settings tab) — reading one page has no information
+value for editing a different one, so open only the page/tab the task
+names, plus `main_window.py` or the relevant `*_registry.py` only if the
+task is about wiring, not page content. Same for `*_dialog.py` and
+`*_worker.py`: pick the one the task names, don't survey the others.
+
 ## MainWindow structure — no more modal Settings dialog
 
 `interface/main_window.py`'s `MainWindow` no longer opens a modal
 `QDialog` for settings (that was ripped out in favor of an embedded tab
-switcher). Current structure, bottom to top:
+switcher), and there is no separate bottom switcher bar anymore either —
+everything lives in one row. Current structure, top to bottom:
 
-- **Menu Bar** (top of window — this is what used to be the bottom status
-  bar before it was moved and renamed; don't confuse it with Qt's
-  `QMenuBar`, it's UkoreHub's own term for this strip).
-- **A view stack** switched by a **Repo / Setting** switcher at the bottom
-  of the window. "Repo" is the main app UI (sidebar + pages, the historical
-  default view). "Setting" swaps in the settings tab pages
-  (`SettingsTabRegistry`-driven).
+- **Menu Bar** (`interface/menu_bar.py`, top of window — this is what used
+  to be the bottom status bar before it was moved and renamed; don't
+  confuse it with Qt's `QMenuBar`, it's UkoreHub's own term for this
+  strip). It embeds **`TopTabBar`** (`interface/top_tab_bar.py`, right after
+  the app label): one button per `SectionRegistry` section
+  (Repo/Explorer/Submit/About, in registry order), in its own exclusive
+  button group. A separate **Setting** button lives at the *far end* of the
+  same row, after GitHub login/logout — deliberately its own control, not
+  part of `TopTabBar`'s group, since it's an app-level setting, not
+  repo-scoped. `MainWindow` keeps the two in sync by hand
+  (`TopTabBar.uncheck_all()` / `menu_bar.setting_button.setChecked(...)`)
+  since they're independent `QButtonGroup`s. There is no per-section button
+  list in the sidebar anymore (`sidebar.py` is now just thumbnail + repo
+  picker + recent files).
+- **A view stack** (`MainWindow.view_stack`) with three kinds of page:
+  the shared **repo view** (sidebar + `content_stack`, for sections with
+  `SectionSpec.standalone=False` — built-in Repo/About), one **standalone
+  full-width page per section** with `standalone=True` (built-in
+  Explorer/Submit — no sidebar), and the **settings view**
+  (`SettingsTabRegistry`-driven, shown when the separate Setting button is
+  clicked). `TopTabBar.tab_changed` picks between the repo view and a
+  standalone page; `MenuBar.settings_requested` picks the settings view.
 - Every settings page **self-persists on every change** — there is no
   Save/Cancel step anywhere. `SettingsTabSpec` has no `on_save`/`on_cancel`
   hooks; if you're writing a new settings page, write directly through
@@ -37,7 +65,7 @@ don't go looking for it here, even though it's UI-adjacent in purpose.
 
 | Registry | Spec dataclass | Keyed? | Purpose |
 |---|---|---|---|
-| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level sidebar sections (Repo Browser, Repo About, Git Status, Project Info, ...) |
+| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level tab-bar sections, rendered by `TopTabBar` (Repo, Explorer, Submit, About, ...) |
 | `SettingsTabRegistry` | `SettingsTabSpec` | yes | Tabs shown in the "Setting" view |
 | `ProjectInfoTabRegistry` | `ProjectInfoTabSpec` | yes | Sub-tabs inside the Project Info page (it's a tab-of-tabs) |
 | `RepoAddonPanelRegistry` | (factory keyed by addon_id) | yes | Per-add-on status panel shown in the "Repo Add-on" tab of Project Info |

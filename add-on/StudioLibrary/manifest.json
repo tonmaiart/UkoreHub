@@ -1,0 +1,8 @@
+{
+  "id": "studio_library",
+  "name": "StudioLibrary",
+  "version": "2.21.1",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Studio Library for Maya (pose/animation library). Contributes its maya-scripts folder to the Maya Launcher env bridge — does not launch Maya itself. Launched via UkoreMenu's studio_library() in MayaToolkit."
+}

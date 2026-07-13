@@ -91,11 +91,13 @@ def main() -> None:
     program_store = ProgramStore(data_dir / "programs.json")
     addon_store = AddonMetadataStore(data_dir / "addon_settings.json")
     local_config_store = LocalConfigStore(data_dir / "local_config.json")
-    if not local_config_store.workspace_root:
-        # Sensible out-of-the-box default so a fresh install isn't blocked on
-        # manually picking a folder before doing anything — still editable
-        # any time via Setting > Common.
-        local_config_store.set_workspace_root(str(REPO_ROOT / "projects"))
+    # Workspace root is fixed to the repo's own projects/ folder — there is no
+    # UI to point it elsewhere (see interface/settings_pages/common_settings_page.py
+    # and interface/launch_dialog.py), so force it here on every launch rather
+    # than only defaulting it once.
+    forced_workspace_root = str(REPO_ROOT / "projects")
+    if local_config_store.workspace_root != forced_workspace_root:
+        local_config_store.set_workspace_root(forced_workspace_root)
     hook_registry = HookRegistry()
     git_service = GitService(hooks=hook_registry)
     token_store = TokenStore(data_dir / "github_token.json")
@@ -191,7 +193,6 @@ def main() -> None:
         hook_registry,
         section_registry,
         settings_tab_registry,
-        file_opener_registry,
     )
     window.show()
     sys.exit(app.exec())

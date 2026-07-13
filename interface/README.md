@@ -4,11 +4,23 @@ PySide6 GUI layer for UkoreHub. Builds on `core/` for all data and git
 operations — widgets here handle layout, user interaction, and background
 `QThread` workers so the UI doesn't block on git/network calls.
 
+**Working here:** stay inside `interface/` unless the change needs a new
+`core/` primitive to build on — don't open `core/` or `add-on/` files
+otherwise. `pages/` and `settings_pages/` are each a flat directory of
+independent, mostly-unrelated files (one per sidebar section / settings
+tab) — open only the one the task names, not the whole folder.
+
 - `main_window.py` — top-level `QMainWindow`: sidebar + stacked content pages,
-  status bar (sync progress, GitHub login, settings), active-repo restore and
+  menu bar (sync progress, GitHub login, top tab bar), active-repo restore and
   auto-sync on launch.
+- `menu_bar.py` / `top_tab_bar.py` — the single top row: app label, the
+  `TopTabBar` (one button per `SectionRegistry` section — Repo/Explorer/
+  Submit/About — its own exclusive group), sync progress, GitHub
+  login/logout, then a separate "Setting" button at the far end (not part
+  of `TopTabBar`'s group — it's an app-level control, not repo-scoped).
 - `sidebar.py` / `sidebar_thumbnail.py` — left navigation: project/repo picker,
-  section tabs, repo thumbnail.
+  repo thumbnail, recent files (no longer owns section switching — that
+  moved to `top_tab_bar.py`).
 - `section_registry.py` / `settings_tab_registry.py` / `project_info_tab_registry.py`
   — open, ordered registries sections, settings tabs, and Project Info
   sub-tabs register into (built-in and plugin-provided alike), replacing the
@@ -36,9 +48,11 @@ operations — widgets here handle layout, user interaction, and background
   widgets, not plain list rows).
 - `repo_browser/` — the file browser widget used by the Repo Browser page
   (column/table file view + per-path commit history panel).
-- `settings_pages/` — tabs inside the Settings dialog: common settings, color
-  theme, program database, project data editor, project sync status, and a
+- `settings_pages/` — tabs inside the Settings dialog: common settings,
+  program database, project data editor, project sync status, and a
   read-only `plugins_page.py` listing what got discovered under `plugins/`.
+  (Color theme selection was removed from the UI — `core/theme.py` and the
+  saved `theme` field in `local_config.json` still exist, just unpickable.)
 - `*_dialog.py` — modal dialogs: launch/quick-start, commit message, merge
   conflict resolution, GitHub login, repo picker, program editor, settings
   shell.

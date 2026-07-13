@@ -15,6 +15,12 @@ data/plugins/local/
 # plugins/studio is git-tracked and distributed like data/programs.json;
 # plugins/local is per-machine/experimental — see core/plugin_loader.py.
 plugins/local/
-# Default workspace_root (see launcher.py) — actual cloned target repos live
+# Forced workspace_root (see launcher.py) — actual cloned target repos live
 # here, per-machine and potentially huge; never tracked.
 /projects/
+# PyInstaller intermediates from packaging/build_exe.py — regenerate every
+# build, never committed. The resulting UkoreHub.exe at the repo root IS
+# committed — a shared studio-wide binary, same pattern as
+# data/thumbnails/ and data/programs.json above.
+/build/
+*.spec

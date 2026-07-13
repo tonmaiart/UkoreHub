@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import urllib.parse
 from pathlib import Path
 from typing import Callable
@@ -14,6 +15,11 @@ from core.models import CommitInfo, RepoStatus
 OutputCallback = Callable[[str], None] | None
 
 _FIELD_SEP = "\x1f"
+
+# Every git subprocess call passes this so Windows doesn't briefly flash a
+# console window behind the GUI (git.exe is a console app; the parent
+# process here has none). No-op on non-Windows.
+_NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _GITHUB_TOKEN_ENV_VAR = "UKOREHUB_GITHUB_TOKEN"
 _GITHUB_HOSTS = {"github.com", "www.github.com"}
@@ -82,6 +88,7 @@ class GitService:
             text=True,
             bufsize=1,
             env=_non_interactive_env(extra_env),
+            creationflags=_NO_WINDOW_FLAGS,
         )
         assert process.stdout is not None
         # git's progress meter ("Receiving objects: 42% (420/1000)...") uses
@@ -192,6 +199,16 @@ class GitService:
         if not paths:
             return
         self._run_capture(["add", "--", *paths], cwd=Path(repo_path))
+
+    def revert_paths(self, repo_path: Path, *, modified_paths: list[str], untracked_paths: list[str]) -> None:
+        """Discards working-tree changes. Tracked/modified files are reset to
+        HEAD via checkout; untracked files have no HEAD version to reset to,
+        so they're removed instead via git clean."""
+        repo_path = Path(repo_path)
+        if modified_paths:
+            self._run_capture(["checkout", "--", *modified_paths], cwd=repo_path)
+        if untracked_paths:
+            self._run_capture(["clean", "-f", "--", *untracked_paths], cwd=repo_path)
 
     def commit(
         self, repo_path: Path, message: str, amend: bool = False, *, context: GitHookContext | None = None
@@ -311,6 +328,7 @@ class GitService:
             capture_output=True,
             text=True,
             env=_non_interactive_env(),
+            creationflags=_NO_WINDOW_FLAGS,
         )
         if result.returncode != 0:
             raise GitOperationError(f"git {' '.join(args)} failed: {result.stderr.strip()}")

@@ -30,14 +30,21 @@ python launcher.py
 On first run, UkoreHub checks for its Python package dependencies (PySide6,
 keyring) and installs any that are missing automatically — no manual
 `pip install` step required. The workspace folder (where cloned repos live)
-defaults to `<this repo>/projects` and can be changed any time in
-Setting > Common. If you're not logged in yet, a Quick Start dialog offers
-GitHub login, the workspace folder, and picking a project up front — every
+is fixed to `<this repo>/projects`. If you're not logged in yet, a Quick
+Start dialog offers GitHub login and picking a project up front — every
 field is optional and a single Continue skips all of it. Managers add
 Projects/Repos via Setting > Project Data Editor; anyone can check sync
 status read-only via Setting > Project Status. Whatever's added there becomes
 available to pick from the sidebar (a dropdown once at least one repo has
 been cloned, otherwise "Select Repo...").
+
+Alternatively, double-click `UkoreHub.exe` at the repo root (or pin it to
+the taskbar) — a thin native wrapper that launches `launcher.py` with no
+terminal window. Admins rebuild and recommit this exe via
+`python packaging/build_exe.py` only when rebranding the icon (see
+`packaging/README.md`) — routine code updates still flow through
+**Update and Restart** / `git pull` as plain `.py` changes, exactly as
+before; the exe itself rarely needs to change.
 
 Setting > Program Database keeps a shared catalog of pipeline software (name,
 icon, description) that repos can list as requirements in Project Data
@@ -104,8 +111,9 @@ setting instead of attempting to log in.
   `program_icons/` (tracked, shared); `local_config.json` and `github_token.json`
   (gitignored, per-machine).
 - `launcher.py` — entry point.
-- `projects/` — default workspace folder (gitignored; actual cloned repos live
-  here unless you point Setting > Common elsewhere).
+- `packaging/` — admin-only tooling to build `UkoreHub.exe` (see
+  `packaging/README.md`); not part of the running app.
+- `projects/` — workspace folder (gitignored; actual cloned repos live here).
 
 ## Tests
 

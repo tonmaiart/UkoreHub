@@ -9,11 +9,9 @@ from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QMessageBox, QStackedWid
 
 from core import self_update
 from core.exceptions import NotFoundError, UkoreHubError
-from core.extensibility.file_opener import FileOpenerRegistry
 from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.git_service import GitService
 from core.github.token_store import TokenStore, TokenStoreFallbackUsed
-from core.os_utils import open_with_default_app
 from core.paths import resolve_repo_path
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
@@ -27,7 +25,7 @@ from interface.section_registry import SectionRegistry
 from interface.settings_tab_registry import SettingsTabRegistry
 from interface.settings_view import SettingsView
 from interface.sidebar import Sidebar
-from interface.view_switcher import REPO, SETTING, ViewSwitcher
+from interface.top_tab_bar import TopTabBar
 
 
 class UpdateCheckWorker(QThread):
@@ -53,7 +51,6 @@ class MainWindow(QMainWindow):
         hook_registry: HookRegistry,
         section_registry: SectionRegistry,
         settings_tab_registry: SettingsTabRegistry,
-        file_opener_registry: FileOpenerRegistry,
     ):
         super().__init__()
         self.store = store
@@ -65,7 +62,6 @@ class MainWindow(QMainWindow):
         self.hook_registry = hook_registry
         self.section_registry = section_registry
         self.settings_tab_registry = settings_tab_registry
-        self._file_opener_registry = file_opener_registry
 
         self._active_project = None
         self._active_repo = None
@@ -74,11 +70,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
 
-        self.sidebar = Sidebar(section_registry=section_registry)
+        self.sidebar = Sidebar()
         self.sidebar.repo_picker_requested.connect(self._on_select_repo)
-        self.sidebar.section_changed.connect(self._on_section_changed)
         self.sidebar.combo_repo_selected.connect(self._on_combo_repo_selected)
-        self.sidebar.recent_file_activated.connect(self._on_recent_file_activated)
 
         # Built from the registry uniformly for built-in and plugin-provided
         # sections alike — built-in page_factories close over an
@@ -88,18 +82,29 @@ class MainWindow(QMainWindow):
         self.pages[builtin_sections.REPO_GIT_STATUS].sync_started.connect(self._on_sync_started)
         self.pages[builtin_sections.REPO_GIT_STATUS].sync_finished.connect(self._on_sync_finished)
         self.pages[builtin_sections.REPO_GIT_STATUS].sync_failed.connect(self._on_sync_failed)
-        self.pages[builtin_sections.REPO_BROWSER].recent_files_changed.connect(self.sidebar.set_recent_files)
+
+        # Sidebar-backed sections (Repo/About) share one content_stack next to
+        # the sidebar; standalone sections (Explorer/Submit) get their own
+        # full-width page directly in view_stack, no sidebar — see
+        # SectionSpec.standalone.
+        ordered_specs = section_registry.ordered()
+        sidebar_specs = [spec for spec in ordered_specs if not spec.standalone]
+        standalone_specs = [spec for spec in ordered_specs if spec.standalone]
 
         self.content_stack = QStackedWidget()
-        self._section_order = [spec.key for spec in section_registry.ordered()]
-        for section in self._section_order:
-            self.content_stack.addWidget(self.pages[section])
+        self._section_order = [spec.key for spec in sidebar_specs]
+        for key in self._section_order:
+            self.content_stack.addWidget(self.pages[key])
         self.content_stack.currentChanged.connect(self._on_stack_current_changed)
 
-        self.menu_bar = MenuBar()
+        self.tab_bar = TopTabBar(section_registry=section_registry)
+        self.tab_bar.tab_changed.connect(self._on_tab_changed)
+
+        self.menu_bar = MenuBar(tab_bar=self.tab_bar)
         self.menu_bar.login_requested.connect(self._on_login_requested)
         self.menu_bar.logout_requested.connect(self._on_logout_requested)
         self.menu_bar.update_requested.connect(self._on_update_and_restart)
+        self.menu_bar.settings_requested.connect(self._on_settings_requested)
 
         repo_view = QWidget()
         repo_view_layout = QHBoxLayout(repo_view)
@@ -111,11 +116,11 @@ class MainWindow(QMainWindow):
         self.settings_view = SettingsView(settings_tab_registry=settings_tab_registry)
 
         self.view_stack = QStackedWidget()
-        self.view_stack.addWidget(repo_view)  # index 0
-        self.view_stack.addWidget(self.settings_view)  # index 1
-
-        self.view_switcher = ViewSwitcher()
-        self.view_switcher.view_changed.connect(self._on_view_changed)
+        self._repo_view_index = self.view_stack.addWidget(repo_view)
+        self._standalone_view_index = {
+            spec.key: self.view_stack.addWidget(self.pages[spec.key]) for spec in standalone_specs
+        }
+        self._settings_view_index = self.view_stack.addWidget(self.settings_view)
 
         central = QWidget()
         central_layout = QVBoxLayout(central)
@@ -123,7 +128,6 @@ class MainWindow(QMainWindow):
         central_layout.setSpacing(0)
         central_layout.addWidget(self.menu_bar)
         central_layout.addWidget(self.view_stack, stretch=1)
-        central_layout.addWidget(self.view_switcher)
         self.setCentralWidget(central)
 
         self.resize(1100, 700)
@@ -134,8 +138,8 @@ class MainWindow(QMainWindow):
 
         if not (self.local_config_store.github_username and self.token_store.load_token()):
             self._show_launch_dialog()
-            # LaunchDialog may have changed workspace root, active repo, or
-            # login state — re-sync everything it could have touched.
+            # LaunchDialog may have changed active repo or login state —
+            # re-sync everything it could have touched.
             self._restore_active_repo()
             self._apply_to_current_page()
             self.sidebar.refresh_repo_choices(self.store)
@@ -156,21 +160,34 @@ class MainWindow(QMainWindow):
         )
         dialog.exec()
 
-    # -- view switching (Repo / Setting) -------------------------------------
+    # -- top tab switching (Repo / Explorer / Submit / About / Setting) -----
 
-    def _on_view_changed(self, view: str) -> None:
-        if view == REPO:
-            self.view_stack.setCurrentIndex(0)
-            # Mirrors what used to run right after the modal Settings dialog
-            # closed — there's no single "closed" moment anymore, so this
-            # runs every time the user switches back to Repo instead.
-            self._apply_to_current_page()
-            self.sidebar.refresh_repo_choices(self.store)
-            if self._active_repo is not None:
-                self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
-        elif view == SETTING:
-            self.view_stack.setCurrentIndex(1)
-            self.settings_view.refresh_current_tab()
+    def _on_tab_changed(self, key: str) -> None:
+        # TopTabBar and the Setting button are deliberately two separate
+        # exclusive groups (Setting isn't repo-scoped) — keep them visually
+        # in sync by hand instead.
+        self.menu_bar.setting_button.setChecked(False)
+        if key in self._standalone_view_index:
+            self.view_stack.setCurrentIndex(self._standalone_view_index[key])
+        else:
+            was_setting = self.view_stack.currentIndex() == self._settings_view_index
+            self.view_stack.setCurrentIndex(self._repo_view_index)
+            self.content_stack.setCurrentIndex(self._section_order.index(key))
+            if was_setting:
+                # Mirrors what used to run right after the modal Settings
+                # dialog closed — there's no single "closed" moment anymore,
+                # so this runs every time the user switches back from
+                # Setting instead.
+                self.sidebar.refresh_repo_choices(self.store)
+                if self._active_repo is not None:
+                    self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
+        self._apply_to_current_page()
+
+    def _on_settings_requested(self) -> None:
+        self.tab_bar.uncheck_all()
+        self.menu_bar.setting_button.setChecked(True)
+        self.view_stack.setCurrentIndex(self._settings_view_index)
+        self.settings_view.refresh_current_tab()
 
     # -- active repo -----------------------------------------------------
 
@@ -189,34 +206,22 @@ class MainWindow(QMainWindow):
         self._active_repo = repo
         self.sidebar.set_active_labels(project.name, repo.name)
         self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(repo))
-        self.sidebar.set_recent_files(self._recent_files_for_active_repo())
 
-    def _recent_files_for_active_repo(self) -> list[Path]:
-        if self._active_repo is None:
-            return []
-        return [Path(p) for p in self.local_config_store.get_recent_files(self._active_repo.id)]
-
-    def _on_recent_file_activated(self, path: Path) -> None:
-        # Re-opening a file from Recent Files is still "opened through
-        # UkoreHub" (just via the sidebar instead of the Repo Browser table),
-        # so it goes through the same opener registry for consistency.
-        if self._active_repo is not None:
-            opener = self._file_opener_registry.find_opener(path, self._active_repo.enabled_addon_ids)
-            if opener is not None and opener(path, self._active_repo):
-                return
-        open_with_default_app(path)
+    def _current_page(self):
+        index = self.view_stack.currentIndex()
+        if index == self._settings_view_index:
+            return None
+        if index == self._repo_view_index:
+            return self.content_stack.currentWidget()
+        return self.view_stack.currentWidget()  # a standalone section's page
 
     def _apply_to_current_page(self) -> None:
-        page = self.content_stack.currentWidget()
+        page = self._current_page()
         if page is not None:
             page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
 
     def _on_stack_current_changed(self, _index: int) -> None:
         self._apply_to_current_page()
-
-    def _on_section_changed(self, section: str) -> None:
-        index = self._section_order.index(section)
-        self.content_stack.setCurrentIndex(index)
 
     def _on_select_repo(self) -> None:
         dialog = RepoPickerDialog(
@@ -238,7 +243,6 @@ class MainWindow(QMainWindow):
         self._active_repo = self.store.get_repo(project_id, repo_id)
         self.sidebar.set_active_labels(self._active_project.name, self._active_repo.name)
         self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
-        self.sidebar.set_recent_files(self._recent_files_for_active_repo())
         self._apply_to_current_page()
         self._fire_repo_selected()
         self._start_auto_sync()

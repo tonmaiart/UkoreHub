@@ -25,6 +25,21 @@ tests with zero mocking. Preserve this pattern in new code.
 are the authoritative, current file listings. This skill is architecture
 and *why*, not a file-by-file index; the READMEs are the index.
 
+## Scoped editing
+
+A task about `core/` stays inside `core/` — don't open `interface/` or
+`add-on/` files unless the change genuinely requires updating a call site
+there too (e.g. a `core/store.py` field rename that `interface/` reads).
+Within `core/` itself, `github/` and `extensibility/` are independent
+clusters (see their own READMEs) — a task about one doesn't need the other
+opened. `data/*.json` are the files these stores read/write, not code;
+don't open them to "see the data" unless the task specifically needs a
+concrete example (and even then, prefer `data/programs.json`/
+`data/system_config.json` which are small, over `data/projects.json` which
+can grow large with many repos/thumbnails). Never open anything under
+`projects/` (the gitignored workspace root of real cloned repos) — see root
+`CLAUDE.md`.
+
 ## Data model (`core/models.py`)
 
 Plain dataclasses, no behavior — `Project` (has many `Repo`), `Repo`,

@@ -3,7 +3,7 @@
   "addons": [
     {
       "addon_id": "advanced_skeleton",
-      "icon_filename": null,
+      "icon_filename": "advanced_skeleton.jpg",
       "description": "AdvancedSkeleton rigging toolset for Maya. Contributes its maya-scripts folder to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
       "required_program_ids": [
         "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
@@ -19,7 +19,7 @@
     },
     {
       "addon_id": "maya_ngskin",
-      "icon_filename": null,
+      "icon_filename": "maya_ngskin.jpg",
       "description": "ngSkinTools2 for Maya. Contributes its maya-scripts folder plus a per-Maya-version maya-plug-ins/ folder to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
       "required_program_ids": [
         "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
@@ -35,8 +35,24 @@
     },
     {
       "addon_id": "mgear",
-      "icon_filename": null,
+      "icon_filename": "mgear.jpg",
       "description": "mGear rigging framework for Maya. Contributes its maya-modules and mgear-custom-component folders to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    },
+    {
+      "addon_id": "dreamwall_picker",
+      "icon_filename": "dreamwall_picker.jpg",
+      "description": "DreamWall Animation's DwPicker for Maya, launched from the UkoreMenu in MayaToolkit's Maya menu. Contributes its maya-scripts folder to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    },
+    {
+      "addon_id": "studio_library",
+      "icon_filename": "studio_library.jpg",
+      "description": "Studio Library for Maya (pose/animation library). Contributes its maya-scripts folder to the Maya Launcher env bridge \u2014 does not launch Maya itself. Launched via UkoreMenu's studio_library() in MayaToolkit.",
       "required_program_ids": [
         "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
       ]

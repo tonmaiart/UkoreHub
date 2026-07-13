@@ -2,7 +2,11 @@
 
 Non-UI logic layer for UkoreHub — no PySide6/Qt imports here. Everything the
 `interface/` layer depends on for data and git operations lives in this
-folder. Two subfolders group related files by function — check their own
+folder.
+
+**Working here:** stay inside `core/` unless the change requires updating
+an `interface/` call site — don't open `interface/` or `add-on/` files
+otherwise. Two subfolders group related files by function — check their own
 README first if you're working in either:
 
 - **`github/`** — everything that talks to GitHub (OAuth device flow, REST

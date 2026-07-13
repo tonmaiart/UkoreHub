@@ -8,11 +8,13 @@ from PySide6.QtCore import QDir, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileSystemModel,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -22,11 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.git_service import GitService
-from core.os_utils import open_in_file_explorer, open_with_default_app
+from core.os_utils import open_with_default_app
 from interface.repo_browser.file_table_proxy import FileTableFilterProxy
 from interface.repo_browser.path_commit_history_panel import PathCommitHistoryPanel
 
 COLUMN_COUNT = 5
+OPENING_POPUP_DURATION_MS = 3000
 
 
 class RepoBrowserWidget(QWidget):
@@ -37,6 +40,7 @@ class RepoBrowserWidget(QWidget):
         self._open_file = open_file or open_with_default_app
         self._root: Path | None = None
         self._current_path: Path | None = None
+        self._opening_popup: QMessageBox | None = None
 
         self.fs_model = QFileSystemModel()
         self.fs_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
@@ -54,8 +58,6 @@ class RepoBrowserWidget(QWidget):
         self.search_timer.setInterval(200)
         self.search_timer.timeout.connect(self._apply_search)
         self.search_edit.textChanged.connect(lambda _t: self.search_timer.start())
-        self.open_folder_button = QPushButton("Open Folder")
-        self.open_folder_button.clicked.connect(self._on_open_folder)
 
         nav_row = QHBoxLayout()
         nav_row.addWidget(self.back_button)
@@ -63,8 +65,11 @@ class RepoBrowserWidget(QWidget):
 
         bottom_row = QHBoxLayout()
         bottom_row.addWidget(self.search_edit, stretch=1)
-        bottom_row.addWidget(self.open_folder_button)
 
+        # "Folder Navigator": the COLUMN_COUNT (5) side-by-side drill-down
+        # lists above the file table — one column per folder depth, each
+        # narrowing the next (a Miller-column browser, like macOS Finder's
+        # column view). Kept spacing tight so more entries fit per column.
         self.columns: list[QListWidget] = []
         self.column_filters: list[QLineEdit] = []
         columns_row = QHBoxLayout()
@@ -76,12 +81,32 @@ class RepoBrowserWidget(QWidget):
             filter_edit.setPlaceholderText("Filter...")
             filter_edit.textChanged.connect(lambda _t, idx=i: self._filter_column(idx))
             list_widget = QListWidget()
+            list_widget.setSpacing(0)
+            list_widget.setStyleSheet("QListWidget::item { padding: 1px 4px; }")
             list_widget.itemClicked.connect(lambda item, idx=i: self._on_column_item_clicked(idx, item))
             column_layout.addWidget(filter_edit)
             column_layout.addWidget(list_widget)
             columns_row.addWidget(column_widget)
             self.columns.append(list_widget)
             self.column_filters.append(filter_edit)
+
+        folder_navigator_group = QGroupBox("Folder Navigator")
+        folder_navigator_layout = QVBoxLayout(folder_navigator_group)
+        folder_navigator_layout.addLayout(columns_row)
+
+        # Recent Files: clicking an entry only changes the current path (like
+        # clicking a Folder Navigator column) — it never opens the file. Real
+        # opening still only happens via double-click in the file table below.
+        self.recent_files_list = QListWidget()
+        self.recent_files_list.itemClicked.connect(self._on_recent_file_clicked)
+        recent_files_group = QGroupBox("Recent Files")
+        recent_files_group.setFixedWidth(200)
+        recent_files_layout = QVBoxLayout(recent_files_group)
+        recent_files_layout.addWidget(self.recent_files_list)
+
+        navigator_row = QHBoxLayout()
+        navigator_row.addWidget(folder_navigator_group, stretch=1)
+        navigator_row.addWidget(recent_files_group)
 
         self.table = QTableView()
         self.table.setModel(self.proxy)
@@ -103,13 +128,26 @@ class RepoBrowserWidget(QWidget):
         table_row.addWidget(self.commit_panel)
 
         browser_column = QVBoxLayout()
-        browser_column.addLayout(columns_row, stretch=0)
+        browser_column.addLayout(navigator_row, stretch=0)
         browser_column.addLayout(nav_row, stretch=0)
         browser_column.addLayout(table_row, stretch=1)
         browser_column.addLayout(bottom_row, stretch=0)
 
         layout = QVBoxLayout(self)
         layout.addLayout(browser_column)
+
+    def set_recent_files(self, paths: list[Path]) -> None:
+        self.recent_files_list.clear()
+        for path in paths:
+            item = QListWidgetItem(path.name)
+            item.setData(Qt.UserRole, str(path))
+            item.setToolTip(str(path))
+            self.recent_files_list.addItem(item)
+
+    def _on_recent_file_clicked(self, item) -> None:
+        # Only changes the current path — see the class-level note above.
+        path = Path(item.data(Qt.UserRole))
+        self._navigate_to(path.parent)
 
     def set_root(self, path: Path) -> None:
         path = Path(path)
@@ -155,10 +193,6 @@ class RepoBrowserWidget(QWidget):
         if self._current_path is None or self._root is None or self._current_path == self._root:
             return
         self._navigate_to(self._current_path.parent)
-
-    def _on_open_folder(self) -> None:
-        if self._current_path is not None:
-            open_in_file_explorer(self._current_path)
 
     def _on_breadcrumb_entered(self) -> None:
         typed_path = Path(self.breadcrumb.text().strip())
@@ -231,8 +265,35 @@ class RepoBrowserWidget(QWidget):
         if self.fs_model.isDir(source_index):
             self._navigate_to(path)
         else:
+            self._show_opening_popup(path)
             self._open_file(path)
             self.file_opened.emit(path)
+
+    def _show_opening_popup(self, path: Path) -> None:
+        # Non-modal and self-closing — just a quick acknowledgement that the
+        # double-click registered and the app is launching, not something
+        # the user has to dismiss. Kept as an instance attribute (rather
+        # than a bare local) and explicitly deleteLater()'d so a rapid
+        # double-click on another file can't leave a stale popup lingering.
+        if self._opening_popup is not None:
+            self._opening_popup.close()
+            self._opening_popup.deleteLater()
+            self._opening_popup = None
+
+        popup = QMessageBox(self)
+        popup.setWindowTitle("Opening")
+        popup.setText(f"Opening '{path.name}'...")
+        popup.setStandardButtons(QMessageBox.NoButton)
+        popup.setModal(False)
+        popup.show()
+        self._opening_popup = popup
+        QTimer.singleShot(OPENING_POPUP_DURATION_MS, lambda: self._close_opening_popup(popup))
+
+    def _close_opening_popup(self, popup: QMessageBox) -> None:
+        popup.close()
+        popup.deleteLater()
+        if self._opening_popup is popup:
+            self._opening_popup = None
 
     def _on_table_context_menu(self, pos) -> None:
         proxy_index = self.table.indexAt(pos)

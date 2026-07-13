@@ -12,7 +12,6 @@ import re
 import json
 import maya.mel as mel
 from importlib import reload
-import sys
 from tmlib.core import File
 from tmlib.module.PySide import QtWidgets
 
@@ -373,13 +372,6 @@ def run_advance_face():
     )
 
 def studio_library():
-
-        
-    if not os.path.exists(r'G:\My Drive\Mellowstar\dev\studiolibrary-2.21.1\src'):
-        raise IOError(r'The source path "G:\My Drive\Mellowstar\dev\studiolibrary-2.21.1\src" does not exist!')
-        
-    if r'C:\Users\natch\Downloads\Compressed\studiolibrary-2.21.1\src' not in sys.path:
-        sys.path.insert(0, r'G:\My Drive\Mellowstar\dev\studiolibrary-2.21.1\src')
-        
     import studiolibrary
+
     studiolibrary.main()

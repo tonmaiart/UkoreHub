@@ -2,54 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QScrollArea,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from core.git_service import GitService
-from interface.path_commit_history_worker import CommitHistoryEntry, PathCommitHistoryWorker
-
-AVATAR_SIZE = 32
-
-
-class CommitCard(QFrame):
-    def __init__(self, entry: CommitHistoryEntry, parent=None):
-        super().__init__(parent)
-        self.setObjectName("commitCard")
-        self.setFrameShape(QFrame.StyledPanel)
-
-        avatar_label = QLabel()
-        avatar_label.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
-        if entry.avatar_bytes:
-            pixmap = QPixmap()
-            pixmap.loadFromData(entry.avatar_bytes)
-            avatar_label.setPixmap(
-                pixmap.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            )
-        else:
-            avatar_label.setText("\U0001F464")
-            avatar_label.setAlignment(Qt.AlignCenter)
-
-        header_label = QLabel(f"<b>{entry.author_display}</b>  ·  {entry.date}")
-        header_label.setWordWrap(True)
-        message_label = QLabel(entry.message)
-        message_label.setWordWrap(True)
-
-        text_layout = QVBoxLayout()
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.addWidget(header_label)
-        text_layout.addWidget(message_label)
-
-        row_layout = QHBoxLayout(self)
-        row_layout.addWidget(avatar_label, alignment=Qt.AlignTop)
-        row_layout.addLayout(text_layout, stretch=1)
+from interface.commit_history import CommitCard, CommitHistoryEntry
+from interface.path_commit_history_worker import PathCommitHistoryWorker
 
 
 class PathCommitHistoryPanel(QWidget):

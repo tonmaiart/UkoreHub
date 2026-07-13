@@ -40,7 +40,7 @@ class ProjectDataEditorPage(QWidget):
         self.addon_catalog = addon_catalog
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Project / Repo", "Status", "Last Synced"])
+        self.tree.setHeaderLabels(["Project / Repo", "Repo URL"])
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
 
         add_project_btn = QPushButton("Add Project")
@@ -64,7 +64,7 @@ class ProjectDataEditorPage(QWidget):
         self.refresh_tree()
 
     def refresh_tree(self) -> None:
-        populate_project_tree(self.tree, self.store)
+        populate_project_tree(self.tree, self.store, repo_extra_columns=lambda repo: [repo.git_url])
 
     def _selected_project_id(self) -> str | None:
         items = self.tree.selectedItems()

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from core.extensibility.file_opener import FileOpenerRegistry
@@ -15,8 +14,6 @@ from interface.repo_browser.browser_widget import RepoBrowserWidget
 
 
 class RepoBrowserPage(QWidget):
-    recent_files_changed = Signal(list)
-
     def __init__(
         self,
         parent=None,
@@ -61,7 +58,7 @@ class RepoBrowserPage(QWidget):
         if self._active_repo is None:
             return
         updated = self.local_config_store.add_recent_file(self._active_repo.id, str(path))
-        self.recent_files_changed.emit([Path(p) for p in updated])
+        self.browser.set_recent_files([Path(p) for p in updated])
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
         self._active_repo = repo
@@ -71,6 +68,7 @@ class RepoBrowserPage(QWidget):
             self.not_cloned_label.setVisible(False)
             self.browser.setVisible(False)
             return
+        self.browser.set_recent_files([Path(p) for p in self.local_config_store.get_recent_files(repo.id)])
         abs_path = resolve_repo_path(workspace_root, project.name, repo.name)
         if not (abs_path / ".git").exists():
             self._last_repo_id = None

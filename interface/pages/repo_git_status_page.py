@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -21,6 +23,7 @@ from core.models import Project, Repo, RepoStatus
 from core.paths import resolve_repo_path
 from core.store import LocalConfigStore, MetadataStore
 from interface.commit_dialog import CommitDialog
+from interface.commit_history import CommitCard
 from interface.commit_log_worker import CommitLogWorker
 from interface.conflict_dialog import ConflictResolutionDialog
 from interface.git_stream_worker import GitStreamWorker
@@ -52,15 +55,32 @@ class RepoGitStatusPage(QWidget):
         self._commit_log_offset = 0
         self._pending_commit_message = ""
         self._pending_amend = False
+        self._last_status: RepoStatus | None = None
+        # Shared across every "Load More" click and repo switch, so an
+        # author's avatar is only ever downloaded once per session — same
+        # caching approach as PathCommitHistoryPanel on the Explorer tab.
+        self._commit_avatar_cache: dict[str, bytes | None] = {}
 
         self.empty_label = QLabel("Select a repo to see this information.")
 
-        self.commit_log_list = QListWidget()
+        # Same CommitCard template as the Explorer tab's per-path commit
+        # history panel — avatar, author, human-readable date, message.
+        self._commit_log_status_label = QLabel("")
+        self._commit_log_status_label.setWordWrap(True)
+        self._commit_cards_container = QWidget()
+        self._commit_cards_layout = QVBoxLayout(self._commit_cards_container)
+        self._commit_cards_layout.addStretch()
+        commit_log_scroll = QScrollArea()
+        commit_log_scroll.setObjectName("commitHistoryScroll")
+        commit_log_scroll.setWidget(self._commit_cards_container)
+        commit_log_scroll.setWidgetResizable(True)
+        commit_log_scroll.setFrameShape(QFrame.NoFrame)
         self.load_more_button = QPushButton("Load More")
         self.load_more_button.clicked.connect(lambda: self._load_commit_log(reset=False))
         commit_log_group = QGroupBox("Commit History")
         commit_log_layout = QVBoxLayout(commit_log_group)
-        commit_log_layout.addWidget(self.commit_log_list)
+        commit_log_layout.addWidget(self._commit_log_status_label)
+        commit_log_layout.addWidget(commit_log_scroll)
         commit_log_layout.addWidget(self.load_more_button)
 
         lists_row = QHBoxLayout()
@@ -69,10 +89,15 @@ class RepoGitStatusPage(QWidget):
         self.modified_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.stage_button = QPushButton("Stage")
         self.stage_button.clicked.connect(self._on_stage_clicked)
+        self.revert_button = QPushButton("Revert")
+        self.revert_button.clicked.connect(self._on_revert_clicked)
+        modified_button_row = QHBoxLayout()
+        modified_button_row.addWidget(self.stage_button)
+        modified_button_row.addWidget(self.revert_button)
         modified_group = QGroupBox("Modified")
         modified_layout = QVBoxLayout(modified_group)
         modified_layout.addWidget(self.modified_list)
-        modified_layout.addWidget(self.stage_button)
+        modified_layout.addLayout(modified_button_row)
         lists_row.addWidget(modified_group)
 
         self.staged_list = QListWidget()
@@ -137,8 +162,8 @@ class RepoGitStatusPage(QWidget):
             return
         dest_path = self._dest_path()
         if not (dest_path / ".git").exists():
-            self.commit_log_list.clear()
-            self.commit_log_list.addItem("Repo not yet cloned — click Sync.")
+            self._clear_commit_cards()
+            self._commit_log_status_label.setText("Repo not yet cloned — click Sync.")
             self.load_more_button.setEnabled(False)
             self.modified_list.clear()
             self.staged_list.clear()
@@ -156,6 +181,7 @@ class RepoGitStatusPage(QWidget):
         self._status_worker.start()
 
     def _on_status_ready(self, status: RepoStatus) -> None:
+        self._last_status = status
         self.modified_list.clear()
         self.modified_list.addItems(sorted(status.untracked + status.modified))
         self.staged_list.clear()
@@ -172,23 +198,36 @@ class RepoGitStatusPage(QWidget):
         if self._commit_log_worker is not None and self._commit_log_worker.isRunning():
             return
         if reset:
-            self.commit_log_list.clear()
+            self._clear_commit_cards()
             self._commit_log_offset = 0
             self.load_more_button.setEnabled(True)
         dest_path = self._dest_path()
         self._commit_log_worker = CommitLogWorker(
-            self.git_service, dest_path, self._commit_log_offset, COMMIT_LOG_PAGE_SIZE
+            self.git_service,
+            dest_path,
+            self._commit_log_offset,
+            COMMIT_LOG_PAGE_SIZE,
+            github_token=self.git_service.get_github_token(),
+            avatar_cache=self._commit_avatar_cache,
         )
         self._commit_log_worker.log_ready.connect(self._on_commit_log_ready)
         self._commit_log_worker.start()
 
-    def _on_commit_log_ready(self, commits: list) -> None:
-        if not commits and self._commit_log_offset == 0:
-            self.commit_log_list.addItem("No commits yet.")
-        for commit in commits:
-            self.commit_log_list.addItem(f"{commit.hash[:10]}  {commit.date}  {commit.author}: {commit.message}")
-        self._commit_log_offset += len(commits)
-        self.load_more_button.setEnabled(len(commits) == COMMIT_LOG_PAGE_SIZE)
+    def _clear_commit_cards(self) -> None:
+        while self._commit_cards_layout.count() > 1:  # keep the trailing stretch
+            item = self._commit_cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._commit_log_status_label.setText("")
+
+    def _on_commit_log_ready(self, entries: list) -> None:
+        if not entries and self._commit_log_offset == 0:
+            self._commit_log_status_label.setText("No commits yet.")
+        for entry in entries:
+            self._commit_cards_layout.insertWidget(self._commit_cards_layout.count() - 1, CommitCard(entry))
+        self._commit_log_offset += len(entries)
+        self.load_more_button.setEnabled(len(entries) == COMMIT_LOG_PAGE_SIZE)
 
     # -- stage ---------------------------------------------------------------
 
@@ -200,6 +239,29 @@ class RepoGitStatusPage(QWidget):
             self.git_service.stage_paths(self._dest_path(), selected)
         except GitOperationError as exc:
             QMessageBox.warning(self, "Stage Failed", str(exc))
+            return
+        self.refresh_status()
+
+    def _on_revert_clicked(self) -> None:
+        selected = [item.text() for item in self.modified_list.selectedItems()]
+        if not selected or self._repo is None:
+            return
+        confirm = QMessageBox.warning(
+            self,
+            "Revert",
+            f"Revert {len(selected)} selected file(s)? This discards their changes and cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        untracked = set(self._last_status.untracked) if self._last_status is not None else set()
+        untracked_paths = [path for path in selected if path in untracked]
+        modified_paths = [path for path in selected if path not in untracked]
+        try:
+            self.git_service.revert_paths(self._dest_path(), modified_paths=modified_paths, untracked_paths=untracked_paths)
+        except GitOperationError as exc:
+            QMessageBox.warning(self, "Revert Failed", str(exc))
             return
         self.refresh_status()
 

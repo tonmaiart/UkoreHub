@@ -7,9 +7,9 @@ from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
 
 class SettingsView(QWidget):
     """Embedded (not modal) settings UI — a permanent second view inside
-    MainWindow's view_stack, switched to via ViewSwitcher. Every settings
-    page persists its own changes immediately, so there's no Save/Cancel
-    here."""
+    MainWindow's view_stack, switched to via the Setting button in
+    TopTabBar. Every settings page persists its own changes immediately, so
+    there's no Save/Cancel here."""
 
     def __init__(self, parent=None, *, settings_tab_registry: SettingsTabRegistry):
         super().__init__(parent)
