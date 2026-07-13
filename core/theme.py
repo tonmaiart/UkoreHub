@@ -103,12 +103,26 @@ def build_stylesheet(colors: ThemeColors) -> str:
         color: white;
         font-weight: bold;
     }}
-    QFrame#commitCard {{
+    QFrame#commitCard, QFrame#requirementCard, QFrame#pluginCard {{
         background-color: {colors.surface};
         border: 1px solid {colors.border};
         border-radius: 4px;
-        padding: 6px;
+        padding: 8px;
         margin-bottom: 4px;
+    }}
+    QLabel#commitHistoryTitle {{
+        font-size: 15px;
+        font-weight: bold;
+        padding-bottom: 4px;
+        border-bottom: 1px solid {colors.border};
+    }}
+    QScrollArea#commitHistoryScroll {{
+        background-color: {colors.surface_alt};
+        border: 1px solid {colors.border};
+        border-radius: 4px;
+    }}
+    QScrollArea#commitHistoryScroll > QWidget > QWidget {{
+        background-color: {colors.surface_alt};
     }}
     QLineEdit, QPlainTextEdit, QTextEdit {{
         background-color: {colors.surface_alt};

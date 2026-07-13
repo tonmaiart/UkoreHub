@@ -10,11 +10,19 @@
           "name": "KafkaProj",
           "git_url": "https://github.com/tonmaiart/KafkaProj.git",
           "local_path": "MerderaProject/KafkaProj",
-          "last_synced": "2026-07-11T09:40:56.117704+00:00",
-          "status": "error",
+          "last_synced": "2026-07-13T06:12:14.066430+00:00",
+          "status": "cloned",
           "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
           "required_program_ids": [
-            "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+            "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0",
+            "ab07c675-48ef-4f04-8c57-876dced7ddf1"
+          ],
+          "enabled_addon_ids": [
+            "advanced_skeleton",
+            "maya_launcher",
+            "maya_ngskin",
+            "maya_toolkit",
+            "mgear"
           ]
         },
         {
@@ -25,7 +33,8 @@
           "last_synced": null,
           "status": "not_cloned",
           "thumbnail_filename": null,
-          "required_program_ids": []
+          "required_program_ids": [],
+          "enabled_addon_ids": []
         },
         {
           "id": "f16f1268-b444-4006-9c35-764e51790aa0",
@@ -35,7 +44,8 @@
           "last_synced": null,
           "status": "not_cloned",
           "thumbnail_filename": null,
-          "required_program_ids": []
+          "required_program_ids": [],
+          "enabled_addon_ids": []
         }
       ]
     }

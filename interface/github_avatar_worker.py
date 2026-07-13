@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 
-from core.github_auth import fetch_avatar_bytes
+from core.github.auth import fetch_avatar_bytes
 
 
 class GitHubAvatarWorker(QThread):

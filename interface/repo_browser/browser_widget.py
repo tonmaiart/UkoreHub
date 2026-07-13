@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Callable
 
-from PySide6.QtCore import QDir, Qt, QTimer
+from PySide6.QtCore import QDir, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileSystemModel,
@@ -29,8 +30,11 @@ COLUMN_COUNT = 5
 
 
 class RepoBrowserWidget(QWidget):
-    def __init__(self, parent=None, *, git_service: GitService):
+    file_opened = Signal(Path)
+
+    def __init__(self, parent=None, *, git_service: GitService, open_file: Callable[[Path], None] | None = None):
         super().__init__(parent)
+        self._open_file = open_file or open_with_default_app
         self._root: Path | None = None
         self._current_path: Path | None = None
 
@@ -92,17 +96,20 @@ class RepoBrowserWidget(QWidget):
         self.table.doubleClicked.connect(self._on_table_double_clicked)
         self.table.selectionModel().currentRowChanged.connect(self._on_table_selection_changed)
 
+        self.commit_panel = PathCommitHistoryPanel(git_service)
+
+        table_row = QHBoxLayout()
+        table_row.addWidget(self.table, stretch=1)
+        table_row.addWidget(self.commit_panel)
+
         browser_column = QVBoxLayout()
         browser_column.addLayout(columns_row, stretch=0)
         browser_column.addLayout(nav_row, stretch=0)
-        browser_column.addWidget(self.table, stretch=1)
+        browser_column.addLayout(table_row, stretch=1)
         browser_column.addLayout(bottom_row, stretch=0)
 
-        self.commit_panel = PathCommitHistoryPanel(git_service)
-
-        layout = QHBoxLayout(self)
-        layout.addLayout(browser_column, stretch=1)
-        layout.addWidget(self.commit_panel)
+        layout = QVBoxLayout(self)
+        layout.addLayout(browser_column)
 
     def set_root(self, path: Path) -> None:
         path = Path(path)
@@ -224,7 +231,8 @@ class RepoBrowserWidget(QWidget):
         if self.fs_model.isDir(source_index):
             self._navigate_to(path)
         else:
-            open_with_default_app(path)
+            self._open_file(path)
+            self.file_opened.emit(path)
 
     def _on_table_context_menu(self, pos) -> None:
         proxy_index = self.table.indexAt(pos)

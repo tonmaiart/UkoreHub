@@ -3,14 +3,16 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QListWidget, QVBoxLayout, QWidget
 
+from core.store import LocalConfigStore
 from core.theme import get_theme, list_theme_names
 from interface.theme_apply import apply_theme
 
 
 class ColorThemePage(QWidget):
-    def __init__(self, parent=None, *, current_theme: str):
+    def __init__(self, parent=None, *, local_config_store: LocalConfigStore):
         super().__init__(parent)
-        self._initial_theme = current_theme
+        self._local_config_store = local_config_store
+        current_theme = local_config_store.theme
 
         self.list_widget = QListWidget()
         self.list_widget.addItems(list_theme_names())
@@ -49,7 +51,4 @@ class ColorThemePage(QWidget):
         app = QApplication.instance()
         if app:
             apply_theme(app, theme_name)
-
-    def selected_theme_name(self) -> str:
-        item = self.list_widget.currentItem()
-        return item.text() if item else self._initial_theme
+        self._local_config_store.set_theme(theme_name)

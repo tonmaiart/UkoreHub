@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.exceptions import GitOperationError, UkoreHubError
+from core.extensibility.hooks import GitHookContext
 from core.git_service import GitService
 from core.models import Project, Repo, RepoStatus
 from core.paths import resolve_repo_path
@@ -128,6 +129,9 @@ class RepoGitStatusPage(QWidget):
     def _dest_path(self):
         return resolve_repo_path(self._workspace_root, self._project.name, self._repo.name)
 
+    def _hook_context(self, dest_path) -> GitHookContext:
+        return GitHookContext(project=self._project, repo=self._repo, repo_path=dest_path)
+
     def refresh_status(self) -> None:
         if self._repo is None or self._workspace_root is None:
             return
@@ -210,7 +214,9 @@ class RepoGitStatusPage(QWidget):
         self.log_panel.append_line(f"--- Syncing '{self._repo.name}' ---")
         self.sync_started.emit()
 
-        self._git_worker = GitWorker(self.git_service, self._repo.git_url, dest_path)
+        self._git_worker = GitWorker(
+            self.git_service, self._repo.git_url, dest_path, context=self._hook_context(dest_path)
+        )
         self._git_worker.output.connect(self.log_panel.append_line)
         self._git_worker.finished_ok.connect(self._on_sync_finished)
         self._git_worker.failed.connect(self._on_sync_failed)
@@ -251,7 +257,12 @@ class RepoGitStatusPage(QWidget):
 
         dest_path = self._dest_path()
         try:
-            self.git_service.commit(dest_path, self._pending_commit_message, amend=self._pending_amend)
+            self.git_service.commit(
+                dest_path,
+                self._pending_commit_message,
+                amend=self._pending_amend,
+                context=self._hook_context(dest_path),
+            )
         except GitOperationError as exc:
             QMessageBox.warning(self, "Commit Failed", str(exc))
             return
@@ -268,7 +279,9 @@ class RepoGitStatusPage(QWidget):
         self.log_panel.append_line("--- Pulling ---")
         self._set_workflow_running(True)
         self._stream_worker = GitStreamWorker(
-            lambda on_output: self.git_service.pull(dest_path, on_output=on_output)
+            lambda on_output: self.git_service.pull(
+                dest_path, on_output=on_output, context=self._hook_context(dest_path)
+            )
         )
         self._stream_worker.output.connect(self.log_panel.append_line)
         self._stream_worker.finished_ok.connect(self._on_pull_step_finished)
@@ -309,7 +322,9 @@ class RepoGitStatusPage(QWidget):
         dest_path = self._dest_path()
         self.log_panel.append_line("--- Pushing ---")
         self._stream_worker = GitStreamWorker(
-            lambda on_output: self.git_service.push(dest_path, on_output=on_output)
+            lambda on_output: self.git_service.push(
+                dest_path, on_output=on_output, context=self._hook_context(dest_path)
+            )
         )
         self._stream_worker.output.connect(self.log_panel.append_line)
         self._stream_worker.finished_ok.connect(self._on_push_finished)

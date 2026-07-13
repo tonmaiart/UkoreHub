@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from core.exceptions import GitOperationError
+from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.models import CommitInfo, RepoStatus
 
 OutputCallback = Callable[[str], None] | None
@@ -33,9 +34,15 @@ def _non_interactive_env(extra: dict | None = None) -> dict:
 
 
 class GitService:
-    def __init__(self, git_executable: str | None = None):
+    def __init__(self, git_executable: str | None = None, hooks: HookRegistry | None = None):
         self.git_executable = git_executable or shutil.which("git") or "git"
         self._github_token: str | None = None
+        self._hooks = hooks
+
+    def _fire(self, event: GitHookEvent, context: GitHookContext | None) -> None:
+        if self._hooks is None or context is None:
+            return
+        self._hooks.fire(event, context)
 
     def set_github_token(self, token: str | None) -> None:
         """Token from the app's GitHub login (see interface/main_window.py),
@@ -100,20 +107,31 @@ class GitService:
                 f"git {' '.join(args)} failed with exit code {return_code}"
             )
 
-    def clone(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> None:
+    def clone(
+        self, git_url: str, dest: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
+    ) -> None:
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         auth_args, auth_env = self._github_auth_args_and_env(git_url)
-        # --progress forces git to emit its progress meter even though stdout
-        # is a pipe, not a terminal (git suppresses it by default otherwise).
-        self._run_streaming(
-            [*auth_args, "clone", "--progress", git_url, str(dest)],
-            cwd=dest.parent,
-            on_output=on_output,
-            extra_env=auth_env,
-        )
+        self._fire(GitHookEvent.BEFORE_CLONE, context)
+        try:
+            # --progress forces git to emit its progress meter even though
+            # stdout is a pipe, not a terminal (git suppresses it by default
+            # otherwise).
+            self._run_streaming(
+                [*auth_args, "clone", "--progress", git_url, str(dest)],
+                cwd=dest.parent,
+                on_output=on_output,
+                extra_env=auth_env,
+            )
+        except GitOperationError:
+            self._fire(GitHookEvent.CLONE_FAILED, context)
+            raise
+        self._fire(GitHookEvent.AFTER_CLONE, context)
 
-    def pull(self, local_path: Path, on_output: OutputCallback = None) -> None:
+    def pull(
+        self, local_path: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
+    ) -> None:
         # Read the remote URL from the repo itself so the same github.com
         # credential check applies whether it was cloned via HTTPS or SSH.
         try:
@@ -121,44 +139,63 @@ class GitService:
         except GitOperationError:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
-        # --no-rebase: explicitly request a merge (not rebase) reconciliation.
-        # Without this, modern git refuses to pull at all on diverged branches
-        # ("Need to specify how to reconcile divergent branches") unless the
-        # user has a global pull.rebase/pull.ff default configured — we can't
-        # rely on that being set, and our conflict-resolution workflow below
-        # is built around a real merge commit, not a rebase.
-        self._run_streaming(
-            [*auth_args, "pull", "--no-rebase", "--progress"],
-            cwd=Path(local_path),
-            on_output=on_output,
-            extra_env=auth_env,
-        )
+        self._fire(GitHookEvent.BEFORE_PULL, context)
+        try:
+            # --no-rebase: explicitly request a merge (not rebase)
+            # reconciliation. Without this, modern git refuses to pull at all
+            # on diverged branches ("Need to specify how to reconcile
+            # divergent branches") unless the user has a global
+            # pull.rebase/pull.ff default configured — we can't rely on that
+            # being set, and our conflict-resolution workflow below is built
+            # around a real merge commit, not a rebase.
+            self._run_streaming(
+                [*auth_args, "pull", "--no-rebase", "--progress"],
+                cwd=Path(local_path),
+                on_output=on_output,
+                extra_env=auth_env,
+            )
+        except GitOperationError:
+            self._fire(GitHookEvent.PULL_FAILED, context)
+            raise
+        self._fire(GitHookEvent.AFTER_PULL, context)
 
-    def open_or_sync(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> str:
+    def open_or_sync(
+        self, git_url: str, dest: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
+    ) -> str:
         dest = Path(dest)
         if not self.is_cloned(dest):
-            self.clone(git_url, dest, on_output=on_output)
+            self.clone(git_url, dest, on_output=on_output, context=context)
             return "cloned"
-        self.pull(dest, on_output=on_output)
+        self.pull(dest, on_output=on_output, context=context)
         return "pulled"
 
-    def push(self, local_path: Path, on_output: OutputCallback = None) -> None:
+    def push(
+        self, local_path: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
+    ) -> None:
         local_path = Path(local_path)
         try:
             remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=local_path).strip()
         except GitOperationError:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
-        self._run_streaming(
-            [*auth_args, "push", "--progress"], cwd=local_path, on_output=on_output, extra_env=auth_env
-        )
+        self._fire(GitHookEvent.BEFORE_PUSH, context)
+        try:
+            self._run_streaming(
+                [*auth_args, "push", "--progress"], cwd=local_path, on_output=on_output, extra_env=auth_env
+            )
+        except GitOperationError:
+            self._fire(GitHookEvent.PUSH_FAILED, context)
+            raise
+        self._fire(GitHookEvent.AFTER_PUSH, context)
 
     def stage_paths(self, repo_path: Path, paths: list[str]) -> None:
         if not paths:
             return
         self._run_capture(["add", "--", *paths], cwd=Path(repo_path))
 
-    def commit(self, repo_path: Path, message: str, amend: bool = False) -> None:
+    def commit(
+        self, repo_path: Path, message: str, amend: bool = False, *, context: GitHookContext | None = None
+    ) -> None:
         args = ["commit"]
         message = message.strip()
         if amend:
@@ -169,7 +206,13 @@ class GitService:
                 args.append("--no-edit")
         else:
             args += ["-m", message]
-        self._run_capture(args, cwd=Path(repo_path))
+        self._fire(GitHookEvent.BEFORE_COMMIT, context)
+        try:
+            self._run_capture(args, cwd=Path(repo_path))
+        except GitOperationError:
+            self._fire(GitHookEvent.COMMIT_FAILED, context)
+            raise
+        self._fire(GitHookEvent.AFTER_COMMIT, context)
 
     def has_unresolved_merge(self, repo_path: Path) -> bool:
         return (Path(repo_path) / ".git" / "MERGE_HEAD").exists()

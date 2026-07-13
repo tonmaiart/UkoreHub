@@ -1,0 +1,68 @@
+{
+  "contributions": {
+    "advanced_skeleton": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\AdvancedSkeleton\\maya-scripts"
+        ]
+      }
+    },
+    "maya_ngskin": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-scripts"
+        ]
+      },
+      "MAYA_PLUG_IN_PATH": {
+        "2018": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2018"
+        ],
+        "2019": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2019"
+        ],
+        "2020": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2020"
+        ],
+        "2022": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2022"
+        ],
+        "2023": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2023"
+        ],
+        "2024": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2024"
+        ],
+        "2025": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2025"
+        ],
+        "2026": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaNgskin\\maya-plug-ins\\2026"
+        ]
+      }
+    },
+    "maya_toolkit": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaToolkit\\maya-scripts"
+        ]
+      },
+      "MAYA_PLUG_IN_PATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\MayaToolkit\\maya-plug-ins"
+        ]
+      }
+    },
+    "mgear": {
+      "MAYA_MODULE_PATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\mGear\\maya-modules"
+        ]
+      },
+      "MGEAR_SHIFTER_COMPONENT_PATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\add-on\\mGear\\mgear-custom-component"
+        ]
+      }
+    }
+  }
+}

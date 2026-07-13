@@ -45,18 +45,25 @@ class ProgramStore:
                 return program
         raise NotFoundError(f"Program not found: {program_id}")
 
-    def add_program(self, name: str, description: str = "") -> Program:
+    def add_program(self, name: str, description: str = "", version: str = "") -> Program:
         name = name.strip()
         if not name:
             raise ValidationError("Program name cannot be empty.")
         if any(p.name.lower() == name.lower() for p in self.programs):
             raise ValidationError(f"A program named '{name}' already exists.")
-        program = Program(id=str(uuid.uuid4()), name=name, description=description.strip())
+        program = Program(id=str(uuid.uuid4()), name=name, version=version.strip(), description=description.strip())
         self.programs.append(program)
         self.save()
         return program
 
-    def edit_program(self, program_id: str, *, name: str | None = None, description: str | None = None) -> None:
+    def edit_program(
+        self,
+        program_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        version: str | None = None,
+    ) -> None:
         program = self.get_program(program_id)
         if name is not None:
             name = name.strip()
@@ -67,6 +74,8 @@ class ProgramStore:
             program.name = name
         if description is not None:
             program.description = description.strip()
+        if version is not None:
+            program.version = version.strip()
         self.save()
 
     def delete_program(self, program_id: str) -> None:

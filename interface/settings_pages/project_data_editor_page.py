@@ -12,7 +12,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.addon_store import AddonMetadataStore
 from core.exceptions import UkoreHubError
+from core.extensibility.loader import DiscoveredPlugin
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 from interface.dialogs import ProjectDialog, RepoDialog
@@ -27,11 +29,15 @@ class ProjectDataEditorPage(QWidget):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         program_store: ProgramStore,
+        addon_store: AddonMetadataStore,
+        addon_catalog: list[DiscoveredPlugin],
     ):
         super().__init__(parent)
         self.store = store
         self.local_config_store = local_config_store
         self.program_store = program_store
+        self.addon_store = addon_store
+        self.addon_catalog = addon_catalog
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Project / Repo", "Status", "Last Synced"])
@@ -93,7 +99,9 @@ class ProjectDataEditorPage(QWidget):
                 self, "Add Repo", "Set and save a workspace folder in the Common tab first."
             )
             return
-        dialog = RepoDialog(self, program_store=self.program_store)
+        dialog = RepoDialog(
+            self, program_store=self.program_store, addon_catalog=self.addon_catalog, addon_store=self.addon_store
+        )
         if dialog.exec():
             try:
                 repo = self.store.add_repo(project_id, dialog.name(), dialog.git_url(), workspace_root)
@@ -103,6 +111,7 @@ class ProjectDataEditorPage(QWidget):
             if dialog.chosen_thumbnail_path():
                 self._save_thumbnail(project_id, repo.id, dialog.chosen_thumbnail_path())
             self.store.set_repo_requirements(project_id, repo.id, dialog.selected_program_ids())
+            self.store.set_repo_enabled_addons(project_id, repo.id, dialog.selected_addon_ids())
             self.refresh_tree()
 
     def _on_edit(self) -> None:
@@ -120,6 +129,9 @@ class ProjectDataEditorPage(QWidget):
                 thumbnail_path=self.store.resolve_thumbnail_path(repo),
                 program_store=self.program_store,
                 selected_program_ids=repo.required_program_ids,
+                addon_catalog=self.addon_catalog,
+                addon_store=self.addon_store,
+                selected_addon_ids=repo.enabled_addon_ids,
             )
             if dialog.exec():
                 try:
@@ -130,6 +142,7 @@ class ProjectDataEditorPage(QWidget):
                 if dialog.chosen_thumbnail_path():
                     self._save_thumbnail(project_id, repo_id, dialog.chosen_thumbnail_path())
                 self.store.set_repo_requirements(project_id, repo_id, dialog.selected_program_ids())
+                self.store.set_repo_enabled_addons(project_id, repo_id, dialog.selected_addon_ids())
                 self.refresh_tree()
         else:
             project = self.store.get_project(project_id)

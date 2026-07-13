@@ -49,7 +49,8 @@ class ProgramDatabasePage(QWidget):
     def refresh_list(self) -> None:
         self.list_widget.clear()
         for program in self.program_store.list_programs():
-            item = QListWidgetItem(program.name)
+            label = f"{program.name} (v{program.version})" if program.version else program.name
+            item = QListWidgetItem(label)
             item.setData(Qt.UserRole, program.id)
             icon_path = self.program_store.resolve_icon_path(program)
             if icon_path and icon_path.exists():
@@ -66,7 +67,7 @@ class ProgramDatabasePage(QWidget):
         dialog = ProgramDialog(self)
         if dialog.exec():
             try:
-                program = self.program_store.add_program(dialog.name(), dialog.description())
+                program = self.program_store.add_program(dialog.name(), dialog.description(), dialog.version())
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Add Program", str(exc))
                 return
@@ -83,12 +84,15 @@ class ProgramDatabasePage(QWidget):
         dialog = ProgramDialog(
             self,
             name=program.name,
+            version=program.version,
             description=program.description,
             icon_path=self.program_store.resolve_icon_path(program),
         )
         if dialog.exec():
             try:
-                self.program_store.edit_program(program_id, name=dialog.name(), description=dialog.description())
+                self.program_store.edit_program(
+                    program_id, name=dialog.name(), description=dialog.description(), version=dialog.version()
+                )
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Edit Program", str(exc))
                 return

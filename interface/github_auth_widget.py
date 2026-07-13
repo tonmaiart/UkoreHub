@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
+from interface.circular_pixmap import circular_pixmap
 from interface.github_avatar_worker import GitHubAvatarWorker
 
 AVATAR_SIZE = 24
@@ -48,9 +49,7 @@ class GitHubAuthWidget(QWidget):
             return
         pixmap = QPixmap()
         pixmap.loadFromData(avatar_bytes)
-        self.avatar_label.setPixmap(
-            pixmap.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-        )
+        self.avatar_label.setPixmap(circular_pixmap(pixmap, AVATAR_SIZE))
 
     def _on_toggle_clicked(self) -> None:
         if self._logged_in:

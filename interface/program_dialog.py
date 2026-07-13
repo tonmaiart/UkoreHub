@@ -18,12 +18,15 @@ from PySide6.QtWidgets import (
 
 
 class ProgramDialog(QDialog):
-    def __init__(self, parent=None, *, name: str = "", description: str = "", icon_path: Path | None = None):
+    def __init__(
+        self, parent=None, *, name: str = "", version: str = "", description: str = "", icon_path: Path | None = None
+    ):
         super().__init__(parent)
         self.setWindowTitle("Edit Program" if name else "Add Program")
         self._chosen_icon_path: Path | None = None
 
         self.name_edit = QLineEdit(name)
+        self.version_edit = QLineEdit(version)
         self.description_edit = QTextEdit(description)
         self.description_edit.setFixedHeight(80)
 
@@ -40,6 +43,7 @@ class ProgramDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("Name:", self.name_edit)
+        form.addRow("Version:", self.version_edit)
         form.addRow("Icon:", icon_row)
         form.addRow("Description:", self.description_edit)
 
@@ -65,6 +69,9 @@ class ProgramDialog(QDialog):
 
     def name(self) -> str:
         return self.name_edit.text().strip()
+
+    def version(self) -> str:
+        return self.version_edit.text().strip()
 
     def description(self) -> str:
         return self.description_edit.toPlainText().strip()

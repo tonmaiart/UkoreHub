@@ -4,8 +4,8 @@ import webbrowser
 
 from PySide6.QtCore import QThread, Signal
 
-from core import github_auth
 from core.exceptions import GitHubAuthError
+from core.github import auth
 
 
 class GitHubAuthWorker(QThread):
@@ -23,18 +23,18 @@ class GitHubAuthWorker(QThread):
                 raise GitHubAuthError(
                     "GitHub Client ID not configured — set it in Setting > Common."
                 )
-            device_code_response = github_auth.request_device_code(self.client_id)
+            device_code_response = auth.request_device_code(self.client_id)
             self.code_ready.emit(
                 device_code_response.user_code, device_code_response.verification_uri
             )
             webbrowser.open(device_code_response.verification_uri)
-            token = github_auth.poll_for_token(
+            token = auth.poll_for_token(
                 self.client_id,
                 device_code_response.device_code,
                 device_code_response.interval,
                 device_code_response.expires_in,
             )
-            username = github_auth.fetch_username(token)
+            username = auth.fetch_username(token)
             self.authenticated.emit(username, token)
         except GitHubAuthError as exc:
             self.failed.emit(str(exc))

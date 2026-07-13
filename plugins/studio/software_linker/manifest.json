@@ -1,0 +1,8 @@
+{
+  "id": "software_linker",
+  "name": "Software Linker",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Link each Program Database entry to a local executable path on this machine, so other plugins/add-ons can check what's installed."
+}

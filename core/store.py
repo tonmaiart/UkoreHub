@@ -159,6 +159,11 @@ class MetadataStore:
         repo.required_program_ids = list(program_ids)
         self.save()
 
+    def set_repo_enabled_addons(self, project_id: str, repo_id: str, addon_ids: list[str]) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.enabled_addon_ids = list(addon_ids)
+        self.save()
+
     @property
     def thumbnails_dir(self) -> Path:
         return self.json_path.parent / "thumbnails"
@@ -196,6 +201,7 @@ class LocalConfigStore:
         self.active_project_id: str | None = None
         self.active_repo_id: str | None = None
         self.github_username: str | None = None
+        self.recent_files: dict[str, list[str]] = {}
         self.load()
 
     def load(self) -> None:
@@ -207,6 +213,7 @@ class LocalConfigStore:
         self.active_project_id = data.get("active_project_id")
         self.active_repo_id = data.get("active_repo_id")
         self.github_username = data.get("github_username")
+        self.recent_files = data.get("recent_files", {})
 
     def save(self) -> None:
         _atomic_write(
@@ -218,8 +225,20 @@ class LocalConfigStore:
                 "active_project_id": self.active_project_id,
                 "active_repo_id": self.active_repo_id,
                 "github_username": self.github_username,
+                "recent_files": self.recent_files,
             },
         )
+
+    def add_recent_file(self, repo_id: str, path: str, limit: int = 10) -> list[str]:
+        paths = [p for p in self.recent_files.get(repo_id, []) if p != path]
+        paths.insert(0, path)
+        paths = paths[:limit]
+        self.recent_files[repo_id] = paths
+        self.save()
+        return list(paths)
+
+    def get_recent_files(self, repo_id: str) -> list[str]:
+        return list(self.recent_files.get(repo_id, []))
 
     def set_workspace_root(self, path: str) -> None:
         self.workspace_root = path

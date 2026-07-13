@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "addons": [
+    {
+      "addon_id": "advanced_skeleton",
+      "icon_filename": null,
+      "description": "AdvancedSkeleton rigging toolset for Maya. Contributes its maya-scripts folder to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    },
+    {
+      "addon_id": "maya_launcher",
+      "icon_filename": null,
+      "description": "Checks whether the Maya version this machine has linked (via Software Linker) matches what the repo requires.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    },
+    {
+      "addon_id": "maya_ngskin",
+      "icon_filename": null,
+      "description": "ngSkinTools2 for Maya. Contributes its maya-scripts folder plus a per-Maya-version maya-plug-ins/ folder to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    },
+    {
+      "addon_id": "maya_toolkit",
+      "icon_filename": null,
+      "description": "UkoreHub's own Maya scripts and plug-ins (Renamer, RigBox, WeightPuller, and friends). Contributes maya-scripts and maya-plug-ins to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    },
+    {
+      "addon_id": "mgear",
+      "icon_filename": null,
+      "description": "mGear rigging framework for Maya. Contributes its maya-modules and mgear-custom-component folders to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
+    }
+  ]
+}

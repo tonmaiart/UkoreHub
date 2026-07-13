@@ -7,7 +7,14 @@ __pycache__/
 # git pull / Update and Restart.
 data/local_config.json
 data/github_token.json
+# Per-plugin settings mirror the same split: data/plugins/studio/*.json is
+# shared (written by studio-authored plugins), data/plugins/local/*.json is
+# per-machine/experimental — see core/plugin_config_store.py.
+data/plugins/local/
 .pytest_cache/
+# plugins/studio is git-tracked and distributed like data/programs.json;
+# plugins/local is per-machine/experimental — see core/plugin_loader.py.
+plugins/local/
 # Default workspace_root (see launcher.py) — actual cloned target repos live
 # here, per-machine and potentially huge; never tracked.
 /projects/

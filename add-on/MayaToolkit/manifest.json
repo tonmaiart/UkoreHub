@@ -1,0 +1,8 @@
+{
+  "id": "maya_toolkit",
+  "name": "MayaToolkit",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "UkoreHub's own Maya scripts and plug-ins (Renamer, RigBox, WeightPuller, and friends). Contributes maya-scripts and maya-plug-ins to the Maya Launcher env bridge — does not launch Maya itself."
+}

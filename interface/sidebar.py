@@ -2,27 +2,36 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QButtonGroup, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QComboBox,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.store import MetadataStore
-from interface.section_keys import SectionKey
+from interface.circular_pixmap import circular_pixmap
+from interface.section_registry import SectionRegistry
 from interface.sidebar_thumbnail import ThumbnailBackgroundWidget
 
-SECTION_LABELS = {
-    SectionKey.PROJECT_INFO: "Project Information",
-    SectionKey.REPO_BROWSER: "Repo Browser",
-    SectionKey.REPO_GIT_STATUS: "Repo Git Status",
-    SectionKey.REPO_ABOUT: "Repo About",
-}
+AVATAR_BADGE_SIZE = 56
 
 
 class Sidebar(QWidget):
     repo_picker_requested = Signal()
-    section_changed = Signal(SectionKey)
+    section_changed = Signal(str)
     combo_repo_selected = Signal(str, str)
+    recent_file_activated = Signal(Path)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, section_registry: SectionRegistry):
         super().__init__(parent)
         self.setObjectName("sidebarContainer")
         self.setFixedWidth(300)
@@ -35,9 +44,15 @@ class Sidebar(QWidget):
         self.thumbnail_widget.setFixedHeight(200)
         thumb_layout = QVBoxLayout(self.thumbnail_widget)
         thumb_layout.addStretch()
+
+        self.avatar_label = QLabel()
+        self.avatar_label.setFixedSize(AVATAR_BADGE_SIZE, AVATAR_BADGE_SIZE)
         self.repo_name_label = QLabel("—")
         self.repo_name_label.setObjectName("activeRepoLabel")
-        thumb_layout.addWidget(self.repo_name_label)
+        name_row = QHBoxLayout()
+        name_row.addWidget(self.avatar_label)
+        name_row.addWidget(self.repo_name_label, stretch=1)
+        thumb_layout.addLayout(name_row)
 
         self.select_repo_button = QPushButton("Select Repo...")
         self.select_repo_button.clicked.connect(self.repo_picker_requested.emit)
@@ -54,20 +69,27 @@ class Sidebar(QWidget):
 
         self.button_group = QButtonGroup(self)
         self.button_group.setExclusive(True)
-        self._section_buttons: dict[SectionKey, QPushButton] = {}
-        for index, section in enumerate(SectionKey):
-            button = QPushButton(SECTION_LABELS[section])
+        self._section_buttons: dict[str, QPushButton] = {}
+        for index, spec in enumerate(section_registry.ordered()):
+            button = QPushButton(spec.label)
             button.setObjectName("sectionButton")
             button.setCheckable(True)
             button.setFixedHeight(40)
-            button.clicked.connect(lambda _checked, s=section: self.section_changed.emit(s))
+            button.clicked.connect(lambda _checked, s=spec.key: self.section_changed.emit(s))
             self.button_group.addButton(button)
-            self._section_buttons[section] = button
+            self._section_buttons[spec.key] = button
             layout.addWidget(button)
             if index == 0:
                 button.setChecked(True)
 
         layout.addStretch()
+
+        recent_files_group = QGroupBox("Recent Files")
+        self.recent_files_list = QListWidget()
+        self.recent_files_list.itemDoubleClicked.connect(self._on_recent_file_double_clicked)
+        recent_files_layout = QVBoxLayout(recent_files_group)
+        recent_files_layout.addWidget(self.recent_files_list)
+        layout.addWidget(recent_files_group)
 
     def set_active_labels(self, project_name: str | None, repo_name: str | None) -> None:
         # project_name is intentionally unused now — only the repo name is
@@ -76,8 +98,24 @@ class Sidebar(QWidget):
 
     def set_thumbnail(self, path: Path | None) -> None:
         self.thumbnail_widget.set_image(path)
+        pixmap = QPixmap(str(path)) if path and Path(path).exists() else None
+        if pixmap is not None and not pixmap.isNull():
+            self.avatar_label.setPixmap(circular_pixmap(pixmap, AVATAR_BADGE_SIZE))
+        else:
+            self.avatar_label.clear()
 
-    def set_current_section(self, section: SectionKey) -> None:
+    def set_recent_files(self, paths: list[Path]) -> None:
+        self.recent_files_list.clear()
+        for path in paths:
+            item = QListWidgetItem(path.name)
+            item.setData(Qt.UserRole, str(path))
+            item.setToolTip(str(path))
+            self.recent_files_list.addItem(item)
+
+    def _on_recent_file_double_clicked(self, item: QListWidgetItem) -> None:
+        self.recent_file_activated.emit(Path(item.data(Qt.UserRole)))
+
+    def set_current_section(self, section: str) -> None:
         self._section_buttons[section].setChecked(True)
 
     def refresh_repo_choices(self, store: MetadataStore) -> None:

@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-from core.token_store import TokenStore, TokenStoreFallbackUsed
+from core.github.token_store import TokenStore, TokenStoreFallbackUsed
 
 
 @pytest.fixture

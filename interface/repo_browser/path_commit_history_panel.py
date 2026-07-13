@@ -62,7 +62,20 @@ class PathCommitHistoryPanel(QWidget):
         self._worker: PathCommitHistoryWorker | None = None
         self.setFixedWidth(260)
 
+        # Session-lifetime caches so re-visiting a file/folder you've already
+        # clicked shows instantly instead of re-running git/GitHub every time.
+        # Keyed by (repo_path, relative_path) since the same relative path can
+        # exist in more than one repo.
+        self._entries_cache: dict[tuple[str, str], list[CommitHistoryEntry]] = {}
+        self._avatar_cache: dict[str, bytes | None] = {}
+        self._current_key: tuple[str, str] | None = None
+        # If the user clicks another file while a fetch is still running, the
+        # old code silently dropped the new click. Remember it here and fire
+        # it as soon as the in-flight worker finishes instead of losing it.
+        self._pending_request: tuple[Path, str] | None = None
+
         title = QLabel("Commit History")
+        title.setObjectName("commitHistoryTitle")
 
         self._status_label = QLabel("")
         self._status_label.setWordWrap(True)
@@ -72,22 +85,38 @@ class PathCommitHistoryPanel(QWidget):
         self._cards_layout.addStretch()
 
         scroll = QScrollArea()
+        scroll.setObjectName("commitHistoryScroll")
         scroll.setWidget(self._cards_container)
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
 
         layout = QVBoxLayout(self)
         layout.addWidget(title)
         layout.addWidget(self._status_label)
-        layout.addWidget(scroll)
+        layout.addWidget(scroll, stretch=1)
 
     def show_commits_for(self, repo_path: Path, relative_path: str) -> None:
+        cache_key = (str(repo_path), relative_path)
+        self._current_key = cache_key
+        cached = self._entries_cache.get(cache_key)
+        if cached is not None:
+            self._render_entries(cached)
+        else:
+            self._clear_cards()
+            self._status_label.setText("Loading...")
+
         if self._worker is not None and self._worker.isRunning():
+            self._pending_request = (repo_path, relative_path)
             return
-        self._clear_cards()
-        self._status_label.setText("Loading...")
+        self._pending_request = None
+        self._start_fetch(repo_path, relative_path, cache_key)
+
+    def _start_fetch(self, repo_path: Path, relative_path: str, cache_key: tuple[str, str]) -> None:
         token = self.git_service.get_github_token()
-        self._worker = PathCommitHistoryWorker(self.git_service, repo_path, relative_path, token)
-        self._worker.entries_ready.connect(self._on_entries_ready)
+        self._worker = PathCommitHistoryWorker(
+            self.git_service, repo_path, relative_path, token, avatar_cache=self._avatar_cache
+        )
+        self._worker.entries_ready.connect(lambda entries: self._on_entries_ready(entries, cache_key))
         self._worker.start()
 
     def _clear_cards(self) -> None:
@@ -97,8 +126,21 @@ class PathCommitHistoryPanel(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-    def _on_entries_ready(self, entries: list) -> None:
+    def _render_entries(self, entries: list) -> None:
         self._clear_cards()
         self._status_label.setText("No commit history found." if not entries else "")
         for entry in entries:
             self._cards_layout.insertWidget(self._cards_layout.count() - 1, CommitCard(entry))
+
+    def _on_entries_ready(self, entries: list, cache_key: tuple[str, str]) -> None:
+        self._entries_cache[cache_key] = entries
+        # Only repaint if the user hasn't already navigated to something else
+        # while this fetch was running — avoids flashing stale results over
+        # whatever they're currently looking at.
+        if cache_key == self._current_key:
+            self._render_entries(entries)
+
+        if self._pending_request is not None:
+            repo_path, relative_path = self._pending_request
+            self._pending_request = None
+            self._start_fetch(repo_path, relative_path, (str(repo_path), relative_path))

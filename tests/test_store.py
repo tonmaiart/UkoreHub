@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -62,3 +63,56 @@ def test_store_persists_and_reloads(tmp_path):
     assert projects[0].name == "Kafka"
     assert len(projects[0].repos) == 1
     assert projects[0].repos[0].name == "repo1"
+
+
+def test_new_repo_has_empty_enabled_addon_ids(store, tmp_path):
+    project = store.add_project("Kafka")
+    workspace_root = str(tmp_path / "workspace")
+    repo = store.add_repo(project.id, "repo1", "git@example.com:org/repo1.git", workspace_root)
+    assert repo.enabled_addon_ids == []
+
+
+def test_set_repo_enabled_addons(store, tmp_path):
+    project = store.add_project("Kafka")
+    workspace_root = str(tmp_path / "workspace")
+    repo = store.add_repo(project.id, "repo1", "git@example.com:org/repo1.git", workspace_root)
+    store.set_repo_enabled_addons(project.id, repo.id, ["maya_launcher", "asset_tracker"])
+    updated = store.get_repo(project.id, repo.id)
+    assert updated.enabled_addon_ids == ["maya_launcher", "asset_tracker"]
+
+
+def _projects_json_with_repo(extra_repo_fields: dict) -> dict:
+    return {
+        "schema_version": 1,
+        "projects": [
+            {
+                "id": "p1",
+                "name": "Kafka",
+                "repos": [
+                    {
+                        "id": "r1",
+                        "name": "repo1",
+                        "git_url": "git@example.com:org/repo1.git",
+                        "local_path": "Kafka/repo1",
+                        **extra_repo_fields,
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_repo_enabled_addon_ids_backward_compat_missing_key(tmp_path):
+    json_path = tmp_path / "projects.json"
+    json_path.write_text(json.dumps(_projects_json_with_repo({})), encoding="utf-8")
+    store = MetadataStore(json_path)
+    assert store.get_repo("p1", "r1").enabled_addon_ids == []
+
+
+def test_repo_enabled_addon_ids_backward_compat_legacy_key(tmp_path):
+    json_path = tmp_path / "projects.json"
+    json_path.write_text(
+        json.dumps(_projects_json_with_repo({"enabled_plugin_ids": ["maya_launcher"]})), encoding="utf-8"
+    )
+    store = MetadataStore(json_path)
+    assert store.get_repo("p1", "r1").enabled_addon_ids == ["maya_launcher"]

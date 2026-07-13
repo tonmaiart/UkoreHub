@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from core.exceptions import GitOperationError
+from core.extensibility.hooks import GitHookContext
 from core.git_service import GitService
 
 
@@ -13,16 +14,25 @@ class GitWorker(QThread):
     finished_ok = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, git_service: GitService, git_url: str, dest_path: Path, parent=None):
+    def __init__(
+        self,
+        git_service: GitService,
+        git_url: str,
+        dest_path: Path,
+        parent=None,
+        *,
+        context: GitHookContext | None = None,
+    ):
         super().__init__(parent)
         self.git_service = git_service
         self.git_url = git_url
         self.dest_path = dest_path
+        self.context = context
 
     def run(self) -> None:
         try:
             result = self.git_service.open_or_sync(
-                self.git_url, self.dest_path, on_output=self.output.emit
+                self.git_url, self.dest_path, on_output=self.output.emit, context=self.context
             )
             self.finished_ok.emit(result)
         except GitOperationError as exc:

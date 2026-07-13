@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from core.git_service import GitService
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
-from core.token_store import TokenStore, TokenStoreFallbackUsed
+from core.github.token_store import TokenStore, TokenStoreFallbackUsed
 from interface.github_auth_widget import GitHubAuthWidget
 from interface.github_login_dialog import GitHubLoginDialog
 from interface.repo_picker import RepoPickerDialog

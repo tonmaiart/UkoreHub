@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from core.git_service import GitService
-from core.github_commits_api import GitHubCommitsApiError, download_bytes, fetch_commits_for_path
+from core.github.commits_api import GitHubCommitsApiError, download_bytes, fetch_commits_for_path
 
 
 @dataclass
@@ -28,6 +28,7 @@ class PathCommitHistoryWorker(QThread):
         relative_path: str,
         github_token: str | None,
         limit: int = 30,
+        avatar_cache: dict[str, bytes | None] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -36,6 +37,10 @@ class PathCommitHistoryWorker(QThread):
         self.relative_path = relative_path
         self.github_token = github_token
         self.limit = limit
+        # Shared across every path the user clicks through in a session, so an
+        # author's avatar is only ever downloaded once instead of on every
+        # single file/folder click — this is the slow part of each fetch.
+        self._avatar_cache = avatar_cache if avatar_cache is not None else {}
 
     def run(self) -> None:
         entries = self._fetch_via_github_api()
@@ -53,7 +58,7 @@ class PathCommitHistoryWorker(QThread):
         except GitHubCommitsApiError:
             return None
 
-        avatar_cache: dict[str, bytes | None] = {}
+        avatar_cache = self._avatar_cache
         entries = []
         for item in raw_commits:
             commit_info = item.get("commit", {}) or {}

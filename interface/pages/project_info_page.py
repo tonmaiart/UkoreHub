@@ -1,34 +1,41 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 
 from core.git_service import GitService
 from core.models import Project, Repo
 from core.store import LocalConfigStore, MetadataStore
+from interface.project_info_tab_registry import ProjectInfoTabRegistry
 
 
 class ProjectInfoPage(QWidget):
-    def __init__(self, parent=None, *, store: MetadataStore, local_config_store: LocalConfigStore, git_service: GitService):
-        super().__init__(parent)
-        self.store = store
+    """Thin QTabWidget shell over whatever's registered in
+    `project_info_tab_registry` — the built-in "Main" tab plus any tabs a
+    plugin has added via `PluginAPI.register_project_info_tab(...)`."""
 
-        self.title_label = QLabel("Select a repo to see this information.")
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Name", "Status", "Last Synced"])
-        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+    def __init__(
+        self,
+        parent=None,
+        *,
+        store: MetadataStore,
+        local_config_store: LocalConfigStore,
+        git_service: GitService,
+        project_info_tab_registry: ProjectInfoTabRegistry,
+    ):
+        super().__init__(parent)
+        self.tabs = QTabWidget()
+        self._tab_widgets: dict[str, QWidget] = {}
+        for spec in project_info_tab_registry.ordered():
+            widget = spec.page_factory()
+            self._tab_widgets[spec.key] = widget
+            self.tabs.addTab(widget, spec.label)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.table)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.tabs)
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
-        if project is None:
-            self.title_label.setText("Select a repo to see this information.")
-            self.table.setRowCount(0)
-            return
-        self.title_label.setText(f"Project: {project.name}")
-        self.table.setRowCount(len(project.repos))
-        for row, project_repo in enumerate(project.repos):
-            self.table.setItem(row, 0, QTableWidgetItem(project_repo.name))
-            self.table.setItem(row, 1, QTableWidgetItem(project_repo.status))
-            self.table.setItem(row, 2, QTableWidgetItem(project_repo.last_synced or ""))
+        for widget in self._tab_widgets.values():
+            set_repo_fn = getattr(widget, "set_repo", None)
+            if set_repo_fn is not None:
+                set_repo_fn(project, repo, workspace_root)

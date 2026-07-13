@@ -1,0 +1,8 @@
+{
+  "id": "maya_ngskin",
+  "name": "MayaNgSkin",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "ngSkinTools2 for Maya. Contributes its maya-scripts folder plus a per-Maya-version maya-plug-ins/<version> folder to the Maya Launcher env bridge — does not launch Maya itself."
+}
