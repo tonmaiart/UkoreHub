@@ -10,6 +10,18 @@ from core.exceptions import ValidationError
 
 
 @dataclass(frozen=True)
+class SectionHost:
+    """Passed to SectionSpec.wire(page, host). A fixed, small set of named
+    callbacks — not a generic event bus — mirroring background_threads'
+    shape below: MainWindow invokes wire() generically, the closure reaches
+    into the page's own internals. Add a new named field only on
+    demonstrated need, not speculatively."""
+
+    set_status_message: Callable[[str], None]
+    navigate_and_focus: Callable[[str, Path], None]
+
+
+@dataclass(frozen=True)
 class SectionSpec:
     key: str
     label: str
@@ -23,6 +35,12 @@ class SectionSpec:
     # for this section. A section without one falls back to text-only (e.g.
     # a plugin that hasn't supplied an icon yet).
     icon_path: Path | None = None
+    # Optional: given the constructed page and a SectionHost, connect
+    # whatever signals the page needs wired to app-level services (sidebar
+    # status line, cross-section navigation) — lets a plugin page react to
+    # generic MainWindow services without MainWindow importing the page's
+    # specific type. See interface/main_window.py's __init__.
+    wire: Callable[[QWidget, "SectionHost"], None] | None = None
 
 
 class SectionRegistry:

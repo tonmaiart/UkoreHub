@@ -1,0 +1,25 @@
+{
+  "repo_enabled_tools": {
+    "0e05b23f-3bab-4183-b78c-2d47f46d0c62:d930b619-2774-4ab4-b381-899e0464e121": [
+      "dreamwall_picker",
+      "maya_toolkit",
+      "studio_library"
+    ],
+    "0e05b23f-3bab-4183-b78c-2d47f46d0c62:b12b523b-031e-42a3-aa3d-ac21955187e4": [
+      "advanced_skeleton",
+      "dreamwall_picker",
+      "maya_ngskin",
+      "maya_toolkit",
+      "mgear",
+      "ukore_browser"
+    ],
+    "0e05b23f-3bab-4183-b78c-2d47f46d0c62:152a6957-de83-4201-81ae-eab3feabee0a": [
+      "advanced_skeleton",
+      "dreamwall_picker",
+      "maya_ngskin",
+      "maya_toolkit",
+      "mgear",
+      "ukore_browser"
+    ]
+  }
+}

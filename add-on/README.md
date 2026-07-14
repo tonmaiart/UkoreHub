@@ -45,7 +45,7 @@ add-on/YourAddonName/
   "version": "1.0.0",
   "api_version": 1,
   "entry_point": "plugin.py",
-  "description": "One sentence — shown in Repo About, the repo editor's add-on picker, and Settings > Add-ons."
+  "description": "One sentence — shown in Repo About and the repo editor's add-on picker."
 }
 ```
 `id` must be globally unique across every plugin *and* add-on (both share
@@ -53,9 +53,14 @@ one discovery namespace) and is what you'll use everywhere else — as the
 key in `Repo.enabled_addon_ids`, the argument to `api.register_*`, and the
 `AddonMetadataStore` key (see below). `api_version` must match the app's
 current `PLUGIN_API_VERSION` (`interface/plugin_api.py`) or your add-on is
-skipped with a `PluginLoadFailure`, not a crash — check
-`interface/settings/addon_settings_page.py`'s "Failed to Load" list
-if your add-on silently isn't showing up.
+skipped with a `PluginLoadFailure`, not a crash. As of 2026-07-14 the
+Settings > Add-ons tab (the only UI surface that showed add-on load
+failures/catalog) was removed as deprecated — check
+`core/extensibility/loader.py`'s `discover_plugins(...).failures` result
+directly (e.g. from a throwaway script) if your add-on silently isn't
+showing up. Settings > Developer > Plugins (`plugin_catalog_page.py`)
+still exists but only ever reflected the `plugins/` root's own discovery
+result, not `add-on/`'s.
 
 `plugin.py` needs exactly one function:
 ```python
@@ -73,8 +78,8 @@ call into its code directly (add-on `.py` files are loaded ad-hoc via
 `import`ing another add-on's module doesn't work).
 
 A broken `register(api)` (raises, or the module has no `register` at all)
-is caught and recorded as a `PluginLoadFailure`, not a crash — see the
-"Failed to Load" list in Settings → Add-ons/Plugins.
+is caught and recorded as a `PluginLoadFailure`, not a crash (see the note
+above — there's no dedicated UI surface for add-on load failures anymore).
 
 ## `api` — what `register(api)` receives
 
@@ -128,35 +133,41 @@ for anything that isn't machine-specific, like a folder path inside the
 UkoreHub install); `shared=False` writes to the gitignored per-machine dir
 (use this for things like a locally-linked executable path).
 
-Two real, worked examples of this convention, both in
-`add-on/MayaLauncher/plugin.py` — read that file plus the
-`ukorehub-maya-launcher-addon` skill for the full write-up:
-1. **Consumer reads another plugin's config**: MayaLauncher reads
-   `plugins/studio/software_linker`'s per-machine `maya.exe` path via
-   `api.plugin_config_store("software_linker", shared=False)`, without
-   importing SoftwareLinker's code at all.
-2. **Multiple add-ons feed one bridge, order-independent**: MayaLauncher
-   itself doesn't hardcode Maya env vars — `add-on/AdvancedSkeleton`,
-   `add-on/MayaNgskin`, `add-on/MayaToolkit`, and `add-on/mGear` each write
-   their own env-path contribution into
-   `api.plugin_config_store("maya_launcher_env_bridge", shared=True)` at
-   `register()` time (each touching only its own key, never another
-   add-on's), and MayaLauncher merges all of them when a `.ma`/`.mb` file
-   is actually opened. This is the pattern to copy if you're writing an
-   add-on that should feed data into another add-on without a fixed load
-   order between them.
+A real, worked example of the "consumer reads another plugin's config"
+half of this convention: `plugins/studio/maya_launcher/plugin.py` reads
+`plugins/studio/software_linker`'s per-machine `maya.exe` path via
+`api.plugin_config_store("software_linker", shared=False)`, without
+importing SoftwareLinker's code at all — see `plugins/README.md`'s
+"Sharing data with another plugin" section (the convention is identical
+whether both sides are plugins, both are add-ons, or one of each).
+
+**As of 2026-07-14, `add-on/` has no folders** — its previous 10 entries
+were consolidated: `MayaLauncher` plus 7 add-ons that existed only to feed
+a shared `maya_launcher_env_bridge` config (`AdvancedSkeleton`,
+`MayaNgskin`, `MayaToolkit`, `mGear`, `UkoreBrowser`, `DreamwallPicker`,
+`StudioLibrary`) all moved into one `plugins/studio/maya_launcher/` plugin
+(see that plugin's own README for why — none of the 7 contributors ever
+registered anything besides that one bridge write, so the "many
+independent add-ons sharing one bridge, order-independent" pattern that
+used to be this section's second worked example no longer has a live
+example in this codebase). `BlenderLauncher`/`UnrealLauncher` were removed
+outright — neither had a real `manifest.json`/`plugin.py`. The pattern
+itself is still valid for a genuine multi-add-on scenario; write a new
+worked example here the next time one exists.
 
 ## Icon, description override, and required Program — not in code
 
-`manifest.json`'s `name`/`description` are the fallback shown until an
-admin edits an add-on's entry in **Settings → Add-ons**
-(`interface/settings/addon_settings_page.py`, backed by
-`core/addon_store.py`'s `AddonMetadataStore` →
-`data/addon_settings.json`, shared/git-tracked). That's also where an
-add-on's **required Program(s)** are declared (e.g. "this add-on requires
-Autodesk Maya") — deliberately *not* a manifest field or something
-`register(api)` sets, so studio admins can retarget an add-on to a
-different/renamed Program catalog entry without a code change. Declaring a
+`manifest.json`'s `name`/`description` are the fallback shown until
+overridden in `core/addon_store.py`'s `AddonMetadataStore` →
+`data/addon_settings.json` (shared/git-tracked). As of 2026-07-14 there is
+no Settings UI for editing this file — it was the deprecated Settings →
+Add-ons tab, now removed; editing an add-on's icon/description override or
+required Program(s) means writing to `data/addon_settings.json` directly
+(or through `AddonMetadataStore`'s own methods from a script) until/unless
+a replacement UI exists. An add-on's **required Program(s)** (e.g. "this
+add-on requires Autodesk Maya") is deliberately *not* a manifest field or
+something `register(api)` sets, so studio admins can retarget an add-on to
+a different/renamed Program catalog entry without a code change. Declaring a
 required program is what makes an add-on's card nest under that program's
 `RequirementCard` in Repo About and the repo editor's add-on picker
 (`core/addon_store.py`'s `group_addon_ids_by_program`) — an add-on with no

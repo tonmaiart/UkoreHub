@@ -101,7 +101,7 @@ def build_stylesheet(colors: ThemeColors) -> str:
         font-size: 14px;
     }}
     QListWidget#sectionTabList::item {{
-        padding: 8px 14px;
+        padding: 6px 12px;
         border: none;
     }}
     QListWidget#sectionTabList::item:hover {{

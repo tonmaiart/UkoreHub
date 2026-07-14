@@ -113,18 +113,26 @@ add-on. Four files, none importing each other:
   free-form-schema JSON store for one plugin's own settings (mirrors
   `LocalConfigStore` but no fixed fields). Two plugins can share data by
   independently constructing a store with the *same plugin_id string* — see
-  the `ukorehub-maya-launcher-addon` skill for a worked example.
+  `plugins/studio/maya_launcher/plugin.py` reading
+  `plugins/studio/software_linker`'s config for a worked example (or
+  `plugins/README.md`'s "Sharing data with another plugin" section for the
+  general write-up).
 - **`hooks.py`** — `GitHookEvent`, `GitHookContext` (`project`, `repo`,
   `repo_path`, `extra`), `HookRegistry` (`subscribe`/`fire`). Deliberately
   plain Python, not `QObject` — see the Qt-free rule above.
-- **`file_opener.py`** — `FileOpenerRegistry`/`FileOpenerSpec`: lets an
-  **add-on** claim responsibility for opening a file extension (e.g.
-  launching Maya with custom env vars instead of the OS file association)
-  instead of the default. `find_opener(path, enabled_addon_ids)` only
-  returns a match if the registering add-on's id is in the *caller-supplied*
+- **`file_opener.py`** — `FileOpenerRegistry`/`FileOpenerSpec`: lets a
+  **plugin or add-on** claim responsibility for opening a file extension
+  (e.g. launching Maya with custom env vars instead of the OS file
+  association) instead of the default. `find_opener(path, enabled_addon_ids)`
+  only returns a match if the registering id is in the *caller-supplied*
   `enabled_addon_ids` list — the registry itself doesn't know which repo is
-  active, the caller (`interface/explorer/repo_browser_page.py`) passes
-  `repo.enabled_addon_ids` in. A plain list, not a keyed dict — duplicate
+  active, the caller (`plugins/studio/explorer/repo_browser_page.py`) passes
+  `repo.enabled_addon_ids` in. This list is empty for an always-on plugin's
+  own id in practice (e.g. `plugins/studio/maya_launcher/`'s opener
+  registers unconditionally, not gated by `enabled_addon_ids` at all, and
+  does its own finer-grained per-repo gating internally — see that plugin's
+  README) — the `enabled_addon_ids`-gating path matters for genuine
+  repo-scoped `add-on/` openers. A plain list, not a keyed dict — duplicate
   registrations are allowed (first match wins), unlike the other four
   registries in `interface/` which reject duplicate keys.
 

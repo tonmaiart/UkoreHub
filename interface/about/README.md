@@ -1,7 +1,11 @@
 # interface/about/
 
 The About tab (`SectionRegistry` key `repo_about`) — repo info, requirements/
-add-ons, Browser Links, and the dynamic per-add-on panels.
+add-ons, and the dynamic per-add-on panels. Browser Links used to be
+configured from a third sub-tab here ("Browser") — moved to
+`interface/settings/browser_links_settings_page.py` under Settings > Repo,
+since it's a repo *setting* rather than repo info (see
+`interface/settings/README.md`).
 
 - `repo_about_page.py` — `RepoAboutPage`: a left-tab-bar shell (like
   `interface/settings/settings_view.py`), not a flat page. Fixed sub-tabs:
@@ -18,9 +22,6 @@ add-ons, Browser Links, and the dynamic per-add-on panels.
     through `core/program_store.py`'s `ProgramStore.edit_program` — the
     same field `interface/settings/program_database_page.py` edits, just a
     more convenient second entry point.
-  - **Browser** (`_RepoBrowserLinksTab`) — add/rename/remove/change-icon
-    for this repo's Browser Links (`core/models.py`'s `BrowserLink`,
-    `icon_filename` falls back to `data/icons/icons8-browser-50.png`).
 
   Plus one dynamic sub-tab per enabled add-on with a
   `RepoAddonPanelRegistry` panel, rebuilt on every `set_repo()`.
@@ -32,8 +33,8 @@ add-ons, Browser Links, and the dynamic per-add-on panels.
   persistent `QWebEngineProfile` `main_window.py` constructs via
   `interface/web_engine_profile.py` so a login (Notion, Google Sheet, ...)
   survives app restarts. Lives here rather than at the interface/ root
-  because Browser Links are entirely configured from this page's Browser
-  sub-tab above.
+  because it's still About's own dynamic-tab machinery, even though the
+  Browser Links themselves are now configured from Settings > Repo.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `shared/` addition, or touches `main_window.py`'s

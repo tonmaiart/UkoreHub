@@ -50,8 +50,9 @@ class SectionTabList(QListWidget):
     def add_dynamic_tab(self, key: str, label: str, icon_path: Path | None = None) -> None:
         """Inserted right after the fixed sections and any earlier dynamic
         tabs. icon_path defaults to the generic Browser Link icon when the
-        link has no per-link override (see _RepoBrowserLinksTab.change_icon
-        in repo_about_page.py)."""
+        link has no per-link override (see
+        BrowserLinksSettingsPage._on_change_browser_link_icon in
+        interface/settings/browser_links_settings_page.py)."""
         self._add_row(
             key, label, icon_path or DEFAULT_BROWSER_LINK_ICON, index=self._fixed_count + self._dynamic_count
         )

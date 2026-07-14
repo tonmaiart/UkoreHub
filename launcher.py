@@ -6,6 +6,7 @@ that needs them, so the user never sees a ModuleNotFoundError.
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -29,11 +30,69 @@ def ensure_dependencies() -> None:
         subprocess.run([sys.executable, "-m", "pip", "install", pip_spec], check=True)
 
 
+def _refresh_path_from_registry() -> None:
+    """A winget install that just completed updates the registry, not this
+    already-running process's environment (env vars are only inherited at
+    process creation) — merge the machine + user PATH from the registry into
+    os.environ so a just-installed binary's shutil.which() can find it
+    without restarting UkoreHub."""
+    if sys.platform != "win32":
+        return
+    import winreg
+
+    def _read(hive: int, subkey: str) -> str:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                value, _ = winreg.QueryValueEx(key, "Path")
+                return value
+        except OSError:
+            return ""
+
+    machine_path = _read(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")
+    user_path = _read(winreg.HKEY_CURRENT_USER, "Environment")
+    combined = ";".join(p for p in (machine_path, user_path, os.environ.get("PATH", "")) if p)
+    if combined:
+        os.environ["PATH"] = combined
+
+
+def _winget_install(package_id: str, display_name: str) -> bool:
+    """Best-effort silent install via winget (ships by default on Windows
+    10/11) — never raises, so callers can fall back to a manual-install
+    message. Returns whether winget itself ran the install successfully;
+    callers still need to re-check shutil.which() afterwards since a
+    successful install doesn't guarantee this process can see the new PATH
+    entry (see _refresh_path_from_registry)."""
+    if sys.platform != "win32" or shutil.which("winget") is None:
+        return False
+    print(f"UkoreHub: '{display_name}' not found — installing via winget...")
+    try:
+        subprocess.run(
+            [
+                "winget", "install", "--id", package_id, "-e",
+                "--silent", "--accept-package-agreements", "--accept-source-agreements",
+            ],
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as exc:
+        print(f"UkoreHub: winget install of '{display_name}' failed: {exc}")
+        return False
+    _refresh_path_from_registry()
+    return True
+
+
 def check_git_prerequisite() -> bool:
+    if shutil.which("git") is not None:
+        return True
+    if not _winget_install("Git.Git", "git"):
+        return False
     return shutil.which("git") is not None
 
 
 def check_git_lfs_prerequisite() -> bool:
+    if shutil.which("git-lfs") is not None:
+        return True
+    if not _winget_install("GitHub.GitLFS", "git-lfs"):
+        return False
     return shutil.which("git-lfs") is not None
 
 
@@ -59,7 +118,8 @@ def main() -> None:
             None,
             "Git Not Found",
             "UkoreHub requires 'git' to be installed and available on your PATH.\n"
-            "Please install git and restart UkoreHub.",
+            "Automatic install via winget wasn't available or didn't succeed — "
+            "please install git yourself and restart UkoreHub.",
         )
         sys.exit(1)
 
@@ -67,8 +127,10 @@ def main() -> None:
         QMessageBox.warning(
             None,
             "git-lfs Not Found",
-            "'git-lfs' was not found on your PATH. Some repos may require it.\n"
-            "You can continue, but LFS-tracked files may not sync correctly.",
+            "'git-lfs' was not found on your PATH, and automatic install via "
+            "winget wasn't available or didn't succeed.\n"
+            "Some repos may require it — you can continue, but LFS-tracked files "
+            "may not sync correctly.",
         )
 
     from core.addon_store import AddonMetadataStore
@@ -101,7 +163,7 @@ def main() -> None:
     local_config_store = LocalConfigStore(data_dir / "local_config.json")
     # Workspace root is fixed to the repo's own projects/ folder — there is no
     # UI to point it elsewhere (see interface/settings/common_settings_page.py
-    # and interface/login/launch_dialog.py), so force it here on every launch
+    # and interface/login/login_overlay.py), so force it here on every launch
     # rather than only defaulting it once.
     forced_workspace_root = str(REPO_ROOT / "projects")
     if local_config_store.workspace_root != forced_workspace_root:
@@ -142,7 +204,6 @@ def main() -> None:
         program_store=program_store,
         addon_store=addon_store,
         repo_addon_panel_registry=repo_addon_panel_registry,
-        file_opener_registry=file_opener_registry,
         addon_catalog=addon_discovery.loaded,
     )
     settings_tab_registry = SettingsTabRegistry()
@@ -156,7 +217,6 @@ def main() -> None:
         addon_catalog=addon_discovery.loaded,
         plugin_catalog=discovery.loaded,
         plugin_load_failures=discovery.failures,
-        addon_load_failures=addon_discovery.failures,
     )
 
     plugin_api = PluginAPI(

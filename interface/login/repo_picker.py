@@ -19,11 +19,13 @@ _ACCENT_COLOR = QColor(get_theme(DEFAULT_THEME_NAME).accent)
 
 class _RepoCard(QFrame):
     """One clickable card per repo — click selects it (exclusive among all
-    cards in the dialog, see RepoPickerDialog._select_card), double-click
-    accepts the dialog immediately. Shows only "Project / Repo" and status —
-    this picker's whole point is a fast way to jump to a repo, not a status/
-    admin view (see interface/shared/project_repo_tree.py's QTreeWidget for
-    that, used by Settings' Project Status / Project Data Editor tabs).
+    cards in the dialog, see RepoPickerDialog._select_card); the dialog is
+    only ever accepted via its own OK button, not by clicking a card, so a
+    stray double-click can't jump into the wrong repo. Shows only
+    "Project / Repo" and status — this picker's whole point is a fast way
+    to jump to a repo, not a status/admin view (see
+    interface/shared/project_repo_tree.py's QTreeWidget for that, used by
+    Settings' Project Status / Project Data Editor tabs).
 
     When the repo has a thumbnail, it's painted fill-cropped as the card's
     own background with a dark dimming overlay (paintEvent) so the name/
@@ -33,7 +35,6 @@ class _RepoCard(QFrame):
     background rule."""
 
     clicked = Signal()
-    double_clicked = Signal()
 
     def __init__(
         self,
@@ -115,10 +116,6 @@ class _RepoCard(QFrame):
         self.clicked.emit()
         super().mousePressEvent(event)
 
-    def mouseDoubleClickEvent(self, event) -> None:
-        self.double_clicked.emit()
-        super().mouseDoubleClickEvent(event)
-
 
 class RepoPickerDialog(QDialog):
     def __init__(
@@ -128,6 +125,7 @@ class RepoPickerDialog(QDialog):
         store: MetadataStore,
         selected_project_id: str | None = None,
         selected_repo_id: str | None = None,
+        cancel_button_text: str = "Cancel",
     ):
         super().__init__(parent)
         self.setWindowTitle("Select Repo")
@@ -139,6 +137,7 @@ class RepoPickerDialog(QDialog):
         # self.buttons to enable/disable OK, and a card can be pre-selected
         # (below) while the cards list is still being built.
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.button(QDialogButtonBox.Cancel).setText(cancel_button_text)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
 
@@ -155,7 +154,6 @@ class RepoPickerDialog(QDialog):
                     thumbnail_path=store.resolve_thumbnail_path(repo),
                 )
                 card.clicked.connect(lambda c=card: self._select_card(c))
-                card.double_clicked.connect(self.accept)
                 cards_layout.addWidget(card)
                 if project.id == selected_project_id and repo.id == selected_repo_id:
                     self._select_card(card)

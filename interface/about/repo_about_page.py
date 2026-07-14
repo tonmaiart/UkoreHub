@@ -9,9 +9,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGroupBox,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
-    QLineEdit,
     QListWidget,
     QMessageBox,
     QPushButton,
@@ -25,7 +23,7 @@ from core.addon_store import AddonMetadataStore, group_addon_ids_by_program
 from core.exceptions import NotFoundError, UkoreHubError
 from core.extensibility.loader import DiscoveredPlugin
 from core.git_service import GitService
-from core.models import BrowserLink, Program, Project, Repo
+from core.models import Program, Project, Repo
 from core.os_utils import open_in_file_explorer
 from core.paths import resolve_repo_path
 from core.program_store import ProgramStore
@@ -422,159 +420,20 @@ class _RepoRequirementsTab(QWidget):
             layout.insertWidget(layout.count() - 1, card)
 
 
-class _RepoBrowserLinksTab(QWidget):
-    """"Browser" sub-tab: add/rename/remove this repo's Browser Links —
-    each shown as its own top-level tab elsewhere, see
-    interface/main_window.py's dynamic tab rebuild."""
-
-    browser_links_changed = Signal()
-
-    def __init__(self, parent=None, *, store: MetadataStore):
-        super().__init__(parent)
-        self.store = store
-        self._project: Project | None = None
-        self._repo: Repo | None = None
-
-        self._rows_container = QWidget()
-        self._rows_layout = QVBoxLayout(self._rows_container)
-        self._rows_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.new_link_name_edit = QLineEdit()
-        self.new_link_name_edit.setPlaceholderText("Name (e.g. Google Sheet)")
-        self.new_link_url_edit = QLineEdit()
-        self.new_link_url_edit.setPlaceholderText("https://...")
-        add_link_button = QPushButton("Add Link")
-        add_link_button.clicked.connect(self._on_add_browser_link)
-        add_link_row = QHBoxLayout()
-        add_link_row.addWidget(self.new_link_name_edit)
-        add_link_row.addWidget(self.new_link_url_edit, stretch=1)
-        add_link_row.addWidget(add_link_button)
-
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.addWidget(self._rows_container)
-        content_layout.addLayout(add_link_row)
-        content_layout.addStretch()
-
-        scroll = wrap_scrollable(content)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(scroll)
-
-    def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
-        self._project = project
-        self._repo = repo
-        self._rebuild_rows()
-
-    def _rebuild_rows(self) -> None:
-        while self._rows_layout.count():
-            item = self._rows_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        if self._repo is None:
-            return
-        for index, link in enumerate(self._repo.browser_links):
-            row_widget = QWidget()
-            row = QHBoxLayout(row_widget)
-            row.setContentsMargins(0, 0, 0, 0)
-            icon_label = QLabel()
-            icon_label.setFixedSize(24, 24)
-            icon_path = self.store.resolve_browser_link_icon_path(link)
-            if icon_path and icon_path.exists():
-                icon_label.setPixmap(
-                    QPixmap(str(icon_path)).scaled(24, 24, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                )
-            row.addWidget(icon_label)
-            row.addWidget(QLabel(f"<b>{link.name}</b>"))
-            url_label = QLabel(link.url)
-            url_label.setWordWrap(True)
-            row.addWidget(url_label, stretch=1)
-            change_icon_button = QPushButton("Change Icon...")
-            change_icon_button.clicked.connect(lambda _checked, i=index: self._on_change_browser_link_icon(i))
-            row.addWidget(change_icon_button)
-            rename_button = QPushButton("Rename")
-            rename_button.clicked.connect(lambda _checked, i=index: self._on_rename_browser_link(i))
-            row.addWidget(rename_button)
-            remove_button = QPushButton("Remove")
-            remove_button.clicked.connect(lambda _checked, i=index: self._on_remove_browser_link(i))
-            row.addWidget(remove_button)
-            self._rows_layout.addWidget(row_widget)
-
-    def _on_add_browser_link(self) -> None:
-        if self._repo is None or self._project is None:
-            return
-        name = self.new_link_name_edit.text().strip()
-        url = self.new_link_url_edit.text().strip()
-        if not name or not url:
-            QMessageBox.information(self, "Add Link", "Enter both a name and a URL.")
-            return
-        links = list(self._repo.browser_links) + [BrowserLink(name=name, url=url)]
-        self._save_browser_links(links)
-        self.new_link_name_edit.clear()
-        self.new_link_url_edit.clear()
-
-    def _on_rename_browser_link(self, index: int) -> None:
-        if self._repo is None or self._project is None:
-            return
-        links = list(self._repo.browser_links)
-        if not (0 <= index < len(links)):
-            return
-        new_name, ok = QInputDialog.getText(self, "Rename Link", "New name:", text=links[index].name)
-        if not ok or not new_name.strip():
-            return
-        links[index] = BrowserLink(
-            name=new_name.strip(), url=links[index].url, icon_filename=links[index].icon_filename
-        )
-        self._save_browser_links(links)
-
-    def _on_remove_browser_link(self, index: int) -> None:
-        if self._repo is None or self._project is None:
-            return
-        links = list(self._repo.browser_links)
-        if 0 <= index < len(links):
-            del links[index]
-        self._save_browser_links(links)
-
-    def _on_change_browser_link_icon(self, index: int) -> None:
-        if self._repo is None or self._project is None:
-            return
-        links = self._repo.browser_links
-        if not (0 <= index < len(links)):
-            return
-        source_path = pick_image_file(self, "Choose Browser Link Icon")
-        if source_path is None:
-            return
-        filename = save_image_asset(
-            self,
-            source_path=source_path,
-            dest_dir=self.store.browser_link_icons_dir,
-            asset_id=f"{self._repo.id}_{index}",
-        )
-        if filename is None:
-            return
-        self.store.set_browser_link_icon(self._project.id, self._repo.id, index, filename)
-        links[index].icon_filename = filename
-        self._rebuild_rows()
-        self.browser_links_changed.emit()
-
-    def _save_browser_links(self, links: list[BrowserLink]) -> None:
-        self.store.set_repo_browser_links(self._project.id, self._repo.id, links)
-        self._repo.browser_links = links
-        self._rebuild_rows()
-        self.browser_links_changed.emit()
-
-
 class RepoAboutPage(QWidget):
     """Left-tab-bar shell (like SettingsView) with fixed sub-tabs About /
-    Requirement / Browser, plus one dynamic sub-tab per add-on the active
-    repo has enabled that registered a per-repo panel via
+    Requirement, plus one dynamic sub-tab per add-on the active repo has
+    enabled that registered a per-repo panel via
     PluginAPI.register_repo_addon_panel(...) — rebuilt on every set_repo()
-    since that set depends on Repo.enabled_addon_ids. This is where
-    MayaLauncher's own panel now shows up (it used to live under the
-    now-removed Repo tab's "Repo Add-on" sub-tab)."""
+    since that set depends on Repo.enabled_addon_ids. This only applies to
+    genuine repo-scoped add-ons; an always-on plugins/ entry generally
+    shouldn't use this (plugins/studio/maya_launcher/ used to show its
+    status panel here and now shows it in its own Settings tab instead —
+    see that plugin's README). The Browser Links editor used to be a third
+    fixed sub-tab here ("Browser") — moved to
+    interface/settings/browser_links_settings_page.py under Settings >
+    Repo, since it's a repo *setting* rather than repo info."""
 
-    browser_links_changed = Signal()
     thumbnail_changed = Signal()
 
     def __init__(
@@ -603,13 +462,10 @@ class RepoAboutPage(QWidget):
             store=store, program_store=program_store, addon_store=addon_store, addon_catalog=addon_catalog
         )
         self.requirements_tab.requirements_changed.connect(self._on_requirements_changed)
-        self.browser_links_tab = _RepoBrowserLinksTab(store=store)
-        self.browser_links_tab.browser_links_changed.connect(self.browser_links_changed.emit)
 
         self._fixed_tabs: list[tuple[str, QWidget]] = [
             ("About", self.info_tab),
             ("Requirement", self.requirements_tab),
-            ("Browser", self.browser_links_tab),
         ]
         self._dynamic_addon_widgets: list[QWidget] = []
 
@@ -651,7 +507,6 @@ class RepoAboutPage(QWidget):
 
         self.info_tab.set_repo(project, repo, workspace_root)
         self.requirements_tab.set_repo(project, repo, workspace_root)
-        self.browser_links_tab.set_repo(project, repo, workspace_root)
         self._rebuild_addon_tabs(repo)
 
     def _on_requirements_changed(self) -> None:

@@ -74,6 +74,13 @@ class PluginAPI:
         return self._git_service
 
     @property
+    def file_opener_registry(self) -> FileOpenerRegistry:
+        """Read access to the same registry register_file_opener() writes
+        into — for a page (e.g. Explorer's RepoBrowserWidget) that needs to
+        call find_opener() itself rather than contribute an opener."""
+        return self._file_opener_registry
+
+    @property
     def app_root(self) -> Path:
         """UkoreHub's own repo root — for plugins/add-ons that need to
         reference other paths inside the UkoreHub installation itself

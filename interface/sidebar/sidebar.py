@@ -11,7 +11,7 @@ from interface.section_registry import SectionRegistry
 from interface.sidebar.active_repo_widget import ActiveRepoWidget
 from interface.sidebar.section_tab_list import SectionTabList
 
-SIDEBAR_WIDTH = 260
+SIDEBAR_WIDTH = 230
 SETTING_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "icons" / "setting.png"
 
 
@@ -23,8 +23,8 @@ class Sidebar(QWidget):
     remaining height), and a footer strip for sync status, the Update
     button, and an account row (GitHub avatar/username + an icon-only
     Setting button right after it). Logging out lives in Settings > Common
-    now, not here — GitHubAuthWidget's toggle button is hidden in this
-    context (Sidebar only ever shows a logged-in user)."""
+    now, not here — GitHubAuthWidget is display-only (Sidebar only ever
+    shows a logged-in user)."""
 
     update_requested = Signal()
     repo_picker_requested = Signal()
@@ -53,7 +53,7 @@ class Sidebar(QWidget):
         self.sync_progress_bar.setRange(0, 0)
         self.sync_progress_bar.setVisible(False)
 
-        self.github_auth_widget = GitHubAuthWidget(show_toggle_button=False)
+        self.github_auth_widget = GitHubAuthWidget()
 
         self.setting_button = QPushButton()
         self.setting_button.setObjectName("sidebarSettingButton")

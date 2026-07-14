@@ -15,11 +15,17 @@ mostly-binary animation production assets.
 
 ## Prerequisites
 
-Install these yourself before running UkoreHub — the app does not install them:
-
 - [git](https://git-scm.com/downloads)
 - [git-lfs](https://git-lfs.com/)
 - Python 3.10+
+
+You don't need to install these yourself on Windows — `launcher.py` (git,
+git-lfs) and `UkoreHub.exe` (Python itself, see `packaging/exe_entry.py`)
+each auto-install whichever of these is missing via `winget` (Windows'
+built-in package manager) before continuing. If `winget` isn't available or
+an install fails, you'll get a message asking you to install that one
+yourself instead. On other platforms, or if you'd rather install everything
+by hand up front, use the links above.
 
 ## Running
 

@@ -9,8 +9,8 @@ account), not Qt's `QMenuBar`/dropdown-menu widget.
   "Project / Repo" picker button), `SectionTabList` (stretched to fill the
   remaining height), then a footer strip (`sidebarFooter`) holding sync
   status, the Update button, and an account row —
-  `interface/login/github_auth_widget.py`'s `GitHubAuthWidget` (constructed
-  with `show_toggle_button=False`, avatar+username only — logging out lives
+  `interface/login/github_auth_widget.py`'s `GitHubAuthWidget` (display-only,
+  avatar+username, no login/logout control of its own — logging out lives
   in Settings > Common now) plus the icon-only `setting_button` right after
   it. Fixed width (`SIDEBAR_WIDTH`). Setting is deliberately its own button
   here, not a row in `SectionTabList` — it's an app-level control, not a

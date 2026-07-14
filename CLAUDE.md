@@ -24,19 +24,29 @@ does and how they relate).
 
 ## Scoped editing — stay inside the folder the task names
 
-When a task is about one specific area — a single `add-on/<Name>/`,
-`core/`, or `interface/` — read and edit only that folder. Don't open
-sibling folders "just in case" unless the task genuinely crosses the
-boundary (e.g. a `core/` change whose call sites in `interface/` also need
-updating). Concretely:
+When a task is about one specific area — a single `add-on/<Name>/`, a
+single `plugins/studio/<Name>/` or `plugins/local/<Name>/`, `core/`, or
+`interface/` — read and edit only that folder. Don't open sibling folders
+"just in case" unless the task genuinely crosses the boundary (e.g. a
+`core/` change whose call sites in `interface/` also need updating).
+Concretely:
 - Told to fix/change an add-on → touch only `add-on/<Name>/`. See the
   `ukorehub-addon` skill and `add-on/README.md` for why sibling add-ons
   especially shouldn't be opened, and how cross-add-on data sharing works
   without reading another add-on's source.
+- Told to fix/change a plugin (Explorer, Submit, SoftwareLinker,
+  MayaLauncher, or a new one) → touch only its own
+  `plugins/studio/<Name>/`/`plugins/local/<Name>/`
+  folder. See the `ukorehub-plugin` skill and `plugins/README.md` for the
+  same discipline as add-ons — never open a sibling plugin's source, and
+  cross-plugin data/UI coordination goes through the documented
+  `plugin_config_store`/`SectionHost` conventions, not imports.
 - Told to fix/change `core/` → touch only `core/` unless the change
   requires updating an `interface/` call site.
 - Told to fix/change `interface/` → touch only `interface/` unless the
-  change requires a `core/` addition it depends on.
+  change requires a `core/` addition it depends on. Note Explorer/Submit
+  are `plugins/`, not `interface/`, despite showing up as ordinary tabs —
+  see the plugin bullet above instead.
 
 ## Testing — only when explicitly requested
 
@@ -57,9 +67,11 @@ smoke-test script to verify wiring after a registry/constructor change —
 `REPO_ROOT`**. Copy `data/` into a scratch/tmp directory first and construct
 everything against that copy instead. `data/local_config.json` can have a
 real `active_repo_id` saved, which makes `MainWindow.__init__` kick off a
-real background git sync (`RepoGitStatusPage._start_auto_sync`) on a
-background `QThread` that starts running the moment `.start()` is called,
-independent of whether `app.exec()` ever runs. A real UkoreHub.exe /
+real background git sync (`MainWindow._start_auto_sync`, delegating to
+`plugins/studio/submit/repo_git_status_page.py`'s
+`RepoGitStatusPage.sync_active_repo`) on a background `QThread` that starts
+running the moment `.start()` is called, independent of whether
+`app.exec()` ever runs. A real UkoreHub.exe /
 `launcher.py` instance may also be running concurrently on the studio
 machine you're working on — check for one (e.g. `tasklist`) before assuming
 any change to a shared JSON store is safe to discard or revert.
@@ -77,7 +89,10 @@ any change to a shared JSON store is safe to discard or revert.
 - `plugins/` vs `add-on/` — Plugins are UkoreHub's own always-on sub-systems
   (every project, never toggled); Add-ons are per-repo opt-in extensions
   (`Repo.enabled_addon_ids`, shared team data). Different concepts — see
-  `core/extensibility/README.md` before touching either.
+  `core/extensibility/README.md` before touching either, and see
+  `plugins/README.md`/`add-on/README.md` plus the `ukorehub-plugin`/
+  `ukorehub-addon` skills for the "stay inside one folder" editing
+  discipline each uses.
 - `projects/` — **the actual workspace root**, pointed to by
   `data/local_config.json`'s `workspace_root`: real cloned production repos
   (Maya/Blender scenes, huge binaries, studio artwork), gitignored. **Never

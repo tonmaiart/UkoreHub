@@ -1,0 +1,8 @@
+{
+  "id": "submit",
+  "name": "Submit",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Stage/unstage/revert, commit -> pull -> (resolve conflicts) -> push, and the whole-repo commit log."
+}

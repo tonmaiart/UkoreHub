@@ -10,18 +10,19 @@ not here.
 
 - `commit_history.py` — `CommitCard` widget, `CommitHistoryEntry`,
   `format_commit_date`, and `fetch_entries_via_github` (GitHub-API-first,
-  local-git-fallback). Used by `interface/explorer/`'s per-path commit
+  local-git-fallback). Used by `plugins/studio/explorer/`'s per-path commit
   panel (`path_commit_history_panel.py`/`path_commit_history_worker.py`)
-  and `interface/submit/`'s whole-repo commit log
+  and `plugins/studio/submit/`'s whole-repo commit log
   (`repo_git_status_page.py`/`commit_log_worker.py`), so both render
-  identically.
+  identically — Explorer and Submit are real `plugins/studio/` plugins now
+  (not `interface/` window folders), but this stays in `interface/shared/`
+  since it's imported the same normal way either side of that split.
 - `dialogs.py` — `ProjectDialog`/`RepoDialog` (used by
   `interface/settings/project_data_editor_page.py`),
   `RequirementsTreeWidget` (the checkable Program/Add-on tree shape,
-  shared internally by the two dialogs below), `RequirementsEditDialog`
-  (used by `interface/about/repo_about_page.py`'s Requirement sub-tab),
-  and `AddonSettingsDialog` (used by
-  `interface/settings/addon_settings_page.py`).
+  shared internally by the two dialogs below), and
+  `RequirementsEditDialog` (used by
+  `interface/about/repo_about_page.py`'s Requirement sub-tab).
 - `project_repo_tree.py` — `populate_project_tree` and the
   `PROJECT_ROLE`/`REPO_ROLE` item-data roles behind the Project/Repo
   `QTreeWidget` shape. Used by `interface/settings/project_data_editor_page.py`
@@ -33,11 +34,11 @@ not here.
   wrapper every icon/thumbnail chooser uses) and `save_image_asset` (copy
   the chosen file into a `data/*_icons`/`data/thumbnails`-style dir as
   `f"{asset_id}{ext}"`, returning the filename or `None` + a warning on
-  failure). Used by `about/repo_about_page.py` (repo thumbnail, Browser
-  Link icon), `settings/project_data_editor_page.py`, `program_dialog.py`,
-  `program_database_page.py`, `addon_settings_page.py`, and
-  `shared/dialogs.py`'s `RepoDialog`/`AddonSettingsDialog` — every place
-  in the app that lets you pick and persist an image asset.
+  failure). Used by `about/repo_about_page.py` (repo thumbnail),
+  `settings/project_data_editor_page.py`, `settings/browser_links_settings_page.py`
+  (Browser Link icon), `program_dialog.py`, `program_database_page.py`, and
+  `shared/dialogs.py`'s `RepoDialog` — every place in the app that lets you
+  pick and persist an image asset.
 - `widget_helpers.py` — three small Qt boilerplate extractions used across
   multiple windows: `wrap_scrollable` (the `QScrollArea(widgetResizable)`
   wrapper every scrollable tab/panel builds by hand), `confirm_action` (the

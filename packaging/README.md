@@ -15,7 +15,15 @@ exe_entry.py itself.
   `launcher.py` as a sibling of wherever the exe is actually running from,
   finds a real `pythonw`/`python` on PATH (never derives it from its own
   frozen `sys.executable`), and spawns `launcher.py` detached, then exits
-  immediately — a hand-off, not a supervisor.
+  immediately — a hand-off, not a supervisor. If no interpreter is found, it
+  silently installs one via `winget` (`PYTHON_WINGET_ID`) first, refreshing
+  `os.environ["PATH"]` from the registry so the newly-installed `python(w)`
+  can be found without relaunching — falls back to a `MessageBoxW` telling
+  the user to install Python themselves if `winget` isn't available or the
+  install fails. Deliberately self-contained (stdlib only) rather than
+  importing from `launcher.py` or `core/` — PyInstaller only bundles what
+  this file itself imports, and the rest of UkoreHub is meant to stay plain
+  `.py` files reached via `git pull`, not baked into the exe.
 - `icon.ico` — the icon baked into `UkoreHub.exe` (swap this file and rerun
   `build_exe.py` to rebrand). Git-tracked. `launcher.py` also loads this
   same file directly (`QApplication.setWindowIcon`) — `UkoreHub.exe` only

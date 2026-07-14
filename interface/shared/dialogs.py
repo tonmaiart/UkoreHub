@@ -11,10 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
-    QTextEdit,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -291,85 +288,3 @@ class RepoDialog(QDialog):
 
     def selected_addon_ids(self) -> list[str]:
         return self.requirements_tree.selected_addon_ids() if self.requirements_tree else []
-
-
-class AddonSettingsDialog(QDialog):
-    """Studio-editable overrides for one discovered add-on — icon,
-    description (falls back to the manifest's own description when no
-    override has been set yet), and which Program(s) it requires. Mirrors
-    ProgramDialog's icon-picker pattern."""
-
-    def __init__(
-        self,
-        parent=None,
-        *,
-        manifest_name: str,
-        manifest_description: str,
-        description_override: str = "",
-        icon_path: Path | None = None,
-        program_store: ProgramStore,
-        selected_program_ids: list[str] | None = None,
-    ):
-        super().__init__(parent)
-        self.setWindowTitle(f"Edit Add-on — {manifest_name}")
-        self._chosen_icon_path: Path | None = None
-
-        self.description_edit = QTextEdit(description_override or manifest_description)
-        self.description_edit.setFixedHeight(80)
-
-        self.icon_preview = QLabel("No icon")
-        self.icon_preview.setFixedSize(48, 48)
-        self.icon_preview.setScaledContents(True)
-        if icon_path and icon_path.exists():
-            self.icon_preview.setPixmap(QPixmap(str(icon_path)))
-        choose_icon_btn = QPushButton("Choose Icon...")
-        choose_icon_btn.clicked.connect(self._on_choose_icon)
-        icon_row = QHBoxLayout()
-        icon_row.addWidget(self.icon_preview)
-        icon_row.addWidget(choose_icon_btn)
-
-        self.programs_list = QListWidget()
-        selected_ids = set(selected_program_ids or [])
-        for program in program_store.list_programs():
-            item = QListWidgetItem(program.name)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked if program.id in selected_ids else Qt.Unchecked)
-            item.setData(Qt.UserRole, program.id)
-            icon = program_store.resolve_icon_path(program)
-            if icon and icon.exists():
-                item.setIcon(QIcon(str(icon)))
-            self.programs_list.addItem(item)
-
-        form = QFormLayout()
-        form.addRow("Icon:", icon_row)
-        form.addRow("Description:", self.description_edit)
-        form.addRow("Requires Program:", self.programs_list)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
-
-    def _on_choose_icon(self) -> None:
-        file_path = pick_image_file(self, "Choose Add-on Icon")
-        if file_path is None:
-            return
-        self._chosen_icon_path = file_path
-        self.icon_preview.setPixmap(QPixmap(str(file_path)))
-
-    def description(self) -> str:
-        return self.description_edit.toPlainText().strip()
-
-    def chosen_icon_path(self) -> Path | None:
-        return self._chosen_icon_path
-
-    def selected_program_ids(self) -> list[str]:
-        selected = []
-        for row in range(self.programs_list.count()):
-            item = self.programs_list.item(row)
-            if item.checkState() == Qt.Checked:
-                selected.append(item.data(Qt.UserRole))
-        return selected

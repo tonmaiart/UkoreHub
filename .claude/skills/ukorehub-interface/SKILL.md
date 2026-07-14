@@ -89,7 +89,7 @@ Every registered page/tab factory follows the same **`page_factory: Callable[[],
 Built-ins register into the exact same registries a plugin/add-on would —
 `interface/builtin_sections.py`, `interface/builtin_settings_tabs.py` call
 the same `register_*`/`api.register_*` surface as
-`add-on/MayaLauncher/plugin.py` does. This "dogfooding" is deliberate: if a
+`plugins/studio/maya_launcher/plugin.py` does. This "dogfooding" is deliberate: if a
 built-in page needs something the registry API can't express, that's a
 signal the registry API itself is incomplete — don't special-case
 built-ins with a side channel.
@@ -115,17 +115,22 @@ Notable surface:
   `PluginConfigStore` namespaced to `plugin_id`. `shared=True` writes under
   the git-tracked studio config dir, `shared=False` under the gitignored
   local one. Two unrelated plugins agreeing on the same `plugin_id` string
-  share the same file — see `ukorehub-maya-launcher-addon` skill for the
-  live example (MayaLauncher reads SoftwareLinker's config this way).
+  share the same file — see `plugins/studio/maya_launcher/plugin.py`
+  reading `plugins/studio/software_linker`'s config for the live example
+  (`plugins/README.md`'s "Sharing data with another plugin" section for
+  the general write-up).
 - `api.app_root` → `Path` to the UkoreHub install root itself (i.e.
-  `launcher.py`'s own `REPO_ROOT`), for add-ons that need to reference other
-  paths inside the UkoreHub installation (like
-  `plugins/MayaToolkit/`) without guessing their nesting depth from
-  `__file__`.
+  `launcher.py`'s own `REPO_ROOT`), for a plugin/add-on that needs to
+  reference other paths inside the UkoreHub installation (like
+  `plugins/studio/maya_launcher/`'s own nested-tool folders) without
+  guessing their nesting depth from `__file__`.
 - `api.register_repo_addon_panel(addon_id, panel_factory)` — shows up as
   its own sub-tab (named after the add-on's manifest) inside the About
-  page's left tab bar, for any repo that has that add-on enabled. This is
-  where MayaLauncher's own panel lives today.
+  page's left tab bar, for any repo that has that add-on enabled. Only
+  meaningful for a genuine repo-scoped `add-on/` (gated by
+  `Repo.enabled_addon_ids`) — an always-on `plugins/` entry generally
+  shouldn't use this (see `plugins/studio/maya_launcher/README.md` for why
+  it dropped this in favor of its own Settings tab instead).
 - `api.register_file_opener(addon_id, extensions, opener)`,
   `api.register_section(...)`, `api.register_settings_tab(...)` — one
   register method per remaining registry above.
@@ -145,13 +150,13 @@ in sync.
 This is the one flow worth tracing end-to-end since it crosses several
 files and the naming ("open") appears at every layer:
 
-1. `interface/explorer/browser_widget.py`'s `RepoBrowserWidget` takes an
+1. `plugins/studio/explorer/browser_widget.py`'s `RepoBrowserWidget` takes an
    `open_file: Callable[[Path], None] | None = None` constructor param
    (default `None` falls back to `core.os_utils.open_with_default_app`,
    i.e. the OS file association / `os.startfile`). Double-clicking a row
    calls `self._open_file(path)`, then unconditionally emits
    `file_opened.emit(path)` regardless of which opener handled it.
-2. `interface/explorer/repo_browser_page.py`'s `RepoBrowserPage` constructs
+2. `plugins/studio/explorer/repo_browser_page.py`'s `RepoBrowserPage` constructs
    `RepoBrowserWidget(..., open_file=self._open_file)` and implements:
    ```python
    def _open_file(self, path: Path) -> None:
@@ -201,8 +206,12 @@ git sync/pull against whatever it's pointed at the moment a `QThread`
 worker's `.start()` is called, independent of whether `app.exec()` ever
 runs, and a real UkoreHub.exe may already be running concurrently):
 construct `QApplication`, all registries, and `MainWindow` without calling
-`app.exec()`, `patch.object` any dialog-showing methods
-(`_show_launch_dialog`, `_check_for_update`) to no-ops, and end with
+`app.exec()`. Pre-seed the scratch `local_config_store` with a fake
+`github_username` and a fake token in the scratch `token_store` before
+constructing `MainWindow`, so it skips drawing `LoginOverlay` entirely
+(that path otherwise just sits there waiting for a click, indistinguishable
+from a real hang); also `patch.object` `_check_for_update` to a no-op, and
+end with
 `sys.stdout.flush(); os._exit(0)` — `os._exit` is required because Qt/
 Windows can hang on normal process teardown after `QApplication` is
 destroyed without an explicit `app.quit()`; without the `os._exit(0)` the

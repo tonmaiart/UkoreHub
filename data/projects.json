@@ -10,7 +10,7 @@
           "name": "AnimatorTeam",
           "git_url": "https://github.com/tonmaiart/KafkaProj.git",
           "local_path": "MerderaProject/KafkaProj",
-          "last_synced": "2026-07-14T06:02:48.439712+00:00",
+          "last_synced": "2026-07-14T16:29:17.066483+00:00",
           "status": "cloned",
           "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
           "description": "",
@@ -18,12 +18,7 @@
             "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0",
             "ab07c675-48ef-4f04-8c57-876dced7ddf1"
           ],
-          "enabled_addon_ids": [
-            "dreamwall_picker",
-            "maya_launcher",
-            "maya_toolkit",
-            "studio_library"
-          ],
+          "enabled_addon_ids": [],
           "browser_links": [
             {
               "name": "Schedule",
@@ -37,7 +32,7 @@
           "name": "KafkaProjUE",
           "git_url": "https://github.com/tonmaiart/KafkaProjUE.git",
           "local_path": "MerderaProject/KafkaProjUE",
-          "last_synced": null,
+          "last_synced": "2026-07-14T11:17:28.462769+00:00",
           "status": "cloned",
           "thumbnail_filename": "8e92493d-21e1-4833-b6fa-88708a783806.png",
           "description": "",
@@ -65,22 +60,14 @@
           "name": "AssetTeam",
           "git_url": "https://github.com/tonmaiart/MerderaProject_Assets.git",
           "local_path": "MerderaProject\\AssetTeam",
-          "last_synced": "2026-07-14T08:58:23.166425+00:00",
+          "last_synced": "2026-07-14T10:32:57.266337+00:00",
           "status": "cloned",
           "thumbnail_filename": "b12b523b-031e-42a3-aa3d-ac21955187e4.png",
           "description": "",
           "required_program_ids": [
             "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
           ],
-          "enabled_addon_ids": [
-            "advanced_skeleton",
-            "dreamwall_picker",
-            "maya_launcher",
-            "maya_ngskin",
-            "maya_toolkit",
-            "mgear",
-            "ukore_browser"
-          ],
+          "enabled_addon_ids": [],
           "browser_links": []
         },
         {
@@ -88,22 +75,14 @@
           "name": "RigTeam",
           "git_url": "https://github.com/tonmaiart/MerderaProject_Rig.git",
           "local_path": "MerderaProject\\RigTeam",
-          "last_synced": "2026-07-14T06:13:21.820518+00:00",
+          "last_synced": "2026-07-14T11:14:29.159255+00:00",
           "status": "cloned",
           "thumbnail_filename": "152a6957-de83-4201-81ae-eab3feabee0a.png",
           "description": "",
           "required_program_ids": [
             "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
           ],
-          "enabled_addon_ids": [
-            "advanced_skeleton",
-            "dreamwall_picker",
-            "maya_launcher",
-            "maya_ngskin",
-            "maya_toolkit",
-            "mgear",
-            "ukore_browser"
-          ],
+          "enabled_addon_ids": [],
           "browser_links": []
         }
       ]
