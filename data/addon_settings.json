@@ -56,6 +56,14 @@
       "required_program_ids": [
         "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
       ]
+    },
+    {
+      "addon_id": "ukore_browser",
+      "icon_filename": null,
+      "description": "Maya-side asset browser rooted at the active UkoreHub repo. Contributes maya-scripts (and UkoreHub's own core/) to the Maya Launcher env bridge \u2014 does not launch Maya itself.",
+      "required_program_ids": [
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
+      ]
     }
   ]
 }

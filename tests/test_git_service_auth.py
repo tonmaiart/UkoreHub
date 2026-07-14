@@ -1,4 +1,4 @@
-from core.git_service import GitService
+from core.git_service import GitService, _non_interactive_env
 
 
 def test_no_auth_args_when_no_token():
@@ -45,3 +45,21 @@ def test_set_github_token_none_clears_it():
     args, env = service._github_auth_args_and_env("https://github.com/owner/repo.git")
     assert args == []
     assert env == {}
+
+
+def test_non_interactive_env_disables_prompts_but_accepts_new_ssh_hosts():
+    env = _non_interactive_env()
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    # BatchMode=yes alone would also swallow the one-time "accept this
+    # host's fingerprint?" SSH prompt, permanently breaking every SSH clone
+    # on a machine that has never connected to the host before ("Host key
+    # verification failed") — accept-new must be present alongside it.
+    assert "-o BatchMode=yes" in env["GIT_SSH_COMMAND"]
+    assert "-o StrictHostKeyChecking=accept-new" in env["GIT_SSH_COMMAND"]
+
+
+def test_non_interactive_env_preserves_existing_ssh_command():
+    env = _non_interactive_env(extra={"GIT_SSH_COMMAND": "custom-ssh-wrapper"})
+    # extra overrides GIT_SSH_COMMAND wholesale (matches existing behavior
+    # for any key in `extra`) rather than being appended to the computed one.
+    assert env["GIT_SSH_COMMAND"] == "custom-ssh-wrapper"

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.exceptions import NotFoundError, ValidationError
-from core.models import Project, Repo
+from core.models import BrowserLink, Project, Repo
 from core.paths import resolve_repo_path
 from core.theme import DEFAULT_THEME_NAME
 
@@ -154,6 +154,11 @@ class MetadataStore:
         repo.thumbnail_filename = filename
         self.save()
 
+    def set_repo_description(self, project_id: str, repo_id: str, description: str) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.description = description
+        self.save()
+
     def set_repo_requirements(self, project_id: str, repo_id: str, program_ids: list[str]) -> None:
         repo = self.get_repo(project_id, repo_id)
         repo.required_program_ids = list(program_ids)
@@ -164,6 +169,18 @@ class MetadataStore:
         repo.enabled_addon_ids = list(addon_ids)
         self.save()
 
+    def set_repo_browser_links(self, project_id: str, repo_id: str, links: list[BrowserLink]) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.browser_links = list(links)
+        self.save()
+
+    def set_browser_link_icon(self, project_id: str, repo_id: str, link_index: int, filename: str | None) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        if not (0 <= link_index < len(repo.browser_links)):
+            raise NotFoundError(f"Browser link index out of range: {link_index}")
+        repo.browser_links[link_index].icon_filename = filename
+        self.save()
+
     @property
     def thumbnails_dir(self) -> Path:
         return self.json_path.parent / "thumbnails"
@@ -172,6 +189,15 @@ class MetadataStore:
         if not repo.thumbnail_filename:
             return None
         return self.thumbnails_dir / repo.thumbnail_filename
+
+    @property
+    def browser_link_icons_dir(self) -> Path:
+        return self.json_path.parent / "browser_link_icons"
+
+    def resolve_browser_link_icon_path(self, link: BrowserLink) -> Path | None:
+        if not link.icon_filename:
+            return None
+        return self.browser_link_icons_dir / link.icon_filename
 
     def refresh_statuses_from_disk(self, workspace_root: str) -> None:
         for project in self.projects:
@@ -201,7 +227,6 @@ class LocalConfigStore:
         self.active_project_id: str | None = None
         self.active_repo_id: str | None = None
         self.github_username: str | None = None
-        self.recent_files: dict[str, list[str]] = {}
         self.load()
 
     def load(self) -> None:
@@ -213,7 +238,6 @@ class LocalConfigStore:
         self.active_project_id = data.get("active_project_id")
         self.active_repo_id = data.get("active_repo_id")
         self.github_username = data.get("github_username")
-        self.recent_files = data.get("recent_files", {})
 
     def save(self) -> None:
         _atomic_write(
@@ -225,20 +249,8 @@ class LocalConfigStore:
                 "active_project_id": self.active_project_id,
                 "active_repo_id": self.active_repo_id,
                 "github_username": self.github_username,
-                "recent_files": self.recent_files,
             },
         )
-
-    def add_recent_file(self, repo_id: str, path: str, limit: int = 10) -> list[str]:
-        paths = [p for p in self.recent_files.get(repo_id, []) if p != path]
-        paths.insert(0, path)
-        paths = paths[:limit]
-        self.recent_files[repo_id] = paths
-        self.save()
-        return list(paths)
-
-    def get_recent_files(self, repo_id: str) -> list[str]:
-        return list(self.recent_files.get(repo_id, []))
 
     def set_workspace_root(self, path: str) -> None:
         self.workspace_root = path

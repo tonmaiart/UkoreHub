@@ -27,8 +27,8 @@ Keep these mentally separate — they're triggered completely differently:
    when **both** conditions hold: the file being opened has a `.ma`/`.mb`
    extension, **and** the active repo has `"maya_launcher"` in
    `Repo.enabled_addon_ids`. See the `ukorehub-interface` skill's "File-open
-   flow" section for how a double-click in Repo Browser (or a Recent Files
-   click) actually reaches this function. **This is the mechanism that
+   flow" section for how a double-click in Repo Browser actually reaches
+   this function. **This is the mechanism that
    guarantees env injection never happens when Maya is opened directly,
    outside UkoreHub** — there's no OS-level or Maya-level hook, it's purely
    "did the click go through `FileOpenerRegistry.find_opener`."
@@ -200,7 +200,7 @@ No `register_file_opener`/`register_repo_addon_panel` call needed either —
 MayaLauncher stays the sole `.ma`/`.mb` opener and status panel; a
 contributor is just a silent env-path source. After it ships, set its
 required Program (e.g. "Autodesk Maya") via the Add-on Settings page
-(`interface/settings_pages/addon_settings_page.py`, backed by
+(`interface/settings/addon_settings_page.py`, backed by
 `core/addon_store.py`'s `AddonMetadataStore`) — that's what makes it group
 under the Maya requirement card in Repo About / the repo editor's add-on
 picker, not anything hardcoded in the add-on itself.

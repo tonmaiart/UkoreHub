@@ -7,10 +7,10 @@ description: Token-scoping discipline for UkoreHub's add-on/ folder (C:\Tonmai\U
 
 `add-on/` is a flat directory of independent, often-vendored tool trees
 sitting side by side (see `add-on/README.md` for the full authoring guide).
-Unlike `interface/pages/` — where sibling files often share patterns worth
-seeing — reading one add-on has **zero information value** for working on
-a different one. Treat every `add-on/<Name>/` as its own repo for
-context-budget purposes.
+Unlike `interface/`'s window folders (`explorer/`, `submit/`, etc.) — where
+sibling files often share patterns worth seeing — reading one add-on has
+**zero information value** for working on a different one. Treat every
+`add-on/<Name>/` as its own repo for context-budget purposes.
 
 ## Rule
 

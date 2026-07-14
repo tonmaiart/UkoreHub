@@ -38,6 +38,33 @@ updating). Concretely:
 - Told to fix/change `interface/` → touch only `interface/` unless the
   change requires a `core/` addition it depends on.
 
+## Testing — only when explicitly requested
+
+Do not run `pytest`, headless smoke-test scripts, or import-sweep checks
+after a change unless the user explicitly asks for testing/verification in
+that turn. Skipping this step makes iteration noticeably faster, and the
+user will ask for it by name when they want it. This applies even to
+changes that would normally warrant self-verification (UI rewiring,
+renamed modules, registry changes) — implement the change, report what
+changed, and stop there.
+
+## Headless/smoke testing — never point at real `data/`
+
+If you need to construct real app objects (`MetadataStore`, `LocalConfigStore`,
+`MainWindow`, etc.) outside of `pytest` — e.g. a throwaway headless
+smoke-test script to verify wiring after a registry/constructor change —
+**never point them at the repo's real `data/` directory or the real
+`REPO_ROOT`**. Copy `data/` into a scratch/tmp directory first and construct
+everything against that copy instead. `data/local_config.json` can have a
+real `active_repo_id` saved, which makes `MainWindow.__init__` kick off a
+real background git sync (`RepoGitStatusPage._start_auto_sync`) on a
+background `QThread` that starts running the moment `.start()` is called,
+independent of whether `app.exec()` ever runs. A real UkoreHub.exe /
+`launcher.py` instance may also be running concurrently on the studio
+machine you're working on — check for one (e.g. `tasklist`) before assuming
+any change to a shared JSON store is safe to discard or revert.
+`pytest`'s own tests are unaffected by this — they already use `tmp_path`.
+
 ## Project layout
 
 - `core/` — non-UI logic: metadata store, git operations, GitHub auth, theming.

@@ -123,7 +123,7 @@ add-on. Four files, none importing each other:
   instead of the default. `find_opener(path, enabled_addon_ids)` only
   returns a match if the registering add-on's id is in the *caller-supplied*
   `enabled_addon_ids` list — the registry itself doesn't know which repo is
-  active, the caller (`interface/pages/repo_browser_page.py`) passes
+  active, the caller (`interface/explorer/repo_browser_page.py`) passes
   `repo.enabled_addon_ids` in. A plain list, not a keyed dict — duplicate
   registrations are allowed (first match wins), unlike the other four
   registries in `interface/` which reject duplicate keys.

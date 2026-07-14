@@ -27,7 +27,7 @@ unless explicitly asked.
   layered on a discovered add-on's manifest (icon, description, required
   Program). Shared/git-tracked.
 - `local_config.json` — `LocalConfigStore`: workspace root, theme, active
-  project/repo, recent files. **Gitignored, per-machine.**
+  project/repo. **Gitignored, per-machine.**
 - `projects.example.json` — a checked-in sample shape for `projects.json`,
   not read by the app itself.
 - `plugins/studio/*.json`, `plugins/local/*.json` — `PluginConfigStore`
@@ -43,7 +43,14 @@ unless explicitly asked.
   icon_filename`.
 - `addon_icons/` — per-add-on icons, filename = `AddonMetadata.
   icon_filename`.
+- `browser_link_icons/` — per-`BrowserLink` icon overrides, filename =
+  `BrowserLink.icon_filename`. Falls back to `icons/icons8-browser-50.png`
+  when unset.
+- `icons/` — static app-chrome icons (Setting gear, and Sidebar's
+  SectionTabList's About/Browser/Explorer/Submit icons), not tied to any
+  JSON store record — just fixed asset files referenced directly by path
+  from `interface/`.
 
-All three are referenced by filename from the JSON stores above; if a task
-needs to confirm a file exists, check with a directory listing, not by
-opening the image.
+All are referenced by filename from the JSON stores above (except `icons/`,
+referenced directly by path); if a task needs to confirm a file exists,
+check with a directory listing, not by opening the image.

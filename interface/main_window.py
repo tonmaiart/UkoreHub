@@ -5,27 +5,26 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QThread, QTimer, Signal
-from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QMessageBox, QStackedWidget, QWidget
 
 from core import self_update
 from core.exceptions import NotFoundError, UkoreHubError
 from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.git_service import GitService
-from core.github.token_store import TokenStore, TokenStoreFallbackUsed
+from core.github.token_store import TokenStore
 from core.paths import resolve_repo_path
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from core.version import APP_NAME, APP_VERSION
-from interface import builtin_sections
-from interface.github_login_dialog import GitHubLoginDialog
-from interface.launch_dialog import LaunchDialog
-from interface.menu_bar import MenuBar
-from interface.repo_picker import RepoPickerDialog
+from interface import builtin_sections, builtin_settings_tabs
+from interface.about.browser_link_page import BrowserLinkPage
+from interface.login.launch_dialog import LaunchDialog
+from interface.login.repo_picker import RepoPickerDialog
 from interface.section_registry import SectionRegistry
+from interface.settings.settings_view import SettingsView
 from interface.settings_tab_registry import SettingsTabRegistry
-from interface.settings_view import SettingsView
-from interface.sidebar import Sidebar
-from interface.top_tab_bar import TopTabBar
+from interface.sidebar.sidebar import Sidebar
+from interface.web_engine_profile import make_persistent_browser_link_profile
 
 
 class UpdateCheckWorker(QThread):
@@ -66,13 +65,13 @@ class MainWindow(QMainWindow):
         self._active_project = None
         self._active_repo = None
         self._update_worker: UpdateCheckWorker | None = None
-        self._login_dialog: GitHubLoginDialog | None = None
+        # Shared across every Browser Link tab so a login persists across
+        # app restarts — see interface/web_engine_profile.py.
+        self._web_engine_profile = make_persistent_browser_link_profile(
+            self.store.json_path.parent / "webengine_profile", self
+        )
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
-
-        self.sidebar = Sidebar()
-        self.sidebar.repo_picker_requested.connect(self._on_select_repo)
-        self.sidebar.combo_repo_selected.connect(self._on_combo_repo_selected)
 
         # Built from the registry uniformly for built-in and plugin-provided
         # sections alike — built-in page_factories close over an
@@ -82,74 +81,65 @@ class MainWindow(QMainWindow):
         self.pages[builtin_sections.REPO_GIT_STATUS].sync_started.connect(self._on_sync_started)
         self.pages[builtin_sections.REPO_GIT_STATUS].sync_finished.connect(self._on_sync_finished)
         self.pages[builtin_sections.REPO_GIT_STATUS].sync_failed.connect(self._on_sync_failed)
+        self.pages[builtin_sections.REPO_GIT_STATUS].browse_file_requested.connect(self._on_browse_file_requested)
+        self.pages[builtin_sections.REPO_ABOUT].browser_links_changed.connect(self._rebuild_browser_link_tabs)
+        self.pages[builtin_sections.REPO_ABOUT].thumbnail_changed.connect(self._on_repo_thumbnail_changed)
 
-        # Sidebar-backed sections (Repo/About) share one content_stack next to
-        # the sidebar; standalone sections (Explorer/Submit) get their own
-        # full-width page directly in view_stack, no sidebar — see
-        # SectionSpec.standalone.
-        ordered_specs = section_registry.ordered()
-        sidebar_specs = [spec for spec in ordered_specs if not spec.standalone]
-        standalone_specs = [spec for spec in ordered_specs if spec.standalone]
+        self.sidebar = Sidebar(section_registry=section_registry)
+        self.sidebar.repo_picker_requested.connect(self._on_select_repo)
+        self.sidebar.update_requested.connect(self._on_update_and_restart)
+        self.sidebar.navigation_changed.connect(self._on_navigation_changed)
+        self.sidebar.settings_requested.connect(self._on_settings_requested)
 
-        self.content_stack = QStackedWidget()
-        self._section_order = [spec.key for spec in sidebar_specs]
-        for key in self._section_order:
-            self.content_stack.addWidget(self.pages[key])
-        self.content_stack.currentChanged.connect(self._on_stack_current_changed)
-
-        self.tab_bar = TopTabBar(section_registry=section_registry)
-        self.tab_bar.tab_changed.connect(self._on_tab_changed)
-
-        self.menu_bar = MenuBar(tab_bar=self.tab_bar)
-        self.menu_bar.login_requested.connect(self._on_login_requested)
-        self.menu_bar.logout_requested.connect(self._on_logout_requested)
-        self.menu_bar.update_requested.connect(self._on_update_and_restart)
-        self.menu_bar.settings_requested.connect(self._on_settings_requested)
-
-        repo_view = QWidget()
-        repo_view_layout = QHBoxLayout(repo_view)
-        repo_view_layout.setContentsMargins(0, 0, 0, 0)
-        repo_view_layout.setSpacing(0)
-        repo_view_layout.addWidget(self.sidebar)
-        repo_view_layout.addWidget(self.content_stack, stretch=1)
+        # Every section is its own full-width top-level page, switched to via
+        # the Sidebar's SectionTabList.
+        self.view_stack = QStackedWidget()
+        self._section_view_index: dict[str, int] = {
+            spec.key: self.view_stack.addWidget(self.pages[spec.key]) for spec in section_registry.ordered()
+        }
 
         self.settings_view = SettingsView(settings_tab_registry=settings_tab_registry)
-
-        self.view_stack = QStackedWidget()
-        self._repo_view_index = self.view_stack.addWidget(repo_view)
-        self._standalone_view_index = {
-            spec.key: self.view_stack.addWidget(self.pages[spec.key]) for spec in standalone_specs
-        }
         self._settings_view_index = self.view_stack.addWidget(self.settings_view)
+        common_settings_page = self.settings_view.get_tab_widget(builtin_settings_tabs.COMMON)
+        if common_settings_page is not None:
+            common_settings_page.logout_requested.connect(self._on_logout_requested)
+
+        # One top-level tab + page per Browser Link on the active repo,
+        # rebuilt from scratch on every repo switch and whenever About's
+        # Browser Links section changes — see _rebuild_browser_link_tabs.
+        self._dynamic_view_index: dict[str, int] = {}
 
         central = QWidget()
-        central_layout = QVBoxLayout(central)
+        central_layout = QHBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
-        central_layout.addWidget(self.menu_bar)
+        central_layout.addWidget(self.sidebar)
         central_layout.addWidget(self.view_stack, stretch=1)
         self.setCentralWidget(central)
 
-        self.resize(1100, 700)
+        self.show()
 
+        # GitHub login is mandatory — this blocks (re-showing the gate on
+        # every rejected attempt) until the user is authenticated.
+        self._ensure_logged_in()
         self._restore_active_repo()
         self._apply_to_current_page()
-        self.sidebar.refresh_repo_choices(self.store)
-
-        if not (self.local_config_store.github_username and self.token_store.load_token()):
-            self._show_launch_dialog()
-            # LaunchDialog may have changed active repo or login state —
-            # re-sync everything it could have touched.
-            self._restore_active_repo()
-            self._apply_to_current_page()
-            self.sidebar.refresh_repo_choices(self.store)
 
         self._restore_github_login_state()
         self._check_for_update()
         QTimer.singleShot(0, self._start_auto_sync)
         self._fire_app_started()
 
-    def _show_launch_dialog(self) -> None:
+    def _ensure_logged_in(self) -> None:
+        while not (self.local_config_store.github_username and self.token_store.load_token()):
+            if not self._show_launch_dialog():
+                # The mandatory login gate was closed without logging in —
+                # LaunchDialog.reject() is supposed to prevent this, so this
+                # is just a last-resort safety net: the app cannot run
+                # unauthenticated.
+                sys.exit(0)
+
+    def _show_launch_dialog(self) -> bool:
         dialog = LaunchDialog(
             self,
             store=self.store,
@@ -158,36 +148,64 @@ class MainWindow(QMainWindow):
             git_service=self.git_service,
             token_store=self.token_store,
         )
-        dialog.exec()
+        return bool(dialog.exec())
 
-    # -- top tab switching (Repo / Explorer / Submit / About / Setting) -----
+    # -- navigation (Explorer / Submit / About / Setting / Browser Links) ---
 
-    def _on_tab_changed(self, key: str) -> None:
-        # TopTabBar and the Setting button are deliberately two separate
-        # exclusive groups (Setting isn't repo-scoped) — keep them visually
-        # in sync by hand instead.
-        self.menu_bar.setting_button.setChecked(False)
-        if key in self._standalone_view_index:
-            self.view_stack.setCurrentIndex(self._standalone_view_index[key])
-        else:
-            was_setting = self.view_stack.currentIndex() == self._settings_view_index
-            self.view_stack.setCurrentIndex(self._repo_view_index)
-            self.content_stack.setCurrentIndex(self._section_order.index(key))
-            if was_setting:
-                # Mirrors what used to run right after the modal Settings
-                # dialog closed — there's no single "closed" moment anymore,
-                # so this runs every time the user switches back from
-                # Setting instead.
-                self.sidebar.refresh_repo_choices(self.store)
-                if self._active_repo is not None:
-                    self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
+    def _on_navigation_changed(self, key: str) -> None:
+        index = self._section_view_index.get(key)
+        if index is None:
+            index = self._dynamic_view_index.get(key)
+        if index is None:
+            return
+        self.view_stack.setCurrentIndex(index)
         self._apply_to_current_page()
 
     def _on_settings_requested(self) -> None:
-        self.tab_bar.uncheck_all()
-        self.menu_bar.setting_button.setChecked(True)
+        # Setting is its own icon button in Sidebar's footer now, not a row
+        # in SectionTabList — deselect whatever section row was active so
+        # the list doesn't keep showing a stale selection while Settings is
+        # on screen (setCurrentRow(-1) doesn't fire navigation_changed, see
+        # SectionTabList._on_current_row_changed's guard).
+        self.sidebar.tab_list.setCurrentRow(-1)
         self.view_stack.setCurrentIndex(self._settings_view_index)
         self.settings_view.refresh_current_tab()
+
+    def _on_browse_file_requested(self, path: Path) -> None:
+        # "Browse" on a Submit-tab commit card / "Inspect in Explorer" on the
+        # Modified or Staged list — jump to Explorer and show that file.
+        self.sidebar.tab_list.select(builtin_sections.REPO_BROWSER)
+        self._on_navigation_changed(builtin_sections.REPO_BROWSER)
+        self.pages[builtin_sections.REPO_BROWSER].browser.browse_to_file(path)
+
+    def _rebuild_browser_link_tabs(self) -> None:
+        was_showing_dynamic = self.view_stack.currentIndex() in self._dynamic_view_index.values()
+        # Resolve every widget by its (still-valid) index BEFORE removing
+        # any of them — QStackedWidget re-indexes remaining widgets after
+        # each removeWidget(), so removing by stale index one at a time
+        # would skip/miss widgets once earlier removals shift things down.
+        old_pages = [self.view_stack.widget(index) for index in self._dynamic_view_index.values()]
+        for page in old_pages:
+            self.view_stack.removeWidget(page)
+            page.deleteLater()
+        self._dynamic_view_index = {}
+        self.sidebar.tab_list.clear_dynamic_tabs()
+
+        if self._active_repo is not None:
+            for link_index, link in enumerate(self._active_repo.browser_links):
+                key = f"browser_link:{link_index}"
+                view_index = self.view_stack.addWidget(BrowserLinkPage(link.url, self._web_engine_profile))
+                self._dynamic_view_index[key] = view_index
+                icon_path = self.store.resolve_browser_link_icon_path(link)
+                self.sidebar.tab_list.add_dynamic_tab(key, link.name, icon_path)
+
+        if was_showing_dynamic:
+            # The tab the user was looking at just got torn down (its link
+            # was removed, or the repo changed) — land on the first
+            # remaining static section rather than hardcoding one.
+            fallback_key = next(iter(self._section_view_index))
+            self.sidebar.tab_list.select(fallback_key)
+            self._on_navigation_changed(fallback_key)
 
     # -- active repo -----------------------------------------------------
 
@@ -204,24 +222,26 @@ class MainWindow(QMainWindow):
             return
         self._active_project = project
         self._active_repo = repo
-        self.sidebar.set_active_labels(project.name, repo.name)
-        self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(repo))
+        self.sidebar.active_repo_widget.set_active_labels(repo.name, project.name)
+        self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(repo))
+        self._rebuild_browser_link_tabs()
+
+    def _on_repo_thumbnail_changed(self) -> None:
+        # About > About's Choose Thumbnail always edits the currently active
+        # repo (pages only ever get set_repo(active_project, active_repo, ...)
+        # — see _apply_to_current_page), so this can refresh unconditionally.
+        if self._active_repo is not None:
+            self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
 
     def _current_page(self):
-        index = self.view_stack.currentIndex()
-        if index == self._settings_view_index:
+        if self.view_stack.currentIndex() == self._settings_view_index:
             return None
-        if index == self._repo_view_index:
-            return self.content_stack.currentWidget()
-        return self.view_stack.currentWidget()  # a standalone section's page
+        return self.view_stack.currentWidget()
 
     def _apply_to_current_page(self) -> None:
         page = self._current_page()
         if page is not None:
             page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
-
-    def _on_stack_current_changed(self, _index: int) -> None:
-        self._apply_to_current_page()
 
     def _on_select_repo(self) -> None:
         dialog = RepoPickerDialog(
@@ -234,15 +254,13 @@ class MainWindow(QMainWindow):
             return
         self._set_active_repo(dialog.selected_project_id(), dialog.selected_repo_id())
 
-    def _on_combo_repo_selected(self, project_id: str, repo_id: str) -> None:
-        self._set_active_repo(project_id, repo_id)
-
     def _set_active_repo(self, project_id: str, repo_id: str) -> None:
         self.local_config_store.set_active_repo(project_id, repo_id)
         self._active_project = self.store.get_project(project_id)
         self._active_repo = self.store.get_repo(project_id, repo_id)
-        self.sidebar.set_active_labels(self._active_project.name, self._active_repo.name)
-        self.sidebar.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
+        self.sidebar.active_repo_widget.set_active_labels(self._active_repo.name, self._active_project.name)
+        self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
+        self._rebuild_browser_link_tabs()
         self._apply_to_current_page()
         self._fire_repo_selected()
         self._start_auto_sync()
@@ -283,55 +301,35 @@ class MainWindow(QMainWindow):
         git_status_page.start_sync()
 
     def _on_sync_started(self) -> None:
-        self.menu_bar.set_sync_message(f"Syncing {self._active_repo.name}...")
+        self.sidebar.set_sync_message(f"Syncing {self._active_repo.name}...")
 
     def _on_sync_finished(self) -> None:
-        self.menu_bar.set_sync_message("")
-        self.sidebar.refresh_repo_choices(self.store)
+        self.sidebar.set_sync_message("")
 
     def _on_sync_failed(self, _message: str) -> None:
-        self.menu_bar.set_sync_message("")
+        self.sidebar.set_sync_message("")
 
     # -- GitHub login -------------------------------------------------------
 
     def _restore_github_login_state(self) -> None:
         token = self.token_store.load_token()
         if self.local_config_store.github_username and token:
-            self.menu_bar.github_auth_widget.set_state(self.local_config_store.github_username)
+            self.sidebar.github_auth_widget.set_state(self.local_config_store.github_username)
             self.git_service.set_github_token(token)
         else:
             self.local_config_store.set_github_username(None)
-            self.menu_bar.github_auth_widget.set_state(None)
+            self.sidebar.github_auth_widget.set_state(None)
             self.git_service.set_github_token(None)
-
-    def _on_login_requested(self) -> None:
-        if not self.system_config_store.github_client_id:
-            QMessageBox.information(
-                self,
-                "GitHub Login",
-                "No GitHub OAuth Client ID configured yet.\n\n"
-                "Register a public OAuth App at github.com/settings/developers "
-                "(enable \"Device Flow\"), then paste its Client ID into "
-                "Setting > Common.",
-            )
-            return
-        self._login_dialog = GitHubLoginDialog(self, client_id=self.system_config_store.github_client_id)
-        if self._login_dialog.exec():
-            username = self._login_dialog.username
-            token = self._login_dialog.token
-            try:
-                self.token_store.save_token(token)
-            except TokenStoreFallbackUsed as exc:
-                QMessageBox.warning(self, "GitHub Login", str(exc))
-            self.local_config_store.set_github_username(username)
-            self.menu_bar.github_auth_widget.set_state(username)
-            self.git_service.set_github_token(token)
 
     def _on_logout_requested(self) -> None:
         self.token_store.clear_token()
         self.local_config_store.set_github_username(None)
-        self.menu_bar.github_auth_widget.set_state(None)
+        self.sidebar.github_auth_widget.set_state(None)
         self.git_service.set_github_token(None)
+        # GitHub login is mandatory — logout goes straight back to the same
+        # blocking gate shown at startup.
+        self._ensure_logged_in()
+        self._restore_github_login_state()
 
     # -- self-update --------------------------------------------------------
 
@@ -341,7 +339,7 @@ class MainWindow(QMainWindow):
         self._update_worker.start()
 
     def _on_update_check_result(self, available: bool) -> None:
-        self.menu_bar.set_update_available(available)
+        self.sidebar.set_update_available(available)
 
     def _on_update_and_restart(self) -> None:
         try:
@@ -360,7 +358,7 @@ class MainWindow(QMainWindow):
         # Built-in and plugin sections alike opt into this via
         # SectionSpec.background_threads, so main_window.py never needs to
         # know a section's internals.
-        workers = [self._update_worker, self.menu_bar.github_auth_widget._avatar_worker]
+        workers = [self._update_worker, self.sidebar.github_auth_widget._avatar_worker]
         for spec in self.section_registry.ordered():
             if spec.background_threads is not None:
                 workers.extend(spec.background_threads(self.pages[spec.key]))

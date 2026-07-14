@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtWidgets import QWidget
@@ -18,17 +19,17 @@ class SectionSpec:
     # workers it owns, so MainWindow.closeEvent can terminate them safely
     # without needing to know a plugin page's internals.
     background_threads: Callable[[QWidget], list] | None = None
-    # False (default): page is shown inside the shared sidebar + content
-    # stack (Repo, About). True: page gets its own full-width top-level view
-    # with no sidebar (Explorer, Submit) — see main_window.py's view_stack
-    # construction.
-    standalone: bool = False
+    # Optional: icon shown next to the label in Sidebar's SectionTabList row
+    # for this section. A section without one falls back to text-only (e.g.
+    # a plugin that hasn't supplied an icon yet).
+    icon_path: Path | None = None
 
 
 class SectionRegistry:
-    """Open, ordered replacement for the old closed SectionKey enum — both
-    built-in and plugin-provided sidebar sections register into the same
-    collection."""
+    """Open, ordered replacement for the old closed SectionKey enum — every
+    section is its own full-width top-level view in MainWindow.view_stack,
+    switched to via Sidebar's SectionTabList; both built-in and
+    plugin-provided sections register into the same collection."""
 
     def __init__(self) -> None:
         self._specs: dict[str, SectionSpec] = {}

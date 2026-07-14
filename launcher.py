@@ -40,9 +40,19 @@ def check_git_lfs_prerequisite() -> bool:
 def main() -> None:
     ensure_dependencies()
 
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     app = QApplication(sys.argv)
+    # packaging/icon.ico is only baked into UkoreHub.exe itself (via
+    # PyInstaller's --icon) — that thin exe just spawns `pythonw
+    # launcher.py` detached and exits (see packaging/exe_entry.py), so the
+    # actual GUI process is plain python(w).exe and would otherwise show
+    # Windows' generic Python icon in the taskbar/title bar unless the Qt
+    # app sets its own window icon here.
+    icon_path = REPO_ROOT / "packaging" / "icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     if not check_git_prerequisite():
         QMessageBox.critical(
@@ -69,12 +79,10 @@ def main() -> None:
     from core.github.token_store import TokenStore
     from core.program_store import ProgramStore
     from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
-    from interface.builtin_project_info_tabs import register_builtin_project_info_tabs
     from interface.builtin_sections import register_builtin_sections
     from interface.builtin_settings_tabs import register_builtin_settings_tabs
     from interface.main_window import MainWindow
     from interface.plugin_api import PLUGIN_API_VERSION, PluginAPI
-    from interface.project_info_tab_registry import ProjectInfoTabRegistry
     from interface.repo_addon_panel_registry import RepoAddonPanelRegistry
     from interface.section_registry import SectionRegistry
     from interface.settings_tab_registry import SettingsTabRegistry
@@ -92,9 +100,9 @@ def main() -> None:
     addon_store = AddonMetadataStore(data_dir / "addon_settings.json")
     local_config_store = LocalConfigStore(data_dir / "local_config.json")
     # Workspace root is fixed to the repo's own projects/ folder — there is no
-    # UI to point it elsewhere (see interface/settings_pages/common_settings_page.py
-    # and interface/launch_dialog.py), so force it here on every launch rather
-    # than only defaulting it once.
+    # UI to point it elsewhere (see interface/settings/common_settings_page.py
+    # and interface/login/launch_dialog.py), so force it here on every launch
+    # rather than only defaulting it once.
     forced_workspace_root = str(REPO_ROOT / "projects")
     if local_config_store.workspace_root != forced_workspace_root:
         local_config_store.set_workspace_root(forced_workspace_root)
@@ -125,15 +133,6 @@ def main() -> None:
     repo_addon_panel_registry = RepoAddonPanelRegistry()
     file_opener_registry = FileOpenerRegistry()
 
-    project_info_tab_registry = ProjectInfoTabRegistry()
-    register_builtin_project_info_tabs(
-        project_info_tab_registry,
-        store=store,
-        local_config_store=local_config_store,
-        git_service=git_service,
-        repo_addon_panel_registry=repo_addon_panel_registry,
-        addon_catalog=addon_discovery.loaded,
-    )
     section_registry = SectionRegistry()
     register_builtin_sections(
         section_registry,
@@ -142,7 +141,7 @@ def main() -> None:
         git_service=git_service,
         program_store=program_store,
         addon_store=addon_store,
-        project_info_tab_registry=project_info_tab_registry,
+        repo_addon_panel_registry=repo_addon_panel_registry,
         file_opener_registry=file_opener_registry,
         addon_catalog=addon_discovery.loaded,
     )
@@ -168,7 +167,6 @@ def main() -> None:
         hooks=hook_registry,
         section_registry=section_registry,
         settings_tab_registry=settings_tab_registry,
-        project_info_tab_registry=project_info_tab_registry,
         repo_addon_panel_registry=repo_addon_panel_registry,
         file_opener_registry=file_opener_registry,
         plugins_data_dir=data_dir / "plugins",

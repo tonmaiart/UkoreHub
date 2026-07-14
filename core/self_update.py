@@ -15,7 +15,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
-def _git(args: list[str], cwd: Path) -> str:
+def run_git(args: list[str], cwd: Path) -> str:
+    """Bare, synchronous `git <args>` against `cwd` — used for whole-tree
+    operations on UkoreHub's own install (this repo), as opposed to
+    core/git_service.py's GitService which is built around cloning/syncing
+    arbitrary *studio project* repos with token auth and hooks."""
     git_executable = shutil.which("git") or "git"
     result = subprocess.run(
         [git_executable, *args],
@@ -32,11 +36,11 @@ def _git(args: list[str], cwd: Path) -> str:
 
 
 def check_for_update(repo_root: Path = REPO_ROOT) -> bool:
-    _git(["fetch"], cwd=repo_root)
-    local_head = _git(["rev-parse", "HEAD"], cwd=repo_root)
-    upstream_head = _git(["rev-parse", "@{u}"], cwd=repo_root)
+    run_git(["fetch"], cwd=repo_root)
+    local_head = run_git(["rev-parse", "HEAD"], cwd=repo_root)
+    upstream_head = run_git(["rev-parse", "@{u}"], cwd=repo_root)
     return local_head != upstream_head
 
 
 def pull_update(repo_root: Path = REPO_ROOT) -> None:
-    _git(["pull"], cwd=repo_root)
+    run_git(["pull"], cwd=repo_root)

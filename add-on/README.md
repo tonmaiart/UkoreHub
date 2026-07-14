@@ -54,7 +54,7 @@ key in `Repo.enabled_addon_ids`, the argument to `api.register_*`, and the
 `AddonMetadataStore` key (see below). `api_version` must match the app's
 current `PLUGIN_API_VERSION` (`interface/plugin_api.py`) or your add-on is
 skipped with a `PluginLoadFailure`, not a crash — check
-`interface/settings_pages/addon_settings_page.py`'s "Failed to Load" list
+`interface/settings/addon_settings_page.py`'s "Failed to Load" list
 if your add-on silently isn't showing up.
 
 `plugin.py` needs exactly one function:
@@ -85,15 +85,16 @@ behavior:
 - `api.register_file_opener(addon_id, extensions, opener)` — claims
   responsibility for opening certain file extensions (e.g. launching an
   app with custom env vars) instead of the OS default association, when a
-  file is opened through Repo Browser or Recent Files. `opener(path, repo)
-  -> bool` returns whether it handled the file. **Only reachable when the
-  active repo has `addon_id` in `Repo.enabled_addon_ids`** —
+  file is opened through Repo Browser (double-click in the file table).
+  `opener(path, repo) -> bool` returns whether it handled the file. **Only
+  reachable when the active repo has `addon_id` in `Repo.enabled_addon_ids`** —
   `core/extensibility/file_opener.py`'s `FileOpenerRegistry` enforces this,
   so there's no risk of your opener firing for files opened outside
   UkoreHub or on a repo that hasn't enabled you.
 - `api.register_repo_addon_panel(addon_id, panel_factory)` — a status
-  widget (`panel_factory(repo) -> QWidget`) shown in Project Info → "Repo
-  Add-on" whenever this add-on is enabled for the active repo. Purely
+  widget (`panel_factory(repo) -> QWidget`) shown as its own sub-tab
+  (named after your manifest's `name`) inside the About tab's left tab
+  bar, whenever this add-on is enabled for the active repo. Purely
   informational (e.g. "is the linked executable configured?") — optional,
   skip it if your add-on has nothing to show.
 
@@ -111,9 +112,9 @@ add-on:
 - `api.plugin_config_store(plugin_id, *, shared: bool)` — namespaced JSON
   settings (see below).
 - `api.register_git_hook`, `api.register_section`,
-  `api.register_settings_tab`, `api.register_project_info_tab` — same
-  registries plugins use; an add-on can register any of these too, though
-  it's less common (most add-ons only need the two above).
+  `api.register_settings_tab` — same registries plugins use; an add-on can
+  register any of these too, though it's less common (most add-ons only
+  need the two above).
 
 ## Sharing data with another add-on: `plugin_config_store`, not imports
 
@@ -149,7 +150,7 @@ Two real, worked examples of this convention, both in
 
 `manifest.json`'s `name`/`description` are the fallback shown until an
 admin edits an add-on's entry in **Settings → Add-ons**
-(`interface/settings_pages/addon_settings_page.py`, backed by
+(`interface/settings/addon_settings_page.py`, backed by
 `core/addon_store.py`'s `AddonMetadataStore` →
 `data/addon_settings.json`, shared/git-tracked). That's also where an
 add-on's **required Program(s)** are declared (e.g. "this add-on requires

@@ -29,11 +29,22 @@ def _non_interactive_env(extra: dict | None = None) -> dict:
     """Environment that makes git fail fast with a visible error instead of
     silently hanging forever waiting for a username/password/passphrase on a
     terminal nobody is watching (the classic "clone just sits there" trap
-    when git is launched from a GUI app with no real TTY to prompt on)."""
+    when git is launched from a GUI app with no real TTY to prompt on).
+
+    BatchMode=yes disables every SSH prompt, including the normal one-time
+    "accept this host's fingerprint?" prompt shown the first time you SSH
+    to a new host — without StrictHostKeyChecking=accept-new, a machine
+    that has never SSH'd to github.com before fails every SSH clone with
+    "Host key verification failed" and there is no prompt for the user to
+    ever get past. accept-new auto-trusts a *new* host's key (standard
+    practice for non-interactive/CI git clients) while still strictly
+    verifying hosts already in known_hosts, so it doesn't weaken protection
+    against a host's key actually changing later (unlike
+    StrictHostKeyChecking=no, which disables verification permanently)."""
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
     ssh_command = env.get("GIT_SSH_COMMAND", "ssh")
-    env["GIT_SSH_COMMAND"] = f"{ssh_command} -o BatchMode=yes"
+    env["GIT_SSH_COMMAND"] = f"{ssh_command} -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
     if extra:
         env.update(extra)
     return env
@@ -199,6 +210,24 @@ class GitService:
         if not paths:
             return
         self._run_capture(["add", "--", *paths], cwd=Path(repo_path))
+
+    def unstage_paths(self, repo_path: Path, paths: list[str]) -> None:
+        if not paths:
+            return
+        self._run_capture(["reset", "HEAD", "--", *paths], cwd=Path(repo_path))
+
+    def get_commit_files(self, repo_path: Path, commit_hash: str) -> list[str]:
+        """Relative paths of every file changed in a single commit. --root
+        is required for this to return anything on a repo's very first
+        commit (no parent to diff against otherwise)."""
+        try:
+            output = self._run_capture(
+                ["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", commit_hash],
+                cwd=Path(repo_path),
+            )
+        except GitOperationError:
+            return []
+        return [line for line in output.splitlines() if line]
 
     def revert_paths(self, repo_path: Path, *, modified_paths: list[str], untracked_paths: list[str]) -> None:
         """Discards working-tree changes. Tracked/modified files are reset to

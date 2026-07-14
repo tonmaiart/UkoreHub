@@ -8,6 +8,10 @@ from core.store import _atomic_write
 
 SCHEMA_VERSION = 1
 
+# Shown for any add-on that hasn't been given its own icon via Setting >
+# Add-ons — lives in icons_dir alongside per-addon icon overrides.
+DEFAULT_ICON_FILENAME = "icons8-tools-50.png"
+
 
 class AddonMetadataStore:
     """Shared studio-wide overrides for discovered add-ons (icon,
@@ -75,6 +79,18 @@ class AddonMetadataStore:
         if not addon.icon_filename:
             return None
         return self.icons_dir / addon.icon_filename
+
+    def resolve_display_icon_path(self, addon: AddonMetadata) -> Path | None:
+        """Like resolve_icon_path, but falls back to the shared
+        DEFAULT_ICON_FILENAME when no custom icon is configured — for
+        display contexts (Repo About's AddonCard) that always want to show
+        something. Editing UIs that need to distinguish "no icon set" from
+        "has an icon" should keep using resolve_icon_path directly."""
+        icon_path = self.resolve_icon_path(addon)
+        if icon_path is not None and icon_path.exists():
+            return icon_path
+        default_path = self.icons_dir / DEFAULT_ICON_FILENAME
+        return default_path if default_path.exists() else None
 
 
 def group_addon_ids_by_program(

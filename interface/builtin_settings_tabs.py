@@ -4,12 +4,12 @@ from core.addon_store import AddonMetadataStore
 from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
-from interface.settings_pages.addon_settings_page import AddonSettingsPage
-from interface.settings_pages.common_settings_page import CommonSettingsPage
-from interface.settings_pages.plugin_catalog_page import PluginCatalogPage
-from interface.settings_pages.program_database_page import ProgramDatabasePage
-from interface.settings_pages.project_data_editor_page import ProjectDataEditorPage
-from interface.settings_pages.project_status_page import ProjectStatusPage
+from interface.settings.addon_settings_page import AddonSettingsPage
+from interface.settings.common_settings_page import CommonSettingsPage
+from interface.settings.plugin_catalog_page import PluginCatalogPage
+from interface.settings.program_database_page import ProgramDatabasePage
+from interface.settings.project_data_editor_page import ProjectDataEditorPage
+from interface.settings.project_status_page import ProjectStatusPage
 from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
 
 COMMON = "common"

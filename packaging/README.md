@@ -16,8 +16,12 @@ exe_entry.py itself.
   finds a real `pythonw`/`python` on PATH (never derives it from its own
   frozen `sys.executable`), and spawns `launcher.py` detached, then exits
   immediately — a hand-off, not a supervisor.
-- `icon.ico` — the icon baked into `UkoreHub.exe`. Git-tracked; swap this
-  file and rerun `build_exe.py` to rebrand.
+- `icon.ico` — the icon baked into `UkoreHub.exe` (swap this file and rerun
+  `build_exe.py` to rebrand). Git-tracked. `launcher.py` also loads this
+  same file directly (`QApplication.setWindowIcon`) — `UkoreHub.exe` only
+  owns this icon for the instant it exists before handing off to a plain
+  `python(w).exe` process (see `exe_entry.py`), which would otherwise show
+  Windows' generic Python icon in the taskbar/title bar without that.
 
 See root `README.md`'s "Running" section for how artists use the built
 exe, and `.gitignore` for why `build/` and `*.spec` (PyInstaller's

@@ -13,7 +13,12 @@ def get_maya_window():
 
 class ToolkitWindow(MayaQWidgetDockableMixin, QtWidgets.QMainWindow):
     def __init__(self, toolkit_name):
-        super(ToolkitWindow, self).__init__(parent=get_maya_window())
+        # Zero-arg super() (rather than super(ToolkitWindow, self)) survives
+        # Maya's interactive module-reload workflow: an explicit class
+        # reference captured before a reload() no longer matches self's
+        # (reloaded) class, raising "super(type, obj): obj must be an
+        # instance or subtype of type" the next time a tool window opens.
+        super().__init__(parent=get_maya_window())
 
         self.setWindowFlags(self.windowFlags() & ~QtCore.Qt.WindowMaximizeButtonHint)
 

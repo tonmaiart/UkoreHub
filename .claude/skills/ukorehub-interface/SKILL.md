@@ -1,6 +1,6 @@
 ---
 name: ukorehub-interface
-description: Reference for UkoreHub's interface/ layer (C:\Tonmai\UkoreHub) — the PySide6 GUI: MainWindow's Menu Bar / Repo-Setting tab switcher, the five extension registries (SectionRegistry, SettingsTabRegistry, ProjectInfoTabRegistry, RepoAddonPanelRegistry, FileOpenerRegistry), PluginAPI composition, and the builtin_*.py dogfooding pattern. Use this whenever adding a page, a settings tab, a sidebar section, a Project Info tab, a Repo Add-on panel, or any UI-facing plugin/add-on registration — or whenever the task touches interface/main_window.py, interface/pages/, interface/plugin_api.py, or any interface/*_registry.py, even if the user doesn't say "interface" explicitly (e.g. "add a settings page", "show this in the sidebar").
+description: Reference for UkoreHub's interface/ layer (C:\Tonmai\UkoreHub) — the PySide6 GUI, organized by window (sidebar/, login/, explorer/, submit/, about/, settings/, plus a shared/ for multi-window files): MainWindow's left-hand Sidebar / SectionTabList navigation, the four extension registries (SectionRegistry, SettingsTabRegistry, RepoAddonPanelRegistry, FileOpenerRegistry), PluginAPI composition, and the builtin_*.py dogfooding pattern. Use this whenever adding a page, a settings tab, a top-level section, a Repo Add-on panel, or any UI-facing plugin/add-on registration — or whenever the task touches interface/main_window.py, any interface/<window>/ folder, interface/plugin_api.py, or any interface/*_registry.py, even if the user doesn't say "interface" explicitly (e.g. "add a settings page", "show this as its own tab").
 ---
 
 # UkoreHub interface/ — architecture reference
@@ -14,50 +14,64 @@ first for the current file listing — this skill is the architecture and the
 
 A task about `interface/` stays inside `interface/` — don't open `core/` or
 `add-on/` files unless the change genuinely needs a new `core/` primitive
-to build on. Within `interface/`, `pages/` and `settings_pages/` are each a
-flat directory of independent, mostly-unrelated files (one file per
-sidebar section / settings tab) — reading one page has no information
-value for editing a different one, so open only the page/tab the task
-names, plus `main_window.py` or the relevant `*_registry.py` only if the
-task is about wiring, not page content. Same for `*_dialog.py` and
-`*_worker.py`: pick the one the task names, don't survey the others.
+to build on. `interface/` is organized by window, not by suffix convention:
+`sidebar/`, `login/`, `explorer/`, `submit/`, `about/`, `settings/` each
+own one area of the app end-to-end (page + its own dialogs + its own
+workers) — a task about one window opens only that folder, plus
+`main_window.py` or the relevant root-level `*_registry.py` only if the
+task is about wiring, not page content. `shared/` holds the handful of
+files with a confirmed multi-window consumer (`commit_history.py`,
+`dialogs.py`, `project_repo_tree.py`) — a change there affects every window
+that imports it, listed in `shared/README.md`, so check all of them.
 
-## MainWindow structure — no more modal Settings dialog
+## MainWindow structure — left Sidebar, no modal Settings dialog
 
 `interface/main_window.py`'s `MainWindow` no longer opens a modal
 `QDialog` for settings (that was ripped out in favor of an embedded tab
-switcher), and there is no separate bottom switcher bar anymore either —
-everything lives in one row. Current structure, top to bottom:
+switcher). Navigation lives in a persistent left-hand column rather than a
+top row (an earlier iteration of this redesign tried a horizontal top
+MenuBar — that was superseded by this Sidebar). Current structure, left to
+right:
 
-- **Menu Bar** (`interface/menu_bar.py`, top of window — this is what used
-  to be the bottom status bar before it was moved and renamed; don't
-  confuse it with Qt's `QMenuBar`, it's UkoreHub's own term for this
-  strip). It embeds **`TopTabBar`** (`interface/top_tab_bar.py`, right after
-  the app label): one button per `SectionRegistry` section
-  (Repo/Explorer/Submit/About, in registry order), in its own exclusive
-  button group. A separate **Setting** button lives at the *far end* of the
-  same row, after GitHub login/logout — deliberately its own control, not
-  part of `TopTabBar`'s group, since it's an app-level setting, not
-  repo-scoped. `MainWindow` keeps the two in sync by hand
-  (`TopTabBar.uncheck_all()` / `menu_bar.setting_button.setChecked(...)`)
-  since they're independent `QButtonGroup`s. There is no per-section button
-  list in the sidebar anymore (`sidebar.py` is now just thumbnail + repo
-  picker + recent files).
-- **A view stack** (`MainWindow.view_stack`) with three kinds of page:
-  the shared **repo view** (sidebar + `content_stack`, for sections with
-  `SectionSpec.standalone=False` — built-in Repo/About), one **standalone
-  full-width page per section** with `standalone=True` (built-in
-  Explorer/Submit — no sidebar), and the **settings view**
-  (`SettingsTabRegistry`-driven, shown when the separate Setting button is
-  clicked). `TopTabBar.tab_changed` picks between the repo view and a
-  standalone page; `MenuBar.settings_requested` picks the settings view.
+- **`Sidebar`** (`interface/sidebar/sidebar.py`, fixed-width left column).
+  Top to bottom within it:
+  - **`ActiveRepoWidget`** (`interface/sidebar/active_repo_widget.py`): a
+    fill-cropped (never rounded) repo thumbnail banner with the repo name
+    overlaid as a translucent strip at its bottom, and directly beneath it
+    a full-width "Project / Repo" button that opens the repo picker
+    (`interface/login/repo_picker.py`).
+  - **`SectionTabList`** (`interface/sidebar/section_tab_list.py`, a
+    vertical `QListWidget`, stretched to fill the remaining height): one
+    row per `SectionRegistry` section (currently Explorer/Submit/About, in
+    registry order), then one row per dynamic Browser Link on the active
+    repo (inserted right after the fixed sections, rebuilt on every repo
+    switch), then a final **Setting** row (`SETTINGS_KEY`) that always
+    stays last. Because this is one single-selection list rather than two
+    independent `QButtonGroup`s (the old MenuBar's design), there is
+    nothing to keep in sync by hand anymore — `SectionTabList` emits one
+    `navigation_changed(key)` signal for every row, Setting included.
+  - A **footer** (`sidebarFooter`) with sync status, the Update button,
+    and GitHub login/logout (`interface/login/github_auth_widget.py`).
+- **A view stack** (`MainWindow.view_stack`) with one full-width top-level
+  page per `SectionRegistry` section (Explorer/Submit/About — every
+  section is standalone, there's no shared sidebar-backed container), one
+  page per dynamic Browser Link tab, plus the **settings view**
+  (`SettingsTabRegistry`-driven, shown when the Setting row is selected).
+  `Sidebar.navigation_changed` picks a page by key via
+  `MainWindow._on_navigation_changed`, which special-cases
+  `key == SETTINGS_KEY` to show the settings view instead of looking it up
+  in `_section_view_index`/`_dynamic_view_index`. There is no "Repo"/Project
+  Info section anymore — it was removed; its "Repo Add-on" sub-tab's job
+  (showing each enabled add-on's per-repo panel via `RepoAddonPanelRegistry`)
+  moved into `interface/about/repo_about_page.py`'s own left-tab-bar
+  sub-tabs instead (see below).
 - Every settings page **self-persists on every change** — there is no
   Save/Cancel step anywhere. `SettingsTabSpec` has no `on_save`/`on_cancel`
   hooks; if you're writing a new settings page, write directly through
   whatever store you're editing the moment the user changes a value, the
   same way every existing settings page does.
 
-## The five registries
+## The four registries
 
 All live under `interface/`, except `FileOpenerRegistry` which is Qt-free
 and therefore lives in `core/extensibility/` (see `ukorehub-core` skill) —
@@ -65,21 +79,20 @@ don't go looking for it here, even though it's UI-adjacent in purpose.
 
 | Registry | Spec dataclass | Keyed? | Purpose |
 |---|---|---|---|
-| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level tab-bar sections, rendered by `TopTabBar` (Repo, Explorer, Submit, About, ...) |
+| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level sections, rendered as rows in Sidebar's `SectionTabList` (Explorer, Submit, About, ...) |
 | `SettingsTabRegistry` | `SettingsTabSpec` | yes | Tabs shown in the "Setting" view |
-| `ProjectInfoTabRegistry` | `ProjectInfoTabSpec` | yes | Sub-tabs inside the Project Info page (it's a tab-of-tabs) |
-| `RepoAddonPanelRegistry` | (factory keyed by addon_id) | yes | Per-add-on status panel shown in the "Repo Add-on" tab of Project Info |
+| `RepoAddonPanelRegistry` | (factory keyed by addon_id) | yes | Per-add-on per-repo panel, consumed by `interface/about/repo_about_page.py`'s dynamic sub-tabs (one per enabled add-on with a registered panel) |
 | `FileOpenerRegistry` | `FileOpenerSpec` | **no**, plain list, first-match-wins | Add-on can claim responsibility for opening a file extension (lives in `core/`) |
 
-Every registered page/tab factory follows the same **`page_factory: Callable[[], QWidget]`** convention — no arguments, construct-on-demand. This is also why pytest can smoke-test registries without ever instantiating a real `QWidget`: tests register `page_factory=lambda: None` and only assert on registry bookkeeping (duplicate-key rejection, ordering), never call the factory.
+Every registered page/tab factory follows the same **`page_factory: Callable[[], QWidget]`** convention — no arguments, construct-on-demand. This is also why pytest can smoke-test registries without ever instantiating a real `QWidget`: tests register `page_factory=lambda: None` and only assert on registry bookkeeping (duplicate-key rejection, ordering), never call the factory. `RepoAddonPanelRegistry`'s `panel_factory` is the one exception — it takes the active `Repo` directly (`Callable[[Repo], QWidget]`), since `interface/about/repo_about_page.py` rebuilds these panels fresh on every `set_repo()` rather than constructing once.
 
 Built-ins register into the exact same registries a plugin/add-on would —
-`interface/builtin_sections.py`, `interface/builtin_settings_tabs.py`,
-`interface/builtin_project_info_tabs.py` call the same
-`register_*`/`api.register_*` surface as `add-on/MayaLauncher/plugin.py`
-does. This "dogfooding" is deliberate: if a built-in page needs something
-the registry API can't express, that's a signal the registry API itself is
-incomplete — don't special-case built-ins with a side channel.
+`interface/builtin_sections.py`, `interface/builtin_settings_tabs.py` call
+the same `register_*`/`api.register_*` surface as
+`add-on/MayaLauncher/plugin.py` does. This "dogfooding" is deliberate: if a
+built-in page needs something the registry API can't express, that's a
+signal the registry API itself is incomplete — don't special-case
+built-ins with a side channel.
 
 ## `interface/plugin_api.py` — `PluginAPI`
 
@@ -90,7 +103,7 @@ Current constructor:
 
 ```python
 def __init__(self, *, store, program_store, local_config_store, git_service, hooks,
-             section_registry, settings_tab_registry, project_info_tab_registry,
+             section_registry, settings_tab_registry,
              repo_addon_panel_registry, file_opener_registry, plugins_data_dir, app_root):
 ```
 
@@ -109,33 +122,36 @@ Notable surface:
   paths inside the UkoreHub installation (like
   `plugins/MayaToolkit/`) without guessing their nesting depth from
   `__file__`.
-- `api.register_repo_addon_panel(addon_id, panel_factory)`,
-  `api.register_file_opener(addon_id, extensions, opener)`,
-  `api.register_section(...)`, `api.register_settings_tab(...)`,
-  `api.register_project_info_tab(...)` — one register method per registry
-  above.
+- `api.register_repo_addon_panel(addon_id, panel_factory)` — shows up as
+  its own sub-tab (named after the add-on's manifest) inside the About
+  page's left tab bar, for any repo that has that add-on enabled. This is
+  where MayaLauncher's own panel lives today.
+- `api.register_file_opener(addon_id, extensions, opener)`,
+  `api.register_section(...)`, `api.register_settings_tab(...)` — one
+  register method per remaining registry above.
 
 ## Page protocol: `set_repo()`
 
 Most pages that need to react to the active repo changing (Repo Browser,
-Repo About, Git Status, Project Info, and its Repo Add-on sub-tab) implement
-a `set_repo(repo: Repo | None) -> None` method, called by `MainWindow`/the
-owning page whenever the sidebar selection changes. If you're adding a new
-page that cares which repo is active, implement this method rather than
-inventing a new callback — it's how every existing page stays in sync.
+Repo About and its sub-tabs, Repo Git Status) implement a
+`set_repo(repo: Repo | None) -> None` method, called by `MainWindow`
+whenever the active repo or the visible top-level tab changes. If you're
+adding a new page that cares which repo is active, implement this method
+rather than inventing a new callback — it's how every existing page stays
+in sync.
 
 ## File-open flow — where an add-on actually intercepts a double-click
 
 This is the one flow worth tracing end-to-end since it crosses several
 files and the naming ("open") appears at every layer:
 
-1. `interface/repo_browser/browser_widget.py`'s `RepoBrowserWidget` takes an
+1. `interface/explorer/browser_widget.py`'s `RepoBrowserWidget` takes an
    `open_file: Callable[[Path], None] | None = None` constructor param
    (default `None` falls back to `core.os_utils.open_with_default_app`,
    i.e. the OS file association / `os.startfile`). Double-clicking a row
    calls `self._open_file(path)`, then unconditionally emits
    `file_opened.emit(path)` regardless of which opener handled it.
-2. `interface/pages/repo_browser_page.py`'s `RepoBrowserPage` constructs
+2. `interface/explorer/repo_browser_page.py`'s `RepoBrowserPage` constructs
    `RepoBrowserWidget(..., open_file=self._open_file)` and implements:
    ```python
    def _open_file(self, path: Path) -> None:
@@ -151,16 +167,14 @@ files and the naming ("open") appears at every layer:
    match if the extension matches *and* the registering add-on's id is in
    the repo's `enabled_addon_ids` — the registry has no notion of "current
    repo" itself, that gating is entirely the caller's responsibility.
-4. `interface/main_window.py`'s `_on_recent_file_activated` (Recent Files
-   sidebar list) mirrors the exact same check-registry-then-fallback logic
-   independently, for consistency — clicking a recent file goes through the
-   same add-on opener as double-clicking it in Repo Browser.
 
-If you add a new file-open entry point (e.g. a "reveal in explorer" style
-action, or another sidebar list), replicate this same
+If you add a new file-open entry point, replicate this same
 check-registry-then-fallback shape rather than calling
 `open_with_default_app` directly, so add-on-provided openers stay
-consistent everywhere a file can be opened from.
+consistent everywhere a file can be opened from. (Explorer used to also
+have Recent Files and Favorites lists that navigated but never opened a
+file — both were removed entirely for a cleaner Explorer tab; double-click
+in the file table is the only file-open entry point there now.)
 
 ## Wiring: `launcher.py`
 
@@ -180,10 +194,23 @@ only (registration, duplicate-key rejection, lookup/ordering), never
 `QWidget` behavior. For anything that genuinely needs a live `QApplication`
 + `MainWindow` (e.g. verifying a new registry threads all the way through
 without crashing), use a throwaway headless smoke-test script instead of a
-pytest test: construct `QApplication`, all registries, and `MainWindow`
-without calling `app.exec()`, `patch.object` any dialog-showing methods
+pytest test — **and always point it at a scratch copy of `data/`, never
+the real `data/` or `REPO_ROOT`** (see root `CLAUDE.md`'s "Headless/smoke
+testing" section — `MainWindow.__init__` can kick off a real background
+git sync/pull against whatever it's pointed at the moment a `QThread`
+worker's `.start()` is called, independent of whether `app.exec()` ever
+runs, and a real UkoreHub.exe may already be running concurrently):
+construct `QApplication`, all registries, and `MainWindow` without calling
+`app.exec()`, `patch.object` any dialog-showing methods
 (`_show_launch_dialog`, `_check_for_update`) to no-ops, and end with
 `sys.stdout.flush(); os._exit(0)` — `os._exit` is required because Qt/
 Windows can hang on normal process teardown after `QApplication` is
 destroyed without an explicit `app.quit()`; without the `os._exit(0)` the
-script can look hung even though it actually finished.
+script can look hung even though it actually finished. Note that
+constructing a real `QWebEngineProfile`/`QWebEngineView`
+(`web_engine_profile.py`, `about/browser_link_page.py`) can itself be slow
+to spin up cold (Chromium subsystem init) and can hang a headless script
+before it ever reaches `MainWindow.__init__`'s return — if you only need
+to verify import paths after moving/renaming files, a plain
+`importlib.import_module` sweep over every `interface/**/*.py` is a much
+faster, sufficient check that needs no GUI at all.

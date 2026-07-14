@@ -7,6 +7,9 @@ __pycache__/
 # git pull / Update and Restart.
 data/local_config.json
 data/github_token.json
+# Per-machine QWebEngineProfile storage (cookies/session for Browser Link
+# tabs) — see interface/web_engine_profile.py. Never shared/tracked.
+data/webengine_profile/
 # Per-plugin settings mirror the same split: data/plugins/studio/*.json is
 # shared (written by studio-authored plugins), data/plugins/local/*.json is
 # per-machine/experimental — see core/plugin_config_store.py.

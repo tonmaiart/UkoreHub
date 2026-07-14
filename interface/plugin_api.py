@@ -12,7 +12,6 @@ from core.git_service import GitService
 from core.models import Repo
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
-from interface.project_info_tab_registry import ProjectInfoTabRegistry, ProjectInfoTabSpec
 from interface.repo_addon_panel_registry import RepoAddonPanelRegistry, RepoAddonPanelSpec
 from interface.section_registry import SectionRegistry, SectionSpec
 from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
@@ -41,7 +40,6 @@ class PluginAPI:
         hooks: HookRegistry,
         section_registry: SectionRegistry,
         settings_tab_registry: SettingsTabRegistry,
-        project_info_tab_registry: ProjectInfoTabRegistry,
         repo_addon_panel_registry: RepoAddonPanelRegistry,
         file_opener_registry: FileOpenerRegistry,
         plugins_data_dir: Path,
@@ -54,7 +52,6 @@ class PluginAPI:
         self._hooks = hooks
         self._section_registry = section_registry
         self._settings_tab_registry = settings_tab_registry
-        self._project_info_tab_registry = project_info_tab_registry
         self._repo_addon_panel_registry = repo_addon_panel_registry
         self._file_opener_registry = file_opener_registry
         self._plugins_data_dir = Path(plugins_data_dir)
@@ -89,9 +86,6 @@ class PluginAPI:
 
     def register_settings_tab(self, spec: SettingsTabSpec) -> None:
         self._settings_tab_registry.register(spec)
-
-    def register_project_info_tab(self, spec: ProjectInfoTabSpec) -> None:
-        self._project_info_tab_registry.register(spec)
 
     def register_repo_addon_panel(self, addon_id: str, panel_factory: Callable[[Repo], QWidget]) -> None:
         self._repo_addon_panel_registry.register(RepoAddonPanelSpec(addon_id=addon_id, panel_factory=panel_factory))

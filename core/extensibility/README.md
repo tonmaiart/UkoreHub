@@ -24,8 +24,8 @@ plugin's or add-on's `register(api)` receives.
 - `file_opener.py` — `FileOpenerSpec`/`FileOpenerRegistry`: lets a repo-scoped
   add-on claim responsibility for opening certain file extensions (e.g.
   launching Maya with custom env vars instead of the OS default association)
-  when a file is opened through Repo Browser or the sidebar's Recent Files —
-  never for files opened outside UkoreHub entirely. Gated by
+  when a file is opened through Repo Browser (double-click in the file
+  table) — never for files opened outside UkoreHub entirely. Gated by
   `Repo.enabled_addon_ids`, consistent with Add-ons being per-repo opt-in.
 
 None of these four files import each other. `hooks.py` and `file_opener.py`

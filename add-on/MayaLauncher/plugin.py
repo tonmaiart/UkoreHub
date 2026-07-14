@@ -126,8 +126,8 @@ def register(api) -> None:
 
     def open_maya_file(path: Path, repo) -> bool:
         # Only reachable when this repo has "maya_launcher" enabled as an
-        # add-on AND the file was opened through UkoreHub (Repo Browser or
-        # Recent Files) — never for Maya/files opened any other way.
+        # add-on AND the file was double-clicked open through UkoreHub's
+        # Repo Browser — never for Maya/files opened any other way.
         linked = api.plugin_config_store(SOFTWARE_LINKER_PLUGIN_ID, shared=False)
         maya_exe = None
         maya_version = None

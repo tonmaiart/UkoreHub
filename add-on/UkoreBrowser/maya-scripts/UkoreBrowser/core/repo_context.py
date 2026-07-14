@@ -49,8 +49,17 @@ def get_active_repo_path() -> str | None:
 
 
 def get_start_path() -> str:
-    """The path UkoreBrowser should open at: the active UkoreHub repo if one
-    is set, otherwise Maya's current workspace directory."""
+    """The path UkoreBrowser should open at: the current Maya scene file's
+    folder if one is open (so the browser lands right where you're working),
+    else the active UkoreHub repo, else Maya's current workspace directory."""
+    from UkoreBrowser.core.maya_ops import get_current_scene_path
+
+    scene_path = get_current_scene_path()
+    if scene_path:
+        scene_dir = Path(scene_path).parent
+        if scene_dir.is_dir():
+            return str(scene_dir)
+
     repo_path = get_active_repo_path()
     if repo_path is not None:
         return repo_path

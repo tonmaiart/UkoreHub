@@ -64,12 +64,14 @@ the bridge convention both add-ons rely on.
 
 ## Root-path detection
 
-`core/repo_context.get_start_path()` is the single entry point: active
-UkoreHub repo (via `core.store.LocalConfigStore` + `core.store.MetadataStore`
+`core/repo_context.get_start_path()` is the single entry point, in priority
+order: (1) the current Maya scene file's folder (`maya_ops.get_current_scene_path()`),
+so the browser opens right where you're working, if one is open; (2) the
+active UkoreHub repo (via `core.store.LocalConfigStore` + `core.store.MetadataStore`
 + `core.paths.resolve_repo_path`, all read directly since this add-on's
-PYTHONPATH contribution also includes UkoreHub's own app root) if one is
-set, otherwise `cmds.workspace(q=True, rd=True)`. There is no more
-hardcoded drive path — don't reintroduce one.
+PYTHONPATH contribution also includes UkoreHub's own app root) if set;
+(3) `cmds.workspace(q=True, rd=True)`. There is no more hardcoded drive
+path — don't reintroduce one.
 
 ## Working on this add-on
 

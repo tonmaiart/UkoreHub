@@ -8,7 +8,6 @@ class ThemeColors:
     background: str
     surface: str
     surface_alt: str
-    sidebar_background: str
     accent: str
     accent_hover: str
     text_primary: str
@@ -25,7 +24,6 @@ THEMES: dict[str, ThemeColors] = {
         background="#1e1f22",
         surface="#2b2d31",
         surface_alt="#232428",
-        sidebar_background="#35373c",
         accent="#5865f2",
         accent_hover="#4752c4",
         text_primary="#dcddde",
@@ -81,33 +79,87 @@ def build_stylesheet(colors: ThemeColors) -> str:
         color: {colors.text_secondary};
         background-color: {colors.surface_alt};
     }}
-    QWidget#sidebarContainer {{
-        background-color: {colors.sidebar_background};
+    QWidget#sidebar {{
+        background-color: {colors.surface};
+        border-right: 1px solid {colors.border};
     }}
-    QLabel#activeRepoLabel {{
-        font-size: 18px;
-        font-weight: bold;
-    }}
-    QPushButton#topTabButton {{
-        padding: 6px 14px;
+    QPushButton#activeRepoSelectButton {{
+        text-align: left;
+        padding: 8px 10px;
         border: none;
-        border-radius: 4px;
-        background-color: {colors.surface_alt};
+        border-radius: 0px;
+        border-bottom: 1px solid {colors.border};
+        background-color: {colors.surface};
     }}
-    QPushButton#topTabButton:hover {{
+    QPushButton#activeRepoSelectButton:hover {{
         background-color: {colors.hover};
     }}
-    QPushButton#topTabButton:checked {{
+    QListWidget#sectionTabList {{
+        background-color: {colors.surface};
+        border: none;
+        outline: none;
+        font-size: 14px;
+    }}
+    QListWidget#sectionTabList::item {{
+        padding: 8px 14px;
+        border: none;
+    }}
+    QListWidget#sectionTabList::item:hover {{
+        background-color: {colors.hover};
+    }}
+    QListWidget#sectionTabList::item:selected {{
         background-color: {colors.accent};
         color: white;
         font-weight: bold;
     }}
-    QFrame#commitCard, QFrame#requirementCard, QFrame#pluginCard {{
+    QWidget#sidebarFooter {{
+        border-top: 1px solid {colors.border};
+    }}
+    QPushButton#sidebarSettingButton {{
+        padding: 4px 8px;
+    }}
+    QFrame#requirementCard, QFrame#pluginCard {{
         background-color: {colors.surface};
         border: 1px solid {colors.border};
         border-radius: 4px;
         padding: 8px;
         margin-bottom: 4px;
+    }}
+    QFrame#commitCard {{
+        background-color: {colors.surface};
+        border: 1px solid {colors.border};
+        border-radius: 3px;
+        margin-bottom: 2px;
+    }}
+    QFrame#repoCard {{
+        background-color: {colors.surface};
+        border: 1px solid {colors.border};
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 6px;
+    }}
+    QFrame#repoCard:hover {{
+        background-color: {colors.hover};
+    }}
+    QFrame#repoCard[selected="true"] {{
+        border: 2px solid {colors.accent};
+        background-color: {colors.hover};
+    }}
+    QFrame#repoCard[hasThumbnail="true"], QFrame#repoCard[hasThumbnail="true"]:hover,
+    QFrame#repoCard[hasThumbnail="true"][selected="true"] {{
+        /* No QSS border here — the selection ring on a thumbnail card is
+           drawn by hand in _RepoCard.paintEvent instead, since a QSS
+           border didn't reliably paint on top of a transparent background. */
+        background: transparent;
+    }}
+    QLabel[status="cloned"] {{
+        color: {colors.success};
+    }}
+    QLabel[status="error"] {{
+        color: {colors.error};
+    }}
+    QLabel[status="not_cloned"] {{
+        color: {colors.text_secondary};
     }}
     QLabel#commitHistoryTitle {{
         font-size: 15px;
