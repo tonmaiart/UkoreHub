@@ -1,0 +1,8 @@
+{
+  "id": "unity_hub",
+  "name": "Unity Hub",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Adds a sidebar tab with a single button to launch Unity Hub."
+}

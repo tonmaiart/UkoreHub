@@ -37,14 +37,6 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   for add/edit. `CATEGORY_DEVELOPER`.
 - `program_dialog.py` — `ProgramDialog`: name/version/description/icon
   editor for one `Program`, used only by `program_database_page.py`.
-- `project_data_editor_page.py` — CRUD for the Project/Repo registry
-  (`core/store.py`'s `MetadataStore`). **Add** Repo still uses the full
-  `interface/shared/dialogs.py`'s `RepoDialog` (name/URL/thumbnail/
-  requirements — the one-step bootstrap for a brand-new repo record); the
-  **Edit** flow here now only asks for Name/Git URL
-  (`RepoDialog(show_thumbnail=False)`) — Thumbnail and Requirements/Add-ons
-  editing for an *existing* repo moved to `interface/about/repo_about_page.py`.
-  `CATEGORY_DEVELOPER`.
 - `project_status_page.py` — read-only per-repo clone/sync status tree.
   `CATEGORY_REPO`.
 - `browser_links_settings_page.py` — `BrowserLinksSettingsPage`:
@@ -60,6 +52,35 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   `refresh()`, called on construction and on `on_activated`.
 - `plugin_catalog_page.py` — read-only listing of what got discovered
   under `plugins/`. `CATEGORY_DEVELOPER`.
+- `local_repository_page.py` — `LocalRepositoryPage`: shows the active
+  repo's local clone status/path and a "Remove Local Repositories" button
+  that `shutil.rmtree`s the clone folder (`core/paths.py`'s
+  `resolve_repo_path`) and marks the repo `not_cloned`
+  (`MetadataStore.mark_status`) — does not touch the Project/Repo registry
+  record itself, only the on-disk clone. Same self-resolving-active-repo
+  `refresh()` pattern as `browser_links_settings_page.py`. `CATEGORY_REPO`.
+- `enable_plugin_page.py` — `EnablePluginPage`: per-repo checkbox list over
+  every discovered `plugins/studio`+`plugins/local` entry
+  (`Repo.active_plugin_ids`), self-persisting like every other page here.
+  **Distinct from Add-ons** (`Repo.enabled_addon_ids`) — see
+  `core/README.md`'s note on the difference; unlike Add-ons, unchecking a
+  plugin here actually hides its sidebar section for this repo (enforced in
+  `interface/main_window.py`'s `_apply_plugin_visibility`, wired via a
+  plugin-id-to-section-key map built in `launcher.py`). An empty
+  `active_plugin_ids` (the default) means "unrestricted" — every plugin
+  stays visible. `CATEGORY_REPO`.
+
+**Not built-in:** the "Explorer" `CATEGORY_REPO` tab (pinning other repos
+as extra Explorer-style sidebar tabs, `Repo.explorer_pins`) is registered
+by the Explorer plugin itself, not here — see
+`plugins/studio/explorer/explorer_settings_page.py` and
+`plugins/studio/explorer/README.md`. Listed for context since it renders
+in the same Repo category as `project_status_page.py`/
+`browser_links_settings_page.py` above. Likewise, "Project Data Editor"
+(`CATEGORY_DEVELOPER`, CRUD for the whole Project/Repo registry) moved out
+to `plugins/studio/pipeline_architect/` as of 2026-07-15 — see that
+plugin's README for why (and the deliberate tradeoff of making that admin
+function depend on a plugin loading).
 
 **Removed:** `addon_settings_page.py`/`AddonSettingsPage` (the "Add-ons"
 tab) — deprecated and removed as of 2026-07-14. It used to be the only UI

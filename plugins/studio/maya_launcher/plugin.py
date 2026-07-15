@@ -67,6 +67,45 @@ def _set_project_and_open_command(repo_root: Path, scene_path: Path) -> str:
     return f'setProject "{_mel_string(repo_root)}"; file -open -force "{_mel_string(scene_path)}";'
 
 
+_PLUGIN_FILE_EXTENSIONS = {".py", ".mll", ".pyd", ".so"}
+
+
+def _force_load_plugin_names(contributions: dict, maya_version: str) -> list[str]:
+    """Every compiled/script Maya plug-in file (.py/.mll/.pyd/.so) sitting
+    directly in a contributed MAYA_PLUG_IN_PATH folder, by the module name
+    Maya's own loadPlugin/pluginInfo commands identify it by (its filename
+    without extension) — so open_maya_file can force-load them at launch
+    instead of leaving the artist to tick "Auto Load" in Plug-in Manager by
+    hand every session. Only sees plug-in files sitting directly in a
+    contributed folder, same as Maya's own Plug-in Manager scan — a tool
+    whose plug-in files live one level deeper (see MayaToolkit's nested
+    maya-plug-ins/ subfolders) still won't be picked up here either."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for tool_id in sorted(contributions):
+        by_version = contributions[tool_id].get("MAYA_PLUG_IN_PATH", {})
+        paths = list(by_version.get(ANY_VERSION, [])) + list(by_version.get(maya_version, []))
+        for path in paths:
+            folder = Path(path)
+            if not folder.is_dir():
+                continue
+            for entry in sorted(folder.iterdir()):
+                if entry.is_file() and entry.suffix.lower() in _PLUGIN_FILE_EXTENSIONS and entry.stem not in seen:
+                    seen.add(entry.stem)
+                    names.append(entry.stem)
+    return names
+
+
+def _force_load_plugins_command(plugin_names: list[str]) -> str:
+    """MEL that force-loads each plug-in by name, wrapped in `catch` so one
+    plug-in failing to load (or already being marked loaded) can't abort
+    the rest of the `-command` string — including the setProject/file-open
+    that follows it. Runs before setProject/file-open so a scene that
+    references plug-in node types (e.g. an ngSkinTools skin layer) opens
+    without Maya flagging them as unknown nodes."""
+    return "".join('catch(`loadPlugin -quiet "{}"`);'.format(name) for name in plugin_names)
+
+
 def _build_maya_env(base_env: dict, contributions: dict, maya_version: str) -> dict:
     """Pure, testable: returns a new env dict with each enabled tool's paths
     prepended (not replaced) onto the env var it targets — prepending keeps
@@ -116,11 +155,12 @@ def register(api) -> None:
         env = _build_maya_env(os.environ.copy(), contributions, maya_version or "")
 
         repo_root = _repo_root_path(api, repo)
-        mel_command = _set_project_and_open_command(repo_root, path)
+        plugin_names = _force_load_plugin_names(contributions, maya_version or "")
+        mel_command = _force_load_plugins_command(plugin_names) + _set_project_and_open_command(repo_root, path)
         subprocess.Popen([maya_exe, "-command", mel_command], env=env)
         return True
 
-    api.register_file_opener(ADDON_ID, MAYA_FILE_EXTENSIONS, open_maya_file)
+    api.register_file_opener(ADDON_ID, MAYA_FILE_EXTENSIONS, open_maya_file, always_enabled=True)
     api.register_settings_tab(
         SettingsTabSpec(
             key=ADDON_ID,

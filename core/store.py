@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.exceptions import NotFoundError, ValidationError
-from core.models import BrowserLink, Project, Repo
+from core.models import BrowserLink, ExplorerPin, Project, Repo
 from core.paths import resolve_repo_path
 from core.theme import DEFAULT_THEME_NAME
 
@@ -169,9 +169,19 @@ class MetadataStore:
         repo.enabled_addon_ids = list(addon_ids)
         self.save()
 
+    def set_repo_active_plugin_ids(self, project_id: str, repo_id: str, plugin_ids: list[str]) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.active_plugin_ids = list(plugin_ids)
+        self.save()
+
     def set_repo_browser_links(self, project_id: str, repo_id: str, links: list[BrowserLink]) -> None:
         repo = self.get_repo(project_id, repo_id)
         repo.browser_links = list(links)
+        self.save()
+
+    def set_repo_explorer_pins(self, project_id: str, repo_id: str, pins: list[ExplorerPin]) -> None:
+        repo = self.get_repo(project_id, repo_id)
+        repo.explorer_pins = list(pins)
         self.save()
 
     def set_browser_link_icon(self, project_id: str, repo_id: str, link_index: int, filename: str | None) -> None:

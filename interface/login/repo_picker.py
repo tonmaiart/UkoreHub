@@ -126,6 +126,7 @@ class RepoPickerDialog(QDialog):
         selected_project_id: str | None = None,
         selected_repo_id: str | None = None,
         cancel_button_text: str = "Cancel",
+        allowed_pairs: set[tuple[str, str]] | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Select Repo")
@@ -145,6 +146,13 @@ class RepoPickerDialog(QDialog):
         cards_layout = QVBoxLayout(cards_container)
         for project in store.list_projects():
             for repo in project.repos:
+                # allowed_pairs=None means "no restriction" (every repo
+                # shown) — used by callers that only want the picker
+                # narrowed to a specific set of (project_id, repo_id) pairs,
+                # e.g. plugins/studio/explorer's "Add Pinned Repo..." only
+                # offering pipeline_architect's declared inputs/outputs.
+                if allowed_pairs is not None and (project.id, repo.id) not in allowed_pairs:
+                    continue
                 card = _RepoCard(
                     project_id=project.id,
                     repo_id=repo.id,

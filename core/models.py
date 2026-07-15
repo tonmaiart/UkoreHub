@@ -22,6 +22,33 @@ class BrowserLink:
 
 
 @dataclass
+class ExplorerPin:
+    """A repo-scoped pin onto another repo's file browser — its own extra
+    Explorer-style sidebar tab while this repo is active (see
+    plugins/studio/explorer/pinned_repo_browser_page.py), independent of
+    the app's global active repo. Both target ids are stored (not just
+    target_repo_id) so lookup goes through MetadataStore.get_repo(project_id,
+    repo_id) the same way every other repo reference in this codebase does
+    (local_config_store.active_project_id/active_repo_id,
+    RepoPickerDialog.selected_project_id()/selected_repo_id())."""
+
+    target_project_id: str
+    target_repo_id: str
+    label: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ExplorerPin":
+        return cls(
+            target_project_id=data["target_project_id"],
+            target_repo_id=data["target_repo_id"],
+            label=data["label"],
+        )
+
+
+@dataclass
 class Repo:
     id: str
     name: str
@@ -33,7 +60,17 @@ class Repo:
     description: str = ""
     required_program_ids: list[str] = field(default_factory=list)
     enabled_addon_ids: list[str] = field(default_factory=list)
+    # Which plugins/studio + plugins/local entries actually apply to this
+    # repo — a distinct, brand-new key (not enabled_plugin_ids, which is
+    # already claimed as enabled_addon_ids' own legacy fallback key below).
+    # Empty means "unrestricted" (every discovered plugin stays active),
+    # so existing/unconfigured repos never silently lose functionality.
+    active_plugin_ids: list[str] = field(default_factory=list)
     browser_links: list[BrowserLink] = field(default_factory=list)
+    # Other repos pinned as extra Explorer-style sidebar tabs while this
+    # repo is active — see ExplorerPin above and
+    # plugins/studio/explorer/explorer_settings_page.py.
+    explorer_pins: list[ExplorerPin] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -53,7 +90,9 @@ class Repo:
             # enabled_addon_ids replaces the older enabled_plugin_ids key —
             # fall back to it so repos saved before this rename still load.
             enabled_addon_ids=data.get("enabled_addon_ids", data.get("enabled_plugin_ids", [])),
+            active_plugin_ids=data.get("active_plugin_ids", []),
             browser_links=[BrowserLink.from_dict(bl) for bl in data.get("browser_links", [])],
+            explorer_pins=[ExplorerPin.from_dict(ep) for ep in data.get("explorer_pins", [])],
         )
 
 

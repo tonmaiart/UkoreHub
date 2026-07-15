@@ -67,3 +67,29 @@ folder (single flat folder, no studio/local split, everything git-tracked) —
 using the exact same `extensibility/loader.py` machinery as `plugins/`. The
 two catalogs are otherwise independent: `plugins/` is always-on app
 features, `add-on/` is the pool a repo picks *from*.
+
+A second, unrelated field — `Repo.active_plugin_ids`
+(`set_repo_active_plugin_ids`) — was added later, specifically for the
+`plugins/studio`+`plugins/local` catalog, and behaves *differently* from
+`enabled_addon_ids` above: it **is** a real UI-visibility gate, not just
+metadata. `interface/main_window.py`'s `_apply_plugin_visibility` hides a
+plugin's sidebar section for any repo whose `active_plugin_ids` is
+non-empty and doesn't list that plugin's id (empty means "unrestricted" —
+the default, so existing repos aren't silently broken by this field's
+addition). Edited via Settings > (repo) > Enable Plugin
+(`interface/settings/enable_plugin_page.py`). Do not conflate the two
+fields: `enabled_addon_ids` is for the separate `add-on/` catalog and never
+hides anything; `active_plugin_ids` is for `plugins/` and does.
+
+A third field, `Repo.browser_links` (`set_repo_browser_links`,
+`core/models.py`'s `BrowserLink`) and its sibling `Repo.explorer_pins`
+(`set_repo_explorer_pins`, `core/models.py`'s `ExplorerPin`) are a
+different shape again: each entry becomes its own **dynamic sidebar tab**
+while the owning repo is active, rebuilt from scratch on every repo switch
+by `interface/main_window.py`'s `_rebuild_dynamic_tabs` (Browser Links →
+`interface/about/browser_link_page.py`'s `BrowserLinkPage`; Explorer pins →
+`plugins/studio/explorer/pinned_repo_browser_page.py`'s
+`PinnedRepoBrowserPage`, bound to another repo's file browser instead of a
+URL). Edited via Settings > (repo) > Browser and > Explorer respectively.
+Unlike `active_plugin_ids`, these don't hide anything that exists elsewhere
+— they *add* tabs that only exist because the pin/link record does.

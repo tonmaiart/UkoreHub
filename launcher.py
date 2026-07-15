@@ -213,8 +213,6 @@ def main() -> None:
         local_config_store=local_config_store,
         system_config_store=system_config_store,
         program_store=program_store,
-        addon_store=addon_store,
-        addon_catalog=addon_discovery.loaded,
         plugin_catalog=discovery.loaded,
         plugin_load_failures=discovery.failures,
     )
@@ -231,11 +229,28 @@ def main() -> None:
         file_opener_registry=file_opener_registry,
         plugins_data_dir=data_dir / "plugins",
         app_root=REPO_ROOT,
+        addon_store=addon_store,
+        addon_catalog=addon_discovery.loaded,
     )
+    # Applied one plugin at a time (rather than one bulk apply_plugins(discovery.loaded, ...)
+    # call) so section_registry.keys() can be diffed before/after each
+    # plugin's own register(api) call, learning which section(s) it
+    # contributed — section_key_to_plugin_id below is what
+    # MainWindow._apply_plugin_visibility uses for per-repo Plugin gating
+    # (Settings > Repo > Enable Plugin). add-on/ is untouched — that catalog
+    # keeps its existing enabled_addon_ids gating instead.
+    plugin_apply_failures: list = []
+    section_key_to_plugin_id: dict[str, str] = {}
+    for plugin in discovery.loaded:
+        keys_before = section_registry.keys()
+        plugin_apply_failures += apply_plugins([plugin], plugin_api)
+        for key in section_registry.keys() - keys_before:
+            section_key_to_plugin_id[key] = plugin.manifest.id
+
     plugin_failures = (
         discovery.failures
         + addon_discovery.failures
-        + apply_plugins(discovery.loaded, plugin_api)
+        + plugin_apply_failures
         + apply_plugins(addon_discovery.loaded, plugin_api)
     )
     for failure in plugin_failures:
@@ -251,6 +266,8 @@ def main() -> None:
         hook_registry,
         section_registry,
         settings_tab_registry,
+        file_opener_registry,
+        section_key_to_plugin_id=section_key_to_plugin_id,
     )
     window.show()
     sys.exit(app.exec())

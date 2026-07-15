@@ -59,3 +59,9 @@ class SectionRegistry:
 
     def ordered(self) -> list[SectionSpec]:
         return sorted(self._specs.values(), key=lambda spec: (spec.order, spec.key))
+
+    def keys(self) -> set[str]:
+        """Every registered section key so far — used by launcher.py to diff
+        before/after a single plugin's register(api) call and learn which
+        section(s) that plugin contributed, for per-repo Plugin gating."""
+        return set(self._specs.keys())

@@ -87,6 +87,25 @@ class GitService:
     def is_cloned(self, local_path: Path) -> bool:
         return (Path(local_path) / ".git").exists()
 
+    def get_current_branch(self, repo_path: Path) -> str:
+        return self._run_capture(["rev-parse", "--abbrev-ref", "HEAD"], cwd=Path(repo_path)).strip()
+
+    def has_upstream(self, repo_path: Path) -> bool:
+        """False for a repo cloned from a brand-new/empty remote: there is
+        no `origin/<branch>` yet for the local branch to track, since
+        nothing has ever been pushed. `pull`/`push` use this to treat that
+        case as "nothing to pull, first push needs --set-upstream" instead
+        of failing on git's usual "no such ref was fetched"/"no upstream
+        branch" errors, which otherwise block ever completing the first
+        sync of a new repo."""
+        try:
+            self._run_capture(
+                ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=Path(repo_path)
+            )
+            return True
+        except GitOperationError:
+            return False
+
     def _run_streaming(
         self, args: list[str], cwd: Path | None, on_output: OutputCallback, extra_env: dict | None = None
     ) -> None:
@@ -158,6 +177,15 @@ class GitService:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
         self._fire(GitHookEvent.BEFORE_PULL, context)
+        if not self.has_upstream(Path(local_path)):
+            # Remote has no commits yet (repo was cloned empty, or nothing
+            # has been pushed since) — there's no `origin/<branch>` to merge
+            # with, so a real `git pull` would only fail with "no such ref
+            # was fetched". Nothing to pull; let the caller push first.
+            if on_output:
+                on_output("Nothing to pull yet (remote has no commits).")
+            self._fire(GitHookEvent.AFTER_PULL, context)
+            return
         try:
             # --no-rebase: explicitly request a merge (not rebase)
             # reconciliation. Without this, modern git refuses to pull at all
@@ -196,10 +224,18 @@ class GitService:
         except GitOperationError:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
+        push_args = ["push", "--progress"]
+        if not self.has_upstream(local_path):
+            # First push to a remote that had no commits when it was cloned:
+            # plain `git push` fails with "no upstream branch" since nothing
+            # was ever fetched to configure tracking against. --set-upstream
+            # both creates the branch on the remote and wires up tracking so
+            # every later pull/push on this repo is a normal one.
+            push_args += ["--set-upstream", "origin", self.get_current_branch(local_path)]
         self._fire(GitHookEvent.BEFORE_PUSH, context)
         try:
             self._run_streaming(
-                [*auth_args, "push", "--progress"], cwd=local_path, on_output=on_output, extra_env=auth_env
+                [*auth_args, *push_args], cwd=local_path, on_output=on_output, extra_env=auth_env
             )
         except GitOperationError:
             self._fire(GitHookEvent.PUSH_FAILED, context)
@@ -336,7 +372,14 @@ class GitService:
             remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=Path(repo_path)).strip()
         except GitOperationError:
             return None
-        remote_url = remote_url[: -len(".git")] if remote_url.endswith(".git") else remote_url
+        return self.parse_github_owner_repo(remote_url)
+
+    @staticmethod
+    def parse_github_owner_repo(git_url: str) -> tuple[str, str] | None:
+        """Same parsing as get_github_owner_repo, but on a raw URL string
+        instead of a local repo's `origin` — usable before a repo is even
+        cloned (e.g. Repo.git_url straight from the metadata store)."""
+        remote_url = git_url[: -len(".git")] if git_url.endswith(".git") else git_url
         if remote_url.startswith("git@github.com:"):
             path = remote_url[len("git@github.com:") :]
         else:

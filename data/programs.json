@@ -14,6 +14,13 @@
       "version": "2022.3.62f3",
       "icon_filename": "ab07c675-48ef-4f04-8c57-876dced7ddf1.png",
       "description": "3D Game"
+    },
+    {
+      "id": "f279e7c0-e89c-404a-8dfc-dec4477d83cc",
+      "name": "Unity Hub",
+      "version": "",
+      "icon_filename": null,
+      "description": ""
     }
   ]
 }

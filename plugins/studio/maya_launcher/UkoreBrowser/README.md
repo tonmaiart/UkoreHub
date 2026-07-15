@@ -64,14 +64,39 @@ the bridge convention both add-ons rely on.
 
 ## Root-path detection
 
-`core/repo_context.get_start_path()` is the single entry point, in priority
-order: (1) the current Maya scene file's folder (`maya_ops.get_current_scene_path()`),
-so the browser opens right where you're working, if one is open; (2) the
-active UkoreHub repo (via `core.store.LocalConfigStore` + `core.store.MetadataStore`
-+ `core.paths.resolve_repo_path`, all read directly since this add-on's
+`core/repo_context.get_root_path()` is the entry point for `self.root_path`
+(what the Miller-column project/class/scene/shot/element lists and the
+file-system model are rooted at): (1) the active UkoreHub repo (via
+`core.store.LocalConfigStore` + `core.store.MetadataStore` +
+`core.paths.resolve_repo_path`, all read directly since this tool's
 PYTHONPATH contribution also includes UkoreHub's own app root) if set;
-(3) `cmds.workspace(q=True, rd=True)`. There is no more hardcoded drive
-path — don't reintroduce one.
+(2) `cmds.workspace(q=True, rd=True)`. There is no more hardcoded drive
+path — don't reintroduce one. **Deliberately not** the current scene
+file's folder — that used to be priority 1, but rooting the Miller columns
+at the scene's own (usually leaf, subfolder-less) folder left all 5 of them
+permanently empty.
+
+Where the browser lands on open (`self.current_browse_path`) is separate:
+`get_initial_browse_path(root_path)` returns the current scene file's
+folder if one is open and it's actually inside `root_path`, else
+`root_path` itself — so you still start out where you're working, without
+that affecting what the columns are rooted at.
+
+## Pipeline root tabs
+
+`core/repo_context.get_pipeline_root_tabs()` reads
+`data/plugins/studio/pipeline_architect.json` directly (same "construct
+the store straight off disk" approach as `get_active_repo_path()` — Maya's
+Python has no `PluginAPI` instance to call `plugin_config_store()` through)
+and returns the active repo plus every repo declared as one of its
+pipeline inputs/outputs there, as `{"label", "path"}` dicts.
+`ui/main_window.py`'s `_build_root_tabs()` turns this into a row of
+checkable buttons inserted at row 0 of the central grid layout (unused by
+`ui.ui`, whose own rows start at 1) — clicking one calls `_switch_root(path)`,
+which re-points `root_path`, the recent-files `BrowserConfig`, the
+`QFileSystemModel`, and the Miller columns at that repo, same shape
+`__init__` uses to set things up the first time. No-ops entirely (no tab
+row added) if there's no active repo.
 
 ## Working on this add-on
 

@@ -5,9 +5,11 @@ from typing import Callable
 
 from PySide6.QtWidgets import QWidget
 
+from core.addon_store import AddonMetadataStore
 from core.extensibility.config_store import PluginConfigStore
 from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
 from core.extensibility.hooks import GitHookEvent, HookHandler, HookRegistry
+from core.extensibility.loader import DiscoveredPlugin
 from core.git_service import GitService
 from core.models import Repo
 from core.program_store import ProgramStore
@@ -44,6 +46,8 @@ class PluginAPI:
         file_opener_registry: FileOpenerRegistry,
         plugins_data_dir: Path,
         app_root: Path,
+        addon_store: AddonMetadataStore,
+        addon_catalog: list[DiscoveredPlugin],
     ):
         self._store = store
         self._program_store = program_store
@@ -56,6 +60,8 @@ class PluginAPI:
         self._file_opener_registry = file_opener_registry
         self._plugins_data_dir = Path(plugins_data_dir)
         self._app_root = Path(app_root)
+        self._addon_store = addon_store
+        self._addon_catalog = addon_catalog
 
     @property
     def metadata(self) -> MetadataStore:
@@ -81,6 +87,21 @@ class PluginAPI:
         return self._file_opener_registry
 
     @property
+    def addon_store(self) -> AddonMetadataStore:
+        """Studio-editable overrides for discovered add-ons (icon,
+        description, required Program(s)) — data/addon_settings.json. Used
+        alongside addon_catalog by anything building the same
+        Program/Add-on requirements picker RepoDialog/RequirementsEditDialog
+        already use (interface/shared/dialogs.py)."""
+        return self._addon_store
+
+    @property
+    def addon_catalog(self) -> list[DiscoveredPlugin]:
+        """Every discovered add-on (the add-on/ catalog, distinct from this
+        plugin's own plugins/ catalog) — fixed at app startup."""
+        return self._addon_catalog
+
+    @property
     def app_root(self) -> Path:
         """UkoreHub's own repo root — for plugins/add-ons that need to
         reference other paths inside the UkoreHub installation itself
@@ -98,10 +119,20 @@ class PluginAPI:
         self._repo_addon_panel_registry.register(RepoAddonPanelSpec(addon_id=addon_id, panel_factory=panel_factory))
 
     def register_file_opener(
-        self, addon_id: str, extensions: list[str], opener: Callable[[Path, Repo], bool]
+        self,
+        addon_id: str,
+        extensions: list[str],
+        opener: Callable[[Path, Repo], bool],
+        *,
+        always_enabled: bool = False,
     ) -> None:
         self._file_opener_registry.register(
-            FileOpenerSpec(addon_id=addon_id, extensions=frozenset(e.lower() for e in extensions), opener=opener)
+            FileOpenerSpec(
+                addon_id=addon_id,
+                extensions=frozenset(e.lower() for e in extensions),
+                opener=opener,
+                always_enabled=always_enabled,
+            )
         )
 
     def register_git_hook(self, event: GitHookEvent, handler: HookHandler) -> None:

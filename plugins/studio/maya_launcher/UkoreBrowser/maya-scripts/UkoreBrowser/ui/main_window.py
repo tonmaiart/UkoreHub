@@ -38,13 +38,18 @@ class MainWindow(ToolkitWindow):
         super(MainWindow, self).__init__("UkoreBrowser")
 
         # Root path: the active UkoreHub repo, falling back to Maya's current
-        # workspace when there isn't one.
-        self.root_path = repo_context.get_start_path().replace("\\", "/")
+        # workspace when there isn't one. Never the current scene file's
+        # folder — see repo_context.get_root_path().
+        self.root_path = repo_context.get_root_path().replace("\\", "/")
         self.config = browser_config.BrowserConfig(self.root_path, max_recent=self.MAX_RECENT)
 
         maya_ops.set_workspace_to(self.root_path)
 
-        self.current_browse_path = self.root_path
+        # Where we land on open: the current scene's folder if there is one
+        # (and it's inside root_path), else root_path itself — separate from
+        # root_path so the Miller columns below stay rooted at the whole
+        # repo regardless of where the current scene happens to sit.
+        self.current_browse_path = repo_context.get_initial_browse_path(self.root_path).replace("\\", "/")
         print("Default Directory : {}".format(self.current_browse_path))
 
         self.ui.lineEdit_current_path.setText(self.current_browse_path)
@@ -97,10 +102,87 @@ class MainWindow(ToolkitWindow):
         # Recent
         self.build_setting_menu()
 
+        # Root tabs (active repo + pipeline inputs/outputs)
+        self._build_root_tabs()
+
         # INITIAL LOAD
         self.sync_columns_from_path()
         self.update_file_list()
         self.update_thumbnail()
+
+    # ------------------------------------------------------------
+    # ROOT TABS (active repo + pipeline inputs/outputs)
+    # ------------------------------------------------------------
+    def _build_root_tabs(self):
+        """Row of buttons above the file table (row 0 of the central grid —
+        unused by ui.ui, whose rows start at 1) for switching root_path
+        between the active repo and its declared pipeline input/output
+        repos (plugins/studio/pipeline_architect) — see
+        repo_context.get_pipeline_root_tabs(). No-ops (adds nothing) if
+        there's no active repo to build tabs from."""
+        tabs = repo_context.get_pipeline_root_tabs()
+        if not tabs:
+            return
+
+        central_layout = self.ui.centralWidget().layout()
+
+        tab_bar = QtWidgets.QWidget()
+        tab_layout = QtWidgets.QHBoxLayout(tab_bar)
+        tab_layout.setContentsMargins(5, 0, 5, 0)
+        tab_layout.setSpacing(4)
+
+        self.root_tab_group = QtWidgets.QButtonGroup(tab_bar)
+        self.root_tab_group.setExclusive(True)
+        self.root_tab_buttons = {}
+
+        for tab in tabs:
+            btn = QtWidgets.QPushButton(tab["label"])
+            btn.setCheckable(True)
+            btn.setStyleSheet(
+                """
+                QPushButton {
+                    color: white;
+                    background: rgba(12, 12, 12, 255);
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px 10px;
+                }
+                QPushButton:checked {
+                    background: qlineargradient(spread:pad, x1:1, y1:0, x2:1, y2:1, stop:0 rgba(243, 159, 89, 255), stop:1 rgba(197, 131, 76, 255));
+                    color: black;
+                }
+                """
+            )
+            btn.clicked.connect(partial(self._switch_root, tab["path"]))
+            tab_layout.addWidget(btn)
+            self.root_tab_group.addButton(btn)
+            self.root_tab_buttons[os.path.normpath(tab["path"])] = btn
+
+        tab_layout.addStretch()
+        central_layout.addWidget(tab_bar, 0, 0)
+
+        self._highlight_active_root_tab()
+
+    def _highlight_active_root_tab(self):
+        btn = self.root_tab_buttons.get(os.path.normpath(self.root_path))
+        if btn is not None:
+            btn.setChecked(True)
+
+    def _switch_root(self, path):
+        """Re-roots the whole browser (fs model, Miller columns, recent
+        files) at a different tab's repo — same shape __init__ uses to set
+        up root_path the first time."""
+        if os.path.normpath(path) == os.path.normpath(self.root_path):
+            return
+
+        self.root_path = path.replace("\\", "/")
+        self.config = browser_config.BrowserConfig(self.root_path, max_recent=self.MAX_RECENT)
+        maya_ops.set_workspace_to(self.root_path)
+        self.fs_model.setRootPath(self.root_path)
+
+        self._highlight_active_root_tab()
+        self.build_setting_menu()
+        self.update_current_path(self.root_path)
 
     # ------------------------------------------------------------
     # RECENT-VERSION FILTER (no checkbox currently wired to this in ui.ui —

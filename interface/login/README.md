@@ -44,7 +44,13 @@ logout, via `_on_initial_login_completed`/`_on_relogin_completed`).
   dialog is accepted solely via its own OK button, deliberately not on
   double-click, so a stray double-click can't jump into the wrong repo.
   Pass `cancel_button_text` to relabel the Cancel button for a given call
-  site (e.g. "Skip" right after login). When the repo has a thumbnail (`MetadataStore.
+  site (e.g. "Skip" right after login). Pass `allowed_pairs` (a
+  `set[tuple[project_id, repo_id]]`) to narrow which repos get a card at
+  all — `None` (default) shows every repo in the registry; a caller that
+  wants a restricted pick (e.g.
+  `plugins/studio/explorer/explorer_settings_page.py`'s "Add Pinned
+  Repo...", limited to the active repo's declared pipeline inputs/outputs)
+  passes the specific pairs instead. When the repo has a thumbnail (`MetadataStore.
   resolve_thumbnail_path`), the card paints it fill-cropped as its own
   background with a dark dimming overlay (`_RepoCard.paintEvent`) so the
   text stays legible — `core/theme.py`'s `QFrame#repoCard[hasThumbnail=

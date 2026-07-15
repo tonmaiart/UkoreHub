@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QGroupBox,
     QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTreeWidget,
@@ -11,17 +16,26 @@ from PySide6.QtWidgets import (
 )
 
 from core.addon_store import AddonMetadataStore
-from core.exceptions import UkoreHubError
+from core.exceptions import NotFoundError, UkoreHubError
 from core.extensibility.loader import DiscoveredPlugin
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
+from interface.login.repo_picker import RepoPickerDialog
 from interface.shared.dialogs import ProjectDialog, RepoDialog
 from interface.shared.image_asset import save_image_asset
 from interface.shared.project_repo_tree import PROJECT_ROLE, REPO_ROLE, populate_project_tree
 from interface.shared.widget_helpers import confirm_action
+from plugins.studio.pipeline_architect.pipeline_store import PipelineStore, RepoRef
 
 
 class ProjectDataEditorPage(QWidget):
+    """CRUD for the whole Project/Repo registry — moved here verbatim from
+    the former built-in interface/settings/project_data_editor_page.py (see
+    plugins/studio/pipeline_architect/README.md for why), plus a "Pipeline"
+    panel (added by this plugin) letting the same admin declare which repos
+    feed into / out of whichever repo is selected in the tree — see
+    pipeline_store.py for the storage shape."""
+
     def __init__(
         self,
         parent=None,
@@ -31,6 +45,7 @@ class ProjectDataEditorPage(QWidget):
         program_store: ProgramStore,
         addon_store: AddonMetadataStore,
         addon_catalog: list[DiscoveredPlugin],
+        pipeline_store: PipelineStore,
     ):
         super().__init__(parent)
         self.store = store
@@ -38,10 +53,13 @@ class ProjectDataEditorPage(QWidget):
         self.program_store = program_store
         self.addon_store = addon_store
         self.addon_catalog = addon_catalog
+        self.pipeline_store = pipeline_store
+        self._pipeline_repo: tuple[str, str] | None = None
 
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Project / Repo", "Repo URL"])
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
 
         add_project_btn = QPushButton("Add Project")
         add_repo_btn = QPushButton("Add Repo")
@@ -57,11 +75,49 @@ class ProjectDataEditorPage(QWidget):
             button_row.addWidget(button)
         button_row.addStretch()
 
+        self.pipeline_group = QGroupBox("Pipeline")
+        self.inputs_list = QListWidget()
+        self.inputs_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.outputs_list = QListWidget()
+        self.outputs_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        add_input_btn = QPushButton("Add Input Repo...")
+        add_input_btn.clicked.connect(self._on_add_input)
+        remove_input_btn = QPushButton("Remove Selected")
+        remove_input_btn.clicked.connect(self._on_remove_input)
+        add_output_btn = QPushButton("Add Output Repo...")
+        add_output_btn.clicked.connect(self._on_add_output)
+        remove_output_btn = QPushButton("Remove Selected")
+        remove_output_btn.clicked.connect(self._on_remove_output)
+
+        inputs_column = QVBoxLayout()
+        inputs_column.addWidget(QLabel("Inputs (repos that feed into this one)"))
+        inputs_column.addWidget(self.inputs_list)
+        inputs_button_row = QHBoxLayout()
+        inputs_button_row.addWidget(add_input_btn)
+        inputs_button_row.addWidget(remove_input_btn)
+        inputs_column.addLayout(inputs_button_row)
+
+        outputs_column = QVBoxLayout()
+        outputs_column.addWidget(QLabel("Outputs (repos this one feeds into)"))
+        outputs_column.addWidget(self.outputs_list)
+        outputs_button_row = QHBoxLayout()
+        outputs_button_row.addWidget(add_output_btn)
+        outputs_button_row.addWidget(remove_output_btn)
+        outputs_column.addLayout(outputs_button_row)
+
+        pipeline_layout = QHBoxLayout(self.pipeline_group)
+        pipeline_layout.addLayout(inputs_column)
+        pipeline_layout.addLayout(outputs_column)
+        self.pipeline_group.setVisible(False)
+
         layout = QVBoxLayout(self)
         layout.addLayout(button_row)
         layout.addWidget(self.tree)
+        layout.addWidget(self.pipeline_group)
 
         self.refresh_tree()
+
+    # -- Project/Repo CRUD (unchanged from the former built-in page) -------
 
     def refresh_tree(self) -> None:
         populate_project_tree(self.tree, self.store, repo_extra_columns=lambda repo: [repo.git_url])
@@ -179,3 +235,86 @@ class ProjectDataEditorPage(QWidget):
         )
         if filename is not None:
             self.store.set_repo_thumbnail(project_id, repo_id, filename)
+
+    # -- Pipeline inputs/outputs (this plugin's own addition) --------------
+
+    def _on_tree_selection_changed(self) -> None:
+        project_id = self._selected_project_id()
+        repo_id = self._selected_repo_id()
+        self._pipeline_repo = (project_id, repo_id) if project_id and repo_id else None
+        self.pipeline_group.setVisible(self._pipeline_repo is not None)
+        if self._pipeline_repo is not None:
+            self._refresh_pipeline_lists()
+
+    def _resolve_ref_label(self, ref: RepoRef) -> str:
+        try:
+            project = self.store.get_project(ref.project_id)
+            repo = self.store.get_repo(ref.project_id, ref.repo_id)
+        except NotFoundError:
+            return "(deleted repo)"
+        return f"{project.name} / {repo.name}"
+
+    def _refresh_pipeline_lists(self) -> None:
+        if self._pipeline_repo is None:
+            return
+        project_id, repo_id = self._pipeline_repo
+        self.inputs_list.clear()
+        for ref in self.pipeline_store.get_inputs(project_id, repo_id):
+            item = QListWidgetItem(self._resolve_ref_label(ref))
+            item.setData(Qt.UserRole, ref)
+            self.inputs_list.addItem(item)
+        self.outputs_list.clear()
+        for ref in self.pipeline_store.get_outputs(project_id, repo_id):
+            item = QListWidgetItem(self._resolve_ref_label(ref))
+            item.setData(Qt.UserRole, ref)
+            self.outputs_list.addItem(item)
+
+    def _pick_repo_ref(self) -> RepoRef | None:
+        dialog = RepoPickerDialog(self, store=self.store)
+        if not dialog.exec():
+            return None
+        target_project_id = dialog.selected_project_id()
+        target_repo_id = dialog.selected_repo_id()
+        if not target_project_id or not target_repo_id:
+            return None
+        return RepoRef(project_id=target_project_id, repo_id=target_repo_id)
+
+    def _on_add_input(self) -> None:
+        self._add_pipeline_ref(self.pipeline_store.get_inputs, self.pipeline_store.set_inputs)
+
+    def _on_add_output(self) -> None:
+        self._add_pipeline_ref(self.pipeline_store.get_outputs, self.pipeline_store.set_outputs)
+
+    def _add_pipeline_ref(self, get_refs, set_refs) -> None:
+        if self._pipeline_repo is None:
+            return
+        project_id, repo_id = self._pipeline_repo
+        ref = self._pick_repo_ref()
+        if ref is None:
+            return
+        if ref.project_id == project_id and ref.repo_id == repo_id:
+            return  # a repo can't be its own pipeline input/output
+        refs = get_refs(project_id, repo_id)
+        if any(r.project_id == ref.project_id and r.repo_id == ref.repo_id for r in refs):
+            return  # already listed
+        refs.append(ref)
+        set_refs(project_id, repo_id, refs)
+        self._refresh_pipeline_lists()
+
+    def _on_remove_input(self) -> None:
+        self._remove_pipeline_ref(self.inputs_list, self.pipeline_store.get_inputs, self.pipeline_store.set_inputs)
+
+    def _on_remove_output(self) -> None:
+        self._remove_pipeline_ref(self.outputs_list, self.pipeline_store.get_outputs, self.pipeline_store.set_outputs)
+
+    def _remove_pipeline_ref(self, list_widget: QListWidget, get_refs, set_refs) -> None:
+        if self._pipeline_repo is None:
+            return
+        items = list_widget.selectedItems()
+        if not items:
+            return
+        removed: RepoRef = items[0].data(Qt.UserRole)
+        project_id, repo_id = self._pipeline_repo
+        refs = [r for r in get_refs(project_id, repo_id) if not (r.project_id == removed.project_id and r.repo_id == removed.repo_id)]
+        set_refs(project_id, repo_id, refs)
+        self._refresh_pipeline_lists()

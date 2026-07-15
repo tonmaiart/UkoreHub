@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -126,10 +127,13 @@ class RepoGitStatusPage(QWidget):
         self.sync_button.clicked.connect(self.start_sync)
         self.refresh_button = QPushButton("Refresh Status")
         self.refresh_button.clicked.connect(self.refresh_status)
+        self.gitweb_button = QPushButton("GitWeb")
+        self.gitweb_button.clicked.connect(self._on_gitweb_clicked)
 
         button_row = QHBoxLayout()
         button_row.addWidget(self.sync_button)
         button_row.addWidget(self.refresh_button)
+        button_row.addWidget(self.gitweb_button)
         button_row.addStretch()
 
         self.progress_bar = QProgressBar()
@@ -218,6 +222,16 @@ class RepoGitStatusPage(QWidget):
 
     def _on_status_failed(self, message: str) -> None:
         self.log_panel.append_line(f"--- Failed to read status: {message} ---")
+
+    def _on_gitweb_clicked(self) -> None:
+        if self._repo is None:
+            return
+        owner_repo = self.git_service.parse_github_owner_repo(self._repo.git_url)
+        if owner_repo is None:
+            QMessageBox.warning(self, "GitWeb", "This repo's remote isn't a github.com URL.")
+            return
+        owner, name = owner_repo
+        webbrowser.open(f"https://github.com/{owner}/{name}")
 
     # -- commit log ---------------------------------------------------------
 

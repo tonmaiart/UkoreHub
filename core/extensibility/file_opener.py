@@ -12,6 +12,12 @@ class FileOpenerSpec:
     addon_id: str
     extensions: frozenset[str]
     opener: Callable[[Path, Repo], bool]
+    # True for an always-on plugins/ opener (e.g. maya_launcher) that does
+    # its own internal per-repo gating instead of the repo-scoped add-on
+    # opt-in model — see core/extensibility/README.md. False (default)
+    # keeps the normal add-on behavior: only matches when addon_id is in
+    # the caller-supplied enabled_addon_ids.
+    always_enabled: bool = False
 
 
 class FileOpenerRegistry:
@@ -36,6 +42,6 @@ class FileOpenerRegistry:
         suffix = path.suffix.lower()
         enabled = set(enabled_addon_ids)
         for spec in self._specs:
-            if spec.addon_id in enabled and suffix in spec.extensions:
+            if (spec.always_enabled or spec.addon_id in enabled) and suffix in spec.extensions:
                 return spec.opener
         return None

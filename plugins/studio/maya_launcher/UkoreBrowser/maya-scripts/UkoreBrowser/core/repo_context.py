@@ -48,18 +48,12 @@ def get_active_repo_path() -> str | None:
         return None
 
 
-def get_start_path() -> str:
-    """The path UkoreBrowser should open at: the current Maya scene file's
-    folder if one is open (so the browser lands right where you're working),
-    else the active UkoreHub repo, else Maya's current workspace directory."""
-    from UkoreBrowser.core.maya_ops import get_current_scene_path
-
-    scene_path = get_current_scene_path()
-    if scene_path:
-        scene_dir = Path(scene_path).parent
-        if scene_dir.is_dir():
-            return str(scene_dir)
-
+def get_root_path() -> str:
+    """The browser's root: the active UkoreHub repo, else Maya's current
+    workspace directory. Deliberately NOT the current scene file's folder —
+    the Miller-column project/class/scene/shot/element lists are built
+    relative to this root, and rooting at the scene's own (usually leaf,
+    subfolder-less) folder left them permanently empty."""
     repo_path = get_active_repo_path()
     if repo_path is not None:
         return repo_path
@@ -67,3 +61,74 @@ def get_start_path() -> str:
     import maya.cmds as cmds
 
     return cmds.workspace(q=True, rd=True)
+
+
+def get_initial_browse_path(root_path: str) -> str:
+    """Where the browser should land on open: the current Maya scene
+    file's folder if one is open and it's actually inside root_path (so
+    you start out where you're working), else root_path itself."""
+    from UkoreBrowser.core.maya_ops import get_current_scene_path
+
+    scene_path = get_current_scene_path()
+    if scene_path:
+        scene_dir = Path(scene_path).parent
+        try:
+            scene_dir.relative_to(root_path)
+        except ValueError:
+            return root_path
+        if scene_dir.is_dir():
+            return str(scene_dir)
+
+    return root_path
+
+
+def get_pipeline_root_tabs() -> list[dict]:
+    """Root-path tab options for the browser's top tab bar: the active
+    repo itself, plus every repo declared as a pipeline input/output for it
+    in plugins/studio/pipeline_architect's shared config
+    (data/plugins/studio/pipeline_architect.json). Read directly off disk,
+    same reason get_active_repo_path() constructs its own stores — Maya's
+    Python has no PluginAPI instance to call plugin_config_store() through.
+    Returns [] if there's no active repo. Each item:
+    {"label": str, "path": str}."""
+    try:
+        root = find_ukorehub_root()
+        from core.extensibility.config_store import PluginConfigStore
+        from core.paths import resolve_repo_path
+        from core.store import LocalConfigStore, MetadataStore
+
+        local_config = LocalConfigStore(root / "data" / "local_config.json")
+        project_id = local_config.active_project_id
+        repo_id = local_config.active_repo_id
+        if not (local_config.workspace_root and project_id and repo_id):
+            return []
+
+        store = MetadataStore(root / "data" / "projects.json")
+        active_project = store.get_project(project_id)
+        active_repo = store.get_repo(project_id, repo_id)
+        active_path = resolve_repo_path(local_config.workspace_root, active_project.name, active_repo.name)
+        if not active_path.is_dir():
+            return []
+
+        tabs = [{"label": active_repo.name, "path": str(active_path)}]
+
+        pipeline_store = PluginConfigStore(root / "data" / "plugins" / "studio" / "pipeline_architect.json")
+        entry = pipeline_store.get("projects", {}).get(project_id, {}).get("repos", {}).get(repo_id, {})
+
+        def _add_refs(refs, prefix):
+            for ref in refs:
+                try:
+                    ref_project = store.get_project(ref["project_id"])
+                    ref_repo = store.get_repo(ref["project_id"], ref["repo_id"])
+                    ref_path = resolve_repo_path(local_config.workspace_root, ref_project.name, ref_repo.name)
+                except Exception:
+                    continue
+                if ref_path.is_dir():
+                    tabs.append({"label": "{} {}".format(prefix, ref_repo.name), "path": str(ref_path)})
+
+        _add_refs(entry.get("pipeline_inputs", []), "In:")
+        _add_refs(entry.get("pipeline_outputs", []), "Out:")
+
+        return tabs
+    except Exception:
+        return []

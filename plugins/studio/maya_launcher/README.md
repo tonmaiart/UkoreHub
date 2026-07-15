@@ -107,6 +107,24 @@ break whatever that install already relies on. Returns a **new** dict
 rather than mutating the input, so callers can safely pass
 `os.environ.copy()`.
 
+## Force-loading compiled/script plug-ins on launch
+
+Being on `MAYA_PLUG_IN_PATH` only makes a plug-in *visible* in Maya's
+Plug-in Manager — it doesn't load it. Before this, an artist had to tick
+"Auto Load" by hand, per plug-in, per machine, every time. `open_maya_file`
+now force-loads them instead: `_force_load_plugin_names(contributions,
+maya_version)` scans every contributed `MAYA_PLUG_IN_PATH` folder for
+`.py`/`.mll`/`.pyd`/`.so` files sitting **directly** in it (same shallow
+scan Maya's own Plug-in Manager does — a file nested one level deeper,
+like most of `maya_toolkit`'s `maya-plug-ins/` subfolders, still won't be
+found), and `_force_load_plugins_command` turns that into
+`catch(\`loadPlugin -quiet "name"\`);` MEL for each, prepended onto the
+`-command` string **before** `setProject`/`file -open` — so a scene
+referencing plug-in node types (an ngSkinTools skin layer, say) opens
+without Maya flagging them as unknown nodes. Each load is wrapped in
+`catch` so one plug-in failing (or already being loaded) can't take the
+rest of the `-command` string down with it.
+
 ## The SoftwareLinker dependency (shared-config convention, not an import)
 
 `plugin.py` doesn't import `plugins/studio/software_linker/`'s code —

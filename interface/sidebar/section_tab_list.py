@@ -63,6 +63,15 @@ class SectionTabList(QListWidget):
             self.takeItem(self._fixed_count)
         self._dynamic_count = 0
 
+    def set_visible_keys(self, visible_keys: set[str] | None) -> None:
+        """Hides/shows the fixed (plugin-provided) rows for per-repo Plugin
+        gating — visible_keys=None means "no restriction", every fixed row
+        shown. Dynamic Browser Link rows are never affected by this."""
+        for row in range(self._fixed_count):
+            key = self.item(row).data(Qt.UserRole)
+            hidden = visible_keys is not None and key not in visible_keys
+            self.setRowHidden(row, hidden)
+
     def select(self, key: str) -> None:
         """Programmatically selects the row for `key` without emitting
         navigation_changed (setCurrentRow() otherwise would) — callers that
