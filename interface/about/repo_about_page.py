@@ -175,8 +175,9 @@ class AddonCard(QFrame):
 
 class _RepoAboutInfoTab(QWidget):
     """"About" sub-tab: the repo's basic info + Open Folder + Choose
-    Thumbnail (moved here from Settings > Project Data Editor, see
-    thumbnail_changed below)."""
+    Thumbnail (moved here from the former Settings > Project Data Editor,
+    now Project Editor's node context menu — see thumbnail_changed
+    below)."""
 
     thumbnail_changed = Signal()
 
@@ -295,8 +296,8 @@ class _RepoRequirementsTab(QWidget):
     """"Requirement" sub-tab: required Programs (each with its enabled
     Add-ons nested under it) + any enabled Add-ons that don't declare one
     of this repo's requirements, plus an Edit Requirements button (moved
-    here from Settings > Project Data Editor, see requirements_changed
-    below)."""
+    here from the former Settings > Project Data Editor, now Project
+    Editor's node context menu — see requirements_changed below)."""
 
     requirements_changed = Signal()
 

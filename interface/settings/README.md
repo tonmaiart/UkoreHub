@@ -1,33 +1,49 @@
 # interface/settings/
 
-The "Setting" view — shown via the icon-only Setting button in Sidebar's
+The "Setting" popup — opened via the icon-only Setting button in Sidebar's
 footer (app-level, not one of the repo-scoped `SectionTabList` rows). Every
 page here **self-persists on every change** — there is no Save/Cancel step
 anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
 
-- `settings_view.py` — `SettingsView`: the left-tab-bar shell, driven by
+- `settings_view.py` — `SettingsView` (the left-tab-bar shell) +
+  `SettingsDialog` (the popup wrapper around it, reverted 2026-07-19 back
+  to a dialog — matches Repository Setting's own `RepoSettingsDialog`
+  pattern in `plugins/studio/project_editor/repo_settings_panel.py`, and
+  this app's own pre-registry history; briefly an embedded
+  `MainWindow.view_stack` page in between, see `SettingsDialog`'s own
+  docstring). `MainWindow._on_settings_requested` constructs a fresh
+  `SettingsDialog` on every open — no state carried between opens, same
+  convention `register_builtin_settings_tabs`' docstring documents for
+  every tab's `page_factory`. `SettingsView` itself is driven by
   `interface/settings_tab_registry.py`'s `SettingsTabRegistry` (open,
   ordered — built-in and plugin-provided tabs register into the same
   collection, see `interface/builtin_settings_tabs.py`). Renders three
   sections with a non-selectable header row each — **General** (whole-app/
-  machine settings), **Repo** (settings about the active repo/project
-  data), then **Developer** (studio-admin/internal-plumbing tabs most
-  users never need) — per each tab's `SettingsTabSpec.category`
+  machine settings) then **Developer** (studio-admin/internal-plumbing
+  tabs most users never need) — per each tab's `SettingsTabSpec.category`
   (`CATEGORY_GENERAL`/`CATEGORY_REPO`/`CATEGORY_DEVELOPER`, default
-  General). The Repo header row is relabeled to the active repo's own name
-  at runtime (`set_active_repo_name`, called from `main_window.py` on every
-  repo switch) — falls back to "REPO" when no repo is active. A blank
-  non-selectable gap row (`_add_gap_row`) separates each category group
-  from the next, on top of each header row's own padding.
+  General). `CATEGORY_REPO` tabs are registered in the same registry but
+  are not rendered here (see the "No longer rendered here at all" note
+  above) — only `CATEGORY_GENERAL`/`CATEGORY_DEVELOPER` show up in this
+  tab list. A blank non-selectable gap row (`_add_gap_row`) separates each
+  rendered category group from the next, on top of each header row's own
+  padding.
   `get_tab_widget(key)` is the one public escape hatch for reaching a
-  specific constructed page from outside — `main_window.py` uses it to
-  connect `CommonSettingsPage.logout_requested` and
+  specific constructed page from outside — `main_window.py` uses it (via
+  `SettingsDialog.view.get_tab_widget(...)`) to connect
+  `CommonSettingsPage.logout_requested` (also closing the dialog itself,
+  since logout tears down the main UI behind it) and
   `BrowserLinksSettingsPage.browser_links_changed` without this view
   needing to know what those pages are.
-- `common_settings_page.py` — workspace folder (read-only) and the Logout
+- `common_settings_page.py` — workspace folder (read-only), the Logout
   button (moved here from Sidebar's footer — `logout_requested` signal,
   connected in `main_window.py` to the same logout flow the old toggle
-  button used to trigger). `CATEGORY_GENERAL`.
+  button used to trigger), and a Restart button (added 2026-07-19 —
+  `restart_requested` signal, connected to `MainWindow._on_restart_requested`,
+  which calls the same `_restart_app()` helper
+  (`os.execv(sys.executable, [sys.executable, *sys.argv])`) Sidebar's own
+  "Update and Restart" button already used, just without the
+  `self_update.pull_update()` git pull first). `CATEGORY_GENERAL`.
 - `github_oauth_settings_page.py` — `GithubOAuthSettingsPage`: just the
   GitHub OAuth Client ID field, split out of `common_settings_page.py`
   since it's studio-admin plumbing most users never touch.
@@ -68,19 +84,22 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   `interface/main_window.py`'s `_apply_plugin_visibility`, wired via a
   plugin-id-to-section-key map built in `launcher.py`). An empty
   `active_plugin_ids` (the default) means "unrestricted" — every plugin
-  stays visible. `CATEGORY_REPO`.
+  stays visible. A plugin flagged `manifest.json` `"core": true`
+  (`PluginManifest.core`, e.g. `plugins/studio/project_editor/`) renders
+  here checked and disabled — it can never actually be hidden, so there's
+  nothing to toggle. `CATEGORY_REPO`.
 
-**Not built-in:** the "Explorer" `CATEGORY_REPO` tab (pinning other repos
-as extra Explorer-style sidebar tabs, `Repo.explorer_pins`) is registered
-by the Explorer plugin itself, not here — see
-`plugins/studio/explorer/explorer_settings_page.py` and
-`plugins/studio/explorer/README.md`. Listed for context since it renders
-in the same Repo category as `project_status_page.py`/
-`browser_links_settings_page.py` above. Likewise, "Project Data Editor"
-(`CATEGORY_DEVELOPER`, CRUD for the whole Project/Repo registry) moved out
-to `plugins/studio/pipeline_architect/` as of 2026-07-15 — see that
-plugin's README for why (and the deliberate tradeoff of making that admin
-function depend on a plugin loading).
+**No longer rendered here at all:** as of 2026-07-15, `SettingsView` stops
+rendering `CATEGORY_REPO` entirely — every `CATEGORY_REPO` tab (Project
+Status, Browser, Local Repository, Enable Plugin) now renders as a
+collapsible section inside `plugins/studio/project_editor/`'s right panel
+instead, read generically off the same `SettingsTabRegistry`
+(`category == CATEGORY_REPO`). The tabs
+themselves are unchanged and still registered exactly as below — only
+which container renders them changed. "Project Data Editor" (full CRUD for
+the whole Project/Repo registry, formerly `CATEGORY_DEVELOPER`) moved out
+to `plugins/studio/project_editor/` the same day, now as a node-graph
+top-level section rather than a Settings tab — see that plugin's README.
 
 **Removed:** `addon_settings_page.py`/`AddonSettingsPage` (the "Add-ons"
 tab) — deprecated and removed as of 2026-07-14. It used to be the only UI
@@ -91,4 +110,4 @@ required Program" section.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `shared/` addition, or touches `main_window.py`'s
-wiring (which shows/hides this view via `Sidebar.settings_requested`).
+wiring (which opens `SettingsDialog` via `Sidebar.settings_requested`).

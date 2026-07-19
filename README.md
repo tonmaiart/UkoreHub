@@ -3,9 +3,10 @@
 Pipeline tool to launch project in Ukore Studio.
 
 UkoreHub is a Git repo launcher: it keeps a database-driven registry of Projects,
-each containing one or more Repos. Pick a repo from the sidebar — a dropdown of
-already-cloned repos once you have at least one, or "Select Repo..." the first
-time — and it's cloned (first time) or pulled (every time after) automatically
+each containing one or more Repos. Pick a repo by clicking its node in the
+Project Editor's graph (1 node = 1 repo) — the first click on an uncloned repo
+asks to confirm — and it's cloned (first time) or pulled (every time after)
+automatically
 into a workspace folder of your choosing, no manual `git clone`/`git pull`
 needed. From there you can browse the repo's files, and on the Repo Git Status
 tab: scroll through its full commit history, stage modified files, and commit →
@@ -39,10 +40,11 @@ keyring) and installs any that are missing automatically — no manual
 is fixed to `<this repo>/projects`. If you're not logged in yet, a Quick
 Start dialog offers GitHub login and picking a project up front — every
 field is optional and a single Continue skips all of it. Managers add
-Projects/Repos via Setting > Project Data Editor; anyone can check sync
-status read-only via Setting > Project Status. Whatever's added there becomes
-available to pick from the sidebar (a dropdown once at least one repo has
-been cloned, otherwise "Select Repo...").
+Projects/Repos via the Project Editor section (a node graph, 1 node = 1
+repo); anyone can check sync status read-only via Setting > Project Status.
+Whatever's added there becomes available to pick as the active repo by
+clicking its node in Project Editor — there is no separate sidebar
+repo-picker button anymore.
 
 Alternatively, double-click `UkoreHub.exe` at the repo root (or pin it to
 the taskbar) — a thin native wrapper that launches `launcher.py` with no

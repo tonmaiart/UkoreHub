@@ -26,10 +26,13 @@ from PySide6.QtWidgets import (
 from core.git_service import GitService
 from core.os_utils import open_with_default_app
 from plugins.studio.explorer.file_table_proxy import FileTableFilterProxy
+from plugins.studio.explorer.last_opened_store import LastOpenedStore
 from plugins.studio.explorer.path_commit_history_panel import PathCommitHistoryPanel
 
 COLUMN_COUNT = 5
 OPENING_POPUP_DURATION_MS = 3000
+_MAX_LAST_OPENED = 20
+_LAST_OPENED_PANEL_WIDTH = 220
 
 _ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
 # Both nav icons live at the repo root rather than data/icons/ — falls back
@@ -61,6 +64,12 @@ class RepoBrowserWidget(QWidget):
         # from the "Up" button, which always goes to the parent folder
         # regardless of navigation history.
         self._back_stack: list[Path] = []
+        # Persisted per-repo, per-user (LastOpenedStore, under
+        # <repo_root>/.ukorehub/) rather than kept purely in-memory —
+        # rebuilt from that store on every set_root() (repo switch) so it
+        # survives across app restarts and repo switches, unlike a plain
+        # in-memory MRU list would.
+        self._last_opened_store: LastOpenedStore | None = None
 
         self.fs_model = QFileSystemModel()
         self.fs_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
@@ -122,6 +131,25 @@ class RepoBrowserWidget(QWidget):
         folder_navigator_layout = QVBoxLayout(folder_navigator_group)
         folder_navigator_layout.addLayout(columns_row)
 
+        # "Last Opened Files": an MRU list of files opened via a table
+        # double-click, docked at the far right of the Folder Navigator row.
+        # Clicking an entry only navigates the browser to that file's
+        # current path (_on_last_opened_clicked) — it deliberately does NOT
+        # wire up double-click-to-open the way the file table does, so this
+        # list is a navigation shortcut only, never a second way to launch a
+        # file.
+        self.last_opened_list = QListWidget()
+        self.last_opened_list.setSpacing(0)
+        self.last_opened_list.itemClicked.connect(self._on_last_opened_clicked)
+        last_opened_group = QGroupBox("Last Opened Files")
+        last_opened_group.setMaximumWidth(_LAST_OPENED_PANEL_WIDTH)
+        last_opened_layout = QVBoxLayout(last_opened_group)
+        last_opened_layout.addWidget(self.last_opened_list)
+
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(folder_navigator_group, stretch=1)
+        folder_row.addWidget(last_opened_group, stretch=0)
+
         self.table = QTableView()
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
@@ -151,7 +179,7 @@ class RepoBrowserWidget(QWidget):
         table_row.addWidget(self.commit_panel)
 
         main_column = QVBoxLayout()
-        main_column.addWidget(folder_navigator_group, stretch=0)
+        main_column.addLayout(folder_row, stretch=0)
         main_column.addLayout(nav_row, stretch=0)
         main_column.addLayout(table_row, stretch=1)
 
@@ -168,6 +196,8 @@ class RepoBrowserWidget(QWidget):
         path = Path(path)
         self._root = path
         self.fs_model.setRootPath(str(path))
+        self._last_opened_store = LastOpenedStore(path, max_entries=_MAX_LAST_OPENED)
+        self._refresh_last_opened_list()
         self._navigate_to(path)
 
     def _navigate_to(self, path: Path, *, _record_history: bool = True) -> None:
@@ -292,6 +322,30 @@ class RepoBrowserWidget(QWidget):
         else:
             self._show_opening_popup(path)
             self._open_file(path)
+            self._record_last_opened(path)
+
+    def _record_last_opened(self, path: Path) -> None:
+        if self._last_opened_store is None:
+            return
+        self._last_opened_store.add(path)
+        self._refresh_last_opened_list()
+
+    def _refresh_last_opened_list(self) -> None:
+        self.last_opened_list.clear()
+        if self._last_opened_store is None:
+            return
+        for opened_path in self._last_opened_store.get_last_opened():
+            self.last_opened_list.addItem(opened_path.name)
+            item = self.last_opened_list.item(self.last_opened_list.count() - 1)
+            item.setData(Qt.UserRole, str(opened_path))
+            item.setToolTip(str(opened_path))
+
+    def _on_last_opened_clicked(self, item) -> None:
+        # Deliberately navigation-only — see the comment where
+        # last_opened_list is constructed for why this list never wires up
+        # a double-click-to-open path.
+        path = Path(item.data(Qt.UserRole))
+        self._navigate_to(path.parent)
 
     def _show_opening_popup(self, path: Path) -> None:
         # Non-modal and self-closing — just a quick acknowledgement that the

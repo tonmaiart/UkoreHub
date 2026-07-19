@@ -19,6 +19,10 @@ class SectionHost:
 
     set_status_message: Callable[[str], None]
     navigate_and_focus: Callable[[str, Path], None]
+    # Lets a section's page trigger a real active-repo switch (e.g. on
+    # node click in plugins/studio/project_editor's graph view) without
+    # holding a MainWindow reference — wraps MainWindow._set_active_repo.
+    set_active_repo: Callable[[str, str], None]
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,13 @@ class SectionSpec:
     # generic MainWindow services without MainWindow importing the page's
     # specific type. See interface/main_window.py's __init__.
     wire: Callable[[QWidget, "SectionHost"], None] | None = None
+    # True for a section that's always visible docked next to view_stack
+    # (added 2026-07-15 for Project Editor) instead of a switchable
+    # full-width page — never gets a Sidebar row (SectionTabList skips it),
+    # never joins MainWindow._section_view_index/view_stack, and is never a
+    # navigate_and_focus target. page_factory/wire/background_threads all
+    # still apply the same way. See MainWindow._build_main_ui.
+    persistent: bool = False
 
 
 class SectionRegistry:

@@ -17,17 +17,21 @@ SETTING_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "ic
 
 class Sidebar(QWidget):
     """Left-hand navigation column — replaces the old horizontal MenuBar
-    row. Top to bottom: ActiveRepoWidget (thumbnail banner + "Project /
-    Repo" picker button), the repo-scoped SectionTabList (Explorer/Submit/
-    About, plus a dynamic row per Browser Link — stretched to fill the
-    remaining height), and a footer strip for sync status, the Update
-    button, and an account row (GitHub avatar/username + an icon-only
-    Setting button right after it). Logging out lives in Settings > Common
-    now, not here — GitHubAuthWidget is display-only (Sidebar only ever
-    shows a logged-in user)."""
+    row. Top to bottom: ActiveRepoWidget (display-only repo thumbnail +
+    name label — no click-to-open picker anymore, see that widget's own
+    docstring), the repo-scoped SectionTabList (Explorer/Submit/About, plus
+    a dynamic row per Browser Link — stretched to fill the remaining
+    height; Project Editor is NOT a row here, it's an always-visible docked
+    panel instead, see plugins/studio/project_editor/ and
+    interface/section_registry.py's SectionSpec.persistent), and a footer
+    strip for sync status, the Update button, and an account row (GitHub
+    avatar/username + an icon-only Setting button right after it). Double-
+    clicking a node in Project Editor's graph is the only way to change the
+    active repo. Logging out lives in Settings > Common now, not here —
+    GitHubAuthWidget is display-only (Sidebar only ever shows a logged-in
+    user)."""
 
     update_requested = Signal()
-    repo_picker_requested = Signal()
     navigation_changed = Signal(str)
     settings_requested = Signal()
 
@@ -37,7 +41,6 @@ class Sidebar(QWidget):
         self.setFixedWidth(SIDEBAR_WIDTH)
 
         self.active_repo_widget = ActiveRepoWidget()
-        self.active_repo_widget.repo_picker_requested.connect(self.repo_picker_requested.emit)
 
         self.tab_list = SectionTabList(section_registry=section_registry)
         self.tab_list.navigation_changed.connect(self.navigation_changed.emit)

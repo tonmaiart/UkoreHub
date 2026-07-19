@@ -247,6 +247,12 @@ def main() -> None:
         for key in section_registry.keys() - keys_before:
             section_key_to_plugin_id[key] = plugin.manifest.id
 
+    # Plugins flagged manifest.json "core": true (e.g. Project Editor —
+    # switching the active repo has no other entry point) must never be
+    # hidden by a repo's restricted active_plugin_ids allowlist — see
+    # MainWindow._apply_plugin_visibility.
+    core_plugin_ids = {plugin.manifest.id for plugin in discovery.loaded if plugin.manifest.core}
+
     plugin_failures = (
         discovery.failures
         + addon_discovery.failures
@@ -268,8 +274,16 @@ def main() -> None:
         settings_tab_registry,
         file_opener_registry,
         section_key_to_plugin_id=section_key_to_plugin_id,
+        core_plugin_ids=core_plugin_ids,
     )
-    window.show()
+    # MainWindow.__init__ already calls showMaximized() early (so the login
+    # gate itself never flashes unmaximized before real content loads), but
+    # that happens before this window has ever actually been realized on
+    # screen — a plain window.show() here can silently leave it at its
+    # pre-realization "normal" geometry instead of a true maximized one on
+    # Windows. Calling showMaximized() again here, as the last step right
+    # before the window is actually shown, is what makes it stick.
+    window.showMaximized()
     sys.exit(app.exec())
 
 

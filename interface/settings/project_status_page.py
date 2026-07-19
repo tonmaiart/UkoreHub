@@ -10,7 +10,7 @@ class ProjectStatusPage(QWidget):
     """Read-only view of every Project/Repo and its sync status.
 
     For artists to check on the registry that managers maintain in the
-    Project Data Editor tab — no add/edit/delete here.
+    Project Editor's node graph — no add/edit/delete here.
     """
 
     def __init__(self, parent=None, *, store: MetadataStore, local_config_store: LocalConfigStore):

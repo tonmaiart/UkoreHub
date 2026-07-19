@@ -14,12 +14,14 @@ DEFAULT_BROWSER_LINK_ICON = Path(__file__).resolve().parent.parent.parent / "dat
 class SectionTabList(QListWidget):
     """Vertical replacement for the old horizontal TopTabBar: one row per
     registered SectionRegistry section (built-in and plugin-provided alike,
-    in registry order), then one row per dynamic Browser Link on the active
-    repo (see add_dynamic_tab — inserted right after the fixed sections on
-    every repo switch). Setting is deliberately NOT a row here — it's its
-    own icon-only button in Sidebar's footer, next to the GitHub username,
-    since it's an app-level control rather than a repo-scoped one (see
-    interface/sidebar/sidebar.py)."""
+    in registry order, excluding any SectionSpec.persistent=True section —
+    see interface/section_registry.py, e.g. Project Editor is an
+    always-visible docked panel rather than a row here), then one row per
+    dynamic Browser Link on the active repo (see add_dynamic_tab — inserted
+    right after the fixed sections on every repo switch). Setting is
+    deliberately NOT a row here — it's its own icon-only button in
+    Sidebar's footer, next to the GitHub username, since it's an app-level
+    control rather than a repo-scoped one (see interface/sidebar/sidebar.py)."""
 
     navigation_changed = Signal(str)
 
@@ -29,6 +31,8 @@ class SectionTabList(QListWidget):
 
         self._fixed_count = 0
         for spec in section_registry.ordered():
+            if spec.persistent:
+                continue
             self._add_row(spec.key, spec.label, spec.icon_path)
             self._fixed_count += 1
 

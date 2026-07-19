@@ -10,17 +10,39 @@ from core.exceptions import NotFoundError
 from interface.settings_tab_registry import CATEGORY_REPO, SettingsTabSpec
 from plugins.studio.maya_launcher.repo_tools_store import RepoToolsStore
 from plugins.studio.maya_launcher.settings_page import MayaLauncherSettingsPage
-from plugins.studio.maya_launcher.tools import ANY_VERSION, build_contributions
 
 ADDON_ID = "maya_launcher"
 # Convention-only string match with plugins/studio/software_linker/plugin.py
 # — both resolve to the same data/plugins/local/software_linker.json via
 # PluginConfigStore, no coupling API needed.
 SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
+# Convention-only string match with every Maya env-contributing plugin
+# (plugins/studio/AdvancedSkeleton, .../MayaNgskin, .../MayaToolkit,
+# .../mGear, .../UkoreBrowser, .../DreamwallPicker, .../StudioLibrary,
+# .../PublishApi, .../ModelPublisher, .../RigPublisher,
+# .../AnimationPublisher) — each writes its own contributions[tool_id] entry
+# (plus labels[tool_id]) into this shared, studio-tracked PluginConfigStore
+# at register() time. This plugin is a pure bridge reader: it owns
+# launching Maya with an assembled env, not the list of what goes into
+# that env, so a new tool can start contributing paths with zero code
+# change here — reverted 2026-07-19 to this pre-consolidation shape (see
+# git history around 2026-07-14 for the version that briefly inlined every
+# tool's env-building logic into this plugin instead of a shared bridge).
+MAYA_ENV_BRIDGE_PLUGIN_ID = "maya_launcher_env_bridge"
+ANY_VERSION = "*"
+# PublishApi is pure infrastructure — no artist-facing behavior or UI of
+# its own, just path-resolution/versioning other tools (UkoreBrowser,
+# ModelPublisher/RigPublisher/AnimationPublisher) import directly. Never
+# gated by RepoToolsStore's per-repo toggle below (unlike every other tool,
+# it isn't even offered as a checkbox in Settings), same reasoning
+# plugins/studio/project_editor/'s "core": true manifest flag makes IT
+# immune to the generic Enable-Plugin gating: there's no legitimate reason
+# a repo would ever want it disabled, and doing so only breaks whatever
+# else is enabled and imports it — `import PublishApi` failing inside
+# Maya for a tool that's supposedly turned on.
+PUBLISH_API_TOOL_ID = "publish_api"
 
 MAYA_FILE_EXTENSIONS = [".ma", ".mb"]
-
-PLUGIN_DIR = Path(__file__).resolve().parent
 
 
 def _maya_programs_for_repo(api, repo):
@@ -110,7 +132,7 @@ def _build_maya_env(base_env: dict, contributions: dict, maya_version: str) -> d
     """Pure, testable: returns a new env dict with each enabled tool's paths
     prepended (not replaced) onto the env var it targets — prepending keeps
     whatever the artist's own Maya/mGear install already put there.
-    `contributions` is tools.build_contributions()'s
+    `contributions` is the bridge's own already-filtered-to-enabled
     {tool_id: {var_name: {"*": [...], "<version>": [...]}}} shape;
     `maya_version` selects which version-specific entries also apply, on top
     of every "*" entry. Iterates tool_ids sorted for deterministic env var
@@ -123,6 +145,16 @@ def _build_maya_env(base_env: dict, contributions: dict, maya_version: str) -> d
                 existing = env.get(var_name)
                 env[var_name] = f"{new_entry}{os.pathsep}{existing}" if existing else new_entry
     return env
+
+
+def _read_bridge(api) -> tuple[dict, dict]:
+    """Fresh read of the shared bridge's "contributions"/"labels" dicts —
+    api.plugin_config_store() constructs a brand-new PluginConfigStore
+    (loading from disk) on every call, so this always sees whatever every
+    contributing tool plugin has written by now (see MAYA_ENV_BRIDGE_PLUGIN_ID
+    above)."""
+    bridge = api.plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID, shared=True)
+    return bridge.get("contributions", {}), bridge.get("labels", {})
 
 
 def register(api) -> None:
@@ -148,10 +180,15 @@ def register(api) -> None:
             )
             return True  # handled (with a warning) — do not fall back to OS default
 
-        enabled_tool_ids = tools_store.enabled_tool_ids_for(
-            api.local_config.active_project_id, api.local_config.active_repo_id
+        all_contributions, _labels = _read_bridge(api)
+        enabled_tool_ids = set(
+            tools_store.enabled_tool_ids_for(
+                api.local_config.active_project_id, api.local_config.active_repo_id, list(all_contributions)
+            )
         )
-        contributions = build_contributions(PLUGIN_DIR, api.app_root, enabled_tool_ids)
+        contributions = {tid: c for tid, c in all_contributions.items() if tid in enabled_tool_ids}
+        if PUBLISH_API_TOOL_ID in all_contributions:
+            contributions[PUBLISH_API_TOOL_ID] = all_contributions[PUBLISH_API_TOOL_ID]
         env = _build_maya_env(os.environ.copy(), contributions, maya_version or "")
 
         repo_root = _repo_root_path(api, repo)
@@ -166,7 +203,9 @@ def register(api) -> None:
             key=ADDON_ID,
             label="Maya Launcher",
             order=110,
-            page_factory=lambda: MayaLauncherSettingsPage(api=api, tools_store=tools_store),
+            page_factory=lambda: MayaLauncherSettingsPage(
+                api=api, tools_store=tools_store, read_bridge=lambda: _read_bridge(api)
+            ),
             on_activated=lambda page: page.refresh(),
             category=CATEGORY_REPO,
         )

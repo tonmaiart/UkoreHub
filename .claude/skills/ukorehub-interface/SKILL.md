@@ -36,27 +36,40 @@ right:
 - **`Sidebar`** (`interface/sidebar/sidebar.py`, fixed-width left column).
   Top to bottom within it:
   - **`ActiveRepoWidget`** (`interface/sidebar/active_repo_widget.py`): a
-    fill-cropped (never rounded) repo thumbnail banner with the repo name
-    overlaid as a translucent strip at its bottom, and directly beneath it
-    a full-width "Project / Repo" button that opens the repo picker
-    (`interface/login/repo_picker.py`).
+    fill-cropped (never rounded) repo thumbnail banner with a plain name
+    label beneath it. Display-only as of 2026-07-15 — no click-to-open
+    picker anymore (that button existed, was removed, then this display-
+    only version was re-added the same day at the user's request);
+    clicking a repo node in Project Editor's `QGraphicsView` graph
+    (`plugins/studio/project_editor/`) is the only way to change the
+    active repo now, via `SectionHost.set_active_repo` (see below) — a
+    single click, not a double-click (changed the same day too; a
+    not-yet-cloned repo gets a one-time confirmation first).
+    `MainWindow` pushes into it directly from `_restore_active_repo`/
+    `_set_active_repo`/`_on_repo_thumbnail_changed`.
   - **`SectionTabList`** (`interface/sidebar/section_tab_list.py`, a
     vertical `QListWidget`, stretched to fill the remaining height): one
-    row per `SectionRegistry` section (currently Explorer/Submit/About, in
-    registry order), then one row per dynamic Browser Link on the active
-    repo (inserted right after the fixed sections, rebuilt on every repo
-    switch), then a final **Setting** row (`SETTINGS_KEY`) that always
-    stays last. Because this is one single-selection list rather than two
-    independent `QButtonGroup`s (the old MenuBar's design), there is
-    nothing to keep in sync by hand anymore — `SectionTabList` emits one
+    row per `SectionRegistry` section **excluding** any
+    `SectionSpec.persistent=True` section (currently Explorer/Submit/About,
+    in registry order — Project Editor is `persistent=True` so it never
+    gets a row here, see below), then one row per dynamic Browser Link on
+    the active repo (inserted right after the fixed sections, rebuilt on
+    every repo switch), then a final **Setting** row (`SETTINGS_KEY`) that
+    always stays last. Because this is one single-selection list rather
+    than two independent `QButtonGroup`s (the old MenuBar's design), there
+    is nothing to keep in sync by hand anymore — `SectionTabList` emits one
     `navigation_changed(key)` signal for every row, Setting included.
   - A **footer** (`sidebarFooter`) with sync status, the Update button,
     and GitHub login/logout (`interface/login/github_auth_widget.py`).
 - **A view stack** (`MainWindow.view_stack`) with one full-width top-level
-  page per `SectionRegistry` section (Explorer/Submit/About — every
-  section is standalone, there's no shared sidebar-backed container), one
-  page per dynamic Browser Link tab, plus the **settings view**
-  (`SettingsTabRegistry`-driven, shown when the Setting row is selected).
+  page per **non-persistent** `SectionRegistry` section (Explorer/Submit/
+  About — every section is standalone, there's no shared sidebar-backed
+  container), one page per dynamic Browser Link tab, plus the **settings
+  view** (`SettingsTabRegistry`-driven, shown when the Setting row is
+  selected — as of 2026-07-15 it only renders `CATEGORY_GENERAL`/
+  `CATEGORY_DEVELOPER`; every `CATEGORY_REPO` tab now renders generically
+  inside a "Repository Setting..." popup opened from a Project Editor
+  node's right-click menu instead, see that plugin's README).
   `Sidebar.navigation_changed` picks a page by key via
   `MainWindow._on_navigation_changed`, which special-cases
   `key == SETTINGS_KEY` to show the settings view instead of looking it up
@@ -65,6 +78,22 @@ right:
   (showing each enabled add-on's per-repo panel via `RepoAddonPanelRegistry`)
   moved into `interface/about/repo_about_page.py`'s own left-tab-bar
   sub-tabs instead (see below).
+- **Persistent sections** (`SectionSpec.persistent=True`, currently only
+  Project Editor): never a `SectionTabList` row, never added to `view_stack`
+  at all — instead `MainWindow._build_main_ui` docks it permanently beside
+  `view_stack` inside a `QSplitter` (`content_splitter`, initial sizes
+  `[1000, 420]` favoring `view_stack`, user-resizable), so it stays visible
+  regardless of which ordinary section is currently showing. Since it's
+  never `view_stack.currentWidget()`, `MainWindow._apply_to_current_page()`
+  never reaches it — `_apply_to_persistent_pages()` pushes `set_repo(...)`
+  to every persistent page directly instead, called alongside
+  `_apply_to_current_page()` wherever the active repo actually changes
+  (login restore, relogin, `_set_active_repo` — deliberately **not** on
+  every plain navigation switch in `_on_navigation_changed`, since a
+  persistent page's content doesn't depend on which ordinary section is
+  showing). `SectionSpec.wire`/`background_threads`/`page_factory` all
+  still apply identically to a persistent section — only its Sidebar row
+  and `view_stack` membership are skipped.
 - Every settings page **self-persists on every change** — there is no
   Save/Cancel step anywhere. `SettingsTabSpec` has no `on_save`/`on_cancel`
   hooks; if you're writing a new settings page, write directly through
@@ -79,7 +108,7 @@ don't go looking for it here, even though it's UI-adjacent in purpose.
 
 | Registry | Spec dataclass | Keyed? | Purpose |
 |---|---|---|---|
-| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level sections, rendered as rows in Sidebar's `SectionTabList` (Explorer, Submit, About, ...) |
+| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level sections, rendered as rows in Sidebar's `SectionTabList` (Explorer, Submit, About, ...) — unless `persistent=True` (Project Editor), which docks permanently beside `view_stack` instead of getting a row |
 | `SettingsTabRegistry` | `SettingsTabSpec` | yes | Tabs shown in the "Setting" view |
 | `RepoAddonPanelRegistry` | (factory keyed by addon_id) | yes | Per-add-on per-repo panel, consumed by `interface/about/repo_about_page.py`'s dynamic sub-tabs (one per enabled add-on with a registered panel) |
 | `FileOpenerRegistry` | `FileOpenerSpec` | **no**, plain list, first-match-wins | Add-on can claim responsibility for opening a file extension (lives in `core/`) |
@@ -122,8 +151,9 @@ Notable surface:
 - `api.app_root` → `Path` to the UkoreHub install root itself (i.e.
   `launcher.py`'s own `REPO_ROOT`), for a plugin/add-on that needs to
   reference other paths inside the UkoreHub installation (like
-  `plugins/studio/maya_launcher/`'s own nested-tool folders) without
-  guessing their nesting depth from `__file__`.
+  `plugins/studio/UkoreBrowser/plugin.py` contributing `api.app_root`
+  itself onto `PYTHONPATH` so its vendored Maya-side code can
+  `import core.store`) without guessing paths from `__file__`.
 - `api.register_repo_addon_panel(addon_id, panel_factory)` — shows up as
   its own sub-tab (named after the add-on's manifest) inside the About
   page's left tab bar, for any repo that has that add-on enabled. Only
@@ -134,6 +164,12 @@ Notable surface:
 - `api.register_file_opener(addon_id, extensions, opener)`,
   `api.register_section(...)`, `api.register_settings_tab(...)` — one
   register method per remaining registry above.
+- `api.settings_tab_registry` → read access to the same `SettingsTabRegistry`
+  `register_settings_tab()` writes into, added 2026-07-15 for
+  `plugins/studio/project_editor/`'s right panel, which enumerates every
+  `CATEGORY_REPO` spec generically and renders it as a collapsible section
+  rather than contributing a tab of its own — same read-access-alongside-
+  write-method shape as `api.file_opener_registry` above.
 
 ## Page protocol: `set_repo()`
 

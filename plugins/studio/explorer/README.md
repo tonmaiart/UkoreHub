@@ -16,50 +16,11 @@ navigation aids now.)
   `api.local_config`/`api.git`/`api.file_opener_registry`, registers it as
   the `SectionSpec(key="repo_browser", order=10, ...)` section. Also wires
   `background_threads` (for `MainWindow.closeEvent`'s shutdown cleanup) —
-  reaches into `page.browser.commit_panel._worker`. Additionally registers
-  `explorer_settings_page.py`'s `ExplorerSettingsPage` as a
-  `CATEGORY_REPO` Settings tab (`key="explorer_settings"`, a convention-only
-  string match `interface/main_window.py` reaches into via
-  `SettingsView.get_tab_widget()` to wire its `pins_changed` signal — see
-  below).
-- `explorer_settings_page.py` — `ExplorerSettingsPage`: per-repo list of
-  other repos "pinned" as extra Explorer-style sidebar tabs while this repo
-  is active (`Repo.explorer_pins`, `core/models.py`'s `ExplorerPin` —
-  `target_project_id`/`target_repo_id`/`label`). Same self-resolving-
-  active-repo `refresh()` pattern as
-  `interface/settings/browser_links_settings_page.py`. "Add Pinned
-  Repo..." reuses `interface/login/repo_picker.py`'s `RepoPickerDialog`
-  (the same dialog `MainWindow._on_select_repo` already uses) but narrows
-  it via that dialog's `allowed_pairs` filter to only the active repo's
-  declared pipeline inputs/outputs — read from
-  `plugins/studio/pipeline_architect`'s `PluginConfigStore` (constructed
-  with that plugin's id string, `pipeline_config_store` param, per the
-  "convention, not import" cross-plugin data pattern — see that plugin's
-  README) rather than the whole registry. `_pipeline_repo_pairs()` calls
-  `.load()` on that store before reading, since it's a separate
-  `PluginConfigStore` object from pipeline_architect's own and would
-  otherwise only see whatever was on disk at app startup. If the active
-  repo has no pipeline inputs/outputs declared yet, the button shows a
-  message pointing at Project Data Editor instead of opening an empty
-  picker. Every change self-persists via `MetadataStore.set_repo_explorer_pins`
-  and emits `pins_changed`, which `interface/main_window.py` connects to
-  `_rebuild_dynamic_tabs`.
-- `pinned_repo_browser_page.py` — `PinnedRepoBrowserPage`: one dynamically-
-  created top-level tab per `ExplorerPin`, bound at construction to a FIXED
-  target repo (never the app's active repo — implements `set_repo()` as a
-  no-op, same convention `interface/about/browser_link_page.py`'s
-  `BrowserLinkPage` uses for MainWindow's other class of dynamic tab). Reuses
-  the same `RepoBrowserWidget` the main Explorer tab uses once the target is
-  cloned; shows a "Clone" button + a live streamed log (backed by a small
-  `_CloneWorker(QThread)` around `GitService.clone`, same shape as
-  `path_commit_history_worker.py`'s worker) when it isn't. Exposes
-  `background_threads()` (clone worker + `browser.commit_panel._worker`) so
-  `interface/main_window.py`'s `_rebuild_dynamic_tabs`/`closeEvent` can stop
-  them safely — this page owns real `QThread`s, unlike `BrowserLinkPage`.
-  **Constructed directly by `interface/main_window.py`** (a deliberate,
-  documented exception to "MainWindow doesn't import plugin-specific
-  types" — see the comment at that import) since it needs the exact same
-  dynamic-tab machinery Browser Link tabs already use there.
+  reaches into `page.browser.commit_panel._worker`. (Used to also register
+  an `ExplorerSettingsPage`/"Add Pinned Repo..." `CATEGORY_REPO` Settings
+  tab and a `pinned_repo_browser_page.py` dynamic-tab page — the whole
+  pinned-repo feature was removed as no longer needed; see git history if
+  it needs to come back.)
 - `repo_browser_page.py` — `RepoBrowserPage`: the top-level Explorer page.
   Owns file-open delegation (`core/extensibility/file_opener.py`'s
   `FileOpenerRegistry`, so an add-on can claim an extension) and implements
@@ -82,7 +43,33 @@ navigation aids now.)
   (width-capped) sits at the end of the same row as the breadcrumb path
   field rather than on its own row below the table. Each Folder Navigator
   column list uses zero item padding/margin (on top of `setSpacing(0)`) to
-  keep entries as compact as possible.
+  keep entries as compact as possible. A "Last Opened Files" `QGroupBox`
+  (`last_opened_list`) sits at the far right of the Folder Navigator row —
+  an MRU list (capped at `_MAX_LAST_OPENED`) appended to whenever a table
+  double-click actually opens a file (`_record_last_opened`, called from
+  `_on_table_double_clicked`), backed by `LastOpenedStore`
+  (`last_opened_store.py`, see below) rather than kept purely in-memory —
+  rebuilt from that store on every `set_root()`/repo switch, so it
+  survives app restarts. Clicking an entry (`_on_last_opened_clicked`)
+  only navigates to that file's current path — deliberately no
+  double-click-to-open wired up here, so this list can never be a second
+  way to launch a file, only a navigation shortcut back to one.
+- `last_opened_store.py` — `LastOpenedStore`: persists the Last Opened
+  Files list to `<repo_root>/.ukorehub/explorer_last_opened_<username>.json`
+  — a **local, per-repo, per-OS-user** cache, not team/studio-shared data
+  (never goes through `PluginConfigStore`/`api.plugin_config_store`).
+  Mirrors `plugins/studio/UkoreBrowser/maya-scripts/UkoreBrowser/core/browser_config.py`'s
+  `BrowserConfig` — same `.ukorehub/` convention, same repo-relative path
+  storage (survives a different drive letter machine to machine) — but
+  additionally scoped by OS username (`getpass.getuser()`, sanitized to a
+  safe filename), since this is a genuinely per-artist working list, not
+  something meant to be shared even between two people using the same
+  clone. `get_last_opened()` also prunes (and persists the removal of) any
+  entry whose file no longer exists on disk, so deleted files don't
+  linger in the list forever. Like `BrowserConfig`'s own file, keeping
+  this out of a production repo's git history is that repo's own
+  `.gitignore`'s job — this file lives inside whatever repo is being
+  browsed, not inside UkoreHub's own.
 - `path_commit_history_panel.py` — `PathCommitHistoryPanel`: commit
   history scoped to whichever path is currently being viewed — narrower
   than the whole-repo log on `plugins/studio/submit/repo_git_status_page.py`.
@@ -97,5 +84,4 @@ navigation aids now.)
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `interface/shared/` addition, or touches
-`interface/main_window.py`'s generic `SectionHost` wiring or its
-`_rebuild_dynamic_tabs`/`closeEvent` (pinned-tab construction/cleanup).
+`interface/main_window.py`'s generic `SectionHost` wiring.

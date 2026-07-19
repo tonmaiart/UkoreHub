@@ -1,0 +1,8 @@
+{
+  "id": "advanced_skeleton",
+  "name": "AdvancedSkeleton",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "AdvancedSkeleton rigging toolset for Maya. Contributes its maya-scripts folder to the Maya Launcher env bridge — does not launch Maya itself."
+}

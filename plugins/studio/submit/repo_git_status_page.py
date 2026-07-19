@@ -339,6 +339,15 @@ class RepoGitStatusPage(QWidget):
     def start_sync(self) -> None:
         if self._repo is None or self._workspace_root is None:
             return
+        if self._git_worker is not None and self._git_worker.isRunning():
+            # A previous sync is still in flight (e.g. rapid repo switches
+            # via Project Editor's node double-click, each of which calls
+            # sync_active_repo -> start_sync again) — don't orphan it
+            # mid-run, which crashes the app when its QThread object gets
+            # garbage collected while still alive. Just let the in-flight
+            # one finish (same guard refresh_status() already has for
+            # _status_worker, below).
+            return
         dest_path = self._dest_path()
         self.sync_button.setEnabled(False)
         self.progress_bar.setVisible(True)

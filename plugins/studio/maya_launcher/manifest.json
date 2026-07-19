@@ -4,5 +4,5 @@
   "version": "0.2.0",
   "api_version": 1,
   "entry_point": "plugin.py",
-  "description": "Launches Maya with the linked executable (via Software Linker), auto-setting the project to the repo root, and assembles Maya env vars from its 7 nested tools (AdvancedSkeleton, MayaNgSkin, MayaToolkit, mGear, Ukore Browser, DreamwallPicker, StudioLibrary) based on which are enabled for the active repo."
+  "description": "Launches Maya with the linked executable (via Software Linker), auto-setting the project to the repo root, and assembles Maya env vars from a shared bridge that independent Maya tool plugins (AdvancedSkeleton, MayaNgSkin, MayaToolkit, mGear, Ukore Browser, DreamwallPicker, StudioLibrary, PublishApi, ModelPublisher, RigPublisher, AnimationPublisher) contribute to, based on which are enabled for the active repo."
 }

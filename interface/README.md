@@ -28,12 +28,16 @@ a new top-level section that needs `section_registry.py`).
 
 - `main_window.py` — top-level `QMainWindow`: constructs every window's
   page from `SectionRegistry`, wires `sidebar/`'s `Sidebar` (the left-hand
-  navigation column — thumbnail/repo picker, `SectionTabList`, GitHub
-  login/Update/sync footer), drives active-repo restore + auto-sync on
-  launch, and owns the one shared `QWebEngineProfile`
+  navigation column — display-only repo thumbnail/name label,
+  `SectionTabList`, GitHub login/Update/sync footer), drives active-repo
+  restore + auto-sync on launch, and owns the one shared `QWebEngineProfile`
   (`web_engine_profile.py`) every `about/browser_link_page.py` tab uses.
-  Every section is its own standalone page in `view_stack`, switched to via
-  `Sidebar.navigation_changed`.
+  Every ordinary section is its own standalone page in `view_stack`,
+  switched to via `Sidebar.navigation_changed` — except a section flagged
+  `SectionSpec.persistent=True` (Project Editor), which is never added to
+  `view_stack`/`SectionTabList` at all and instead sits permanently docked
+  beside `view_stack` in a `QSplitter`, always visible regardless of which
+  ordinary section is currently showing.
 - `section_registry.py` / `settings_tab_registry.py` — open, ordered
   registries that top-level sections and Settings tabs register into
   (built-in and plugin-provided alike). `repo_addon_panel_registry.py` is
@@ -60,10 +64,12 @@ a new top-level section that needs `section_registry.py`).
 
 ## Window folders
 
-- `sidebar/` — the left navigation column: `ActiveRepoWidget` (repo
-  thumbnail banner with the repo name overlaid + a "Project / Repo" picker
-  button), `SectionTabList` (a vertical list of section tabs + dynamic
-  Browser Link tabs + a trailing Setting row), and a footer with sync
+- `sidebar/` — the left navigation column: `ActiveRepoWidget` (display-only
+  repo thumbnail + name label — no click-to-open picker; double-clicking a
+  node in Project Editor's always-visible graph panel is the only way to
+  change the active repo now), `SectionTabList` (a vertical list of section
+  tabs + dynamic Browser Link tabs + a trailing Setting row — Project
+  Editor is not one of these rows, see below), and a footer with sync
   progress, the Update button, and GitHub login/logout. See
   `sidebar/README.md`.
 - `login/` — the mandatory GitHub login gate (drawn as an overlay on top of

@@ -25,7 +25,9 @@ class _RepoCard(QFrame):
     "Project / Repo" and status — this picker's whole point is a fast way
     to jump to a repo, not a status/admin view (see
     interface/shared/project_repo_tree.py's QTreeWidget for that, used by
-    Settings' Project Status / Project Data Editor tabs).
+    Settings' Project Status tab; Project Editor's node graph is the other
+    place repos are managed now, but renders its own QGraphicsView instead
+    of this tree).
 
     When the repo has a thumbnail, it's painted fill-cropped as the card's
     own background with a dark dimming overlay (paintEvent) so the name/
@@ -126,7 +128,6 @@ class RepoPickerDialog(QDialog):
         selected_project_id: str | None = None,
         selected_repo_id: str | None = None,
         cancel_button_text: str = "Cancel",
-        allowed_pairs: set[tuple[str, str]] | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Select Repo")
@@ -146,13 +147,6 @@ class RepoPickerDialog(QDialog):
         cards_layout = QVBoxLayout(cards_container)
         for project in store.list_projects():
             for repo in project.repos:
-                # allowed_pairs=None means "no restriction" (every repo
-                # shown) — used by callers that only want the picker
-                # narrowed to a specific set of (project_id, repo_id) pairs,
-                # e.g. plugins/studio/explorer's "Add Pinned Repo..." only
-                # offering pipeline_architect's declared inputs/outputs.
-                if allowed_pairs is not None and (project.id, repo.id) not in allowed_pairs:
-                    continue
                 card = _RepoCard(
                     project_id=project.id,
                     repo_id=repo.id,

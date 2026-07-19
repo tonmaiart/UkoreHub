@@ -87,6 +87,14 @@ class PluginAPI:
         return self._file_opener_registry
 
     @property
+    def settings_tab_registry(self) -> SettingsTabRegistry:
+        """Read access to the same registry register_settings_tab() writes
+        into — for a page (plugins/studio/project_editor/'s right panel)
+        that needs to enumerate every CATEGORY_REPO tab generically and
+        render it itself, rather than contribute a tab of its own."""
+        return self._settings_tab_registry
+
+    @property
     def addon_store(self) -> AddonMetadataStore:
         """Studio-editable overrides for discovered add-ons (icon,
         description, required Program(s)) — data/addon_settings.json. Used

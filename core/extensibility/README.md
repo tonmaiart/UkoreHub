@@ -14,6 +14,18 @@ plugin's or add-on's `register(api)` receives.
   `register(api)`. Never raises — a broken plugin/add-on is recorded as a
   `PluginLoadFailure` and skipped, not a crash. Also has `plugin_source()`,
   deriving `"studio"`/`"local"`/`"add-on"` from a discovered plugin's path.
+  `PluginManifest.core: bool` (manifest.json `"core": true`, default
+  `false`, added 2026-07-15) flags a plugin as load-bearing for per-repo
+  *visibility* — distinct from `PluginLoadFailure` isolation, which still
+  applies the same to a core plugin if it fails to import/register.
+  `launcher.py` collects `core_plugin_ids` from this flag and passes it to
+  `MainWindow`, whose `_apply_plugin_visibility` force-shows a core
+  plugin's section regardless of a repo's `active_plugin_ids` allowlist —
+  and `interface/settings/enable_plugin_page.py` renders it checked and
+  disabled so a manager can't accidentally hide it in the first place. The
+  first (and so far only) user is `plugins/studio/project_editor/`: hiding
+  it for a repo would remove the only way to switch that repo's active
+  repo at all, a real lockout rather than a preference.
 - `config_store.py` — `PluginConfigStore`: namespaced, atomic-write JSON
   settings for a single plugin (mirrors `LocalConfigStore`/`SystemConfigStore`
   in `core/store.py`, but with a free-form key/value schema instead of fixed
@@ -39,13 +51,17 @@ These are two distinct concepts sharing the same discovery mechanism
 (`loader.py`) but different purposes — don't conflate them:
 
 - **Plugins** (`plugins/studio/` + `plugins/local/`) are UkoreHub's own
-  sub-systems — implemented once, active for **every** project, all the
-  time. They are not something a user toggles on or off per repo; there's no
-  "enabled plugins" concept, only "loaded or not" at app startup.
+  sub-systems — implemented once, loaded (or not, on failure) once at app
+  startup for every project alike. A repo *can* additionally hide a
+  loaded plugin's own sidebar section via `Repo.active_plugin_ids`
+  (Settings > Repo > Enable Plugin, `interface/settings/enable_plugin_page.py`)
+  — a per-repo *visibility* toggle, not a per-repo *load* toggle — unless
+  the plugin is flagged `manifest.json` `"core": true` (`PluginManifest.core`,
+  see `loader.py` above), which is never hideable this way.
 - **Add-ons** (`add-on/`) are extensions a **repo** opts into. A repo's
   `Repo.enabled_addon_ids` (`core/models.py`, `core/store.py`'s
   `set_repo_enabled_addons`) picks which discovered add-ons apply to that
-  repo, edited in Project Data Editor. Because that field lives in the
+  repo, edited in Project Editor. Because that field lives in the
   shared `data/projects.json`, **enabling or disabling an add-on for a repo
   affects every user working on that repo** — it is not a personal/local
   toggle.

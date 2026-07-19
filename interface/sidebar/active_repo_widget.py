@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, Qt, Signal
+from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QPainter, QPixmap
-from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 BANNER_HEIGHT = 140
 
@@ -12,8 +12,8 @@ BANNER_HEIGHT = 140
 class _ThumbnailBanner(QWidget):
     """The repo thumbnail, full-bleed and never rounded (fill-crop, not
     letterboxed) across the top of the Sidebar. No text overlay — the repo
-    name is shown once, on ActiveRepoWidget's select_button below, rather
-    than duplicated here."""
+    name is shown once, on ActiveRepoWidget's name_label below, rather than
+    duplicated here."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,31 +38,32 @@ class _ThumbnailBanner(QWidget):
 
 class ActiveRepoWidget(QWidget):
     """Top of the Sidebar: the repo thumbnail banner and, directly beneath
-    it, a full-width "Project / Repo" button that opens the repo picker —
-    the button is the only place the repo's name is shown here, so the
-    banner itself carries no text overlay."""
-
-    repo_picker_requested = Signal()
+    it, a plain label naming the active Project/Repo — display-only, no
+    click-to-open-picker (removed 2026-07-15 along with the "Select
+    Repo..." dialog flow for normal operation). Switching the active repo
+    now only happens by clicking a node in Project Editor's always-visible
+    graph panel, see plugins/studio/project_editor/."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self.banner = _ThumbnailBanner()
-        self.select_button = QPushButton("No Repo Selected")
-        self.select_button.setObjectName("activeRepoSelectButton")
-        self.select_button.clicked.connect(self.repo_picker_requested.emit)
+        self.name_label = QLabel("No Repo Selected")
+        self.name_label.setObjectName("activeRepoNameLabel")
+        self.name_label.setWordWrap(True)
+        self.name_label.setContentsMargins(10, 8, 10, 8)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(self.banner)
-        layout.addWidget(self.select_button)
+        layout.addWidget(self.name_label)
 
     def set_active_labels(self, repo_name: str | None, project_name: str | None = None) -> None:
         if repo_name and project_name:
-            self.select_button.setText(f"{project_name} / {repo_name}  ...")
+            self.name_label.setText(f"{project_name} / {repo_name}")
         else:
-            self.select_button.setText(repo_name or "No Repo Selected")
+            self.name_label.setText(repo_name or "No Repo Selected")
 
     def set_thumbnail(self, path: Path | None) -> None:
         pixmap = QPixmap(str(path)) if path and Path(path).exists() else None

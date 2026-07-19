@@ -110,7 +110,11 @@ object every add-on gets too:
 - `api.register_section(spec)` — a full top-level tab in `SectionRegistry`
   (Explorer/Submit/About today — see `interface/section_registry.py`'s
   `SectionSpec`, including the optional `background_threads` and `wire`
-  fields for shutdown cleanup and app-level signal wiring).
+  fields for shutdown cleanup and app-level signal wiring). Set
+  `persistent=True` for a section that should be permanently docked
+  visible instead of a normal switchable sidebar row/tab — a rare need,
+  currently only `plugins/studio/project_editor/` (see that plugin's
+  README and `interface/main_window.py`'s `_build_main_ui`).
 - `api.register_settings_tab`, `api.register_repo_addon_panel`,
   `api.register_file_opener`, `api.register_git_hook` — the remaining
   registries, shared with add-ons too.

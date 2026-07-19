@@ -83,17 +83,6 @@ def build_stylesheet(colors: ThemeColors) -> str:
         background-color: {colors.surface};
         border-right: 1px solid {colors.border};
     }}
-    QPushButton#activeRepoSelectButton {{
-        text-align: left;
-        padding: 8px 10px;
-        border: none;
-        border-radius: 0px;
-        border-bottom: 1px solid {colors.border};
-        background-color: {colors.surface};
-    }}
-    QPushButton#activeRepoSelectButton:hover {{
-        background-color: {colors.hover};
-    }}
     QListWidget#sectionTabList {{
         background-color: {colors.surface};
         border: none;

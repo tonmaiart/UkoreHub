@@ -17,6 +17,15 @@ class PluginManifest:
     api_version: int
     entry_point: str
     description: str = ""
+    # Load-bearing plugin whose section must never be hidden by a repo's
+    # restricted Repo.active_plugin_ids allowlist (Settings > Repo > Enable
+    # Plugin) — see interface/main_window.py's _apply_plugin_visibility and
+    # interface/settings/enable_plugin_page.py. Defaults to False so every
+    # existing manifest.json without this key is unaffected. Distinct from
+    # PluginLoadFailure isolation (a core plugin can still fail to *load*
+    # like any other — this flag is purely about per-repo *visibility*
+    # once it has loaded).
+    core: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> "PluginManifest":
@@ -27,6 +36,7 @@ class PluginManifest:
             api_version=int(data["api_version"]),
             entry_point=data["entry_point"],
             description=data.get("description", ""),
+            core=bool(data.get("core", False)),
         )
 
 

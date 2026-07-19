@@ -196,8 +196,8 @@ class ProjectDialog(QDialog):
 class RepoDialog(QDialog):
     """Full Name/URL/Thumbnail/Requirements editor, used as-is for **Add**
     Repo (one-step bootstrap of a new repo record). For **editing** an
-    existing repo, Settings > Project Data Editor now only asks for Name/
-    Git URL here (show_thumbnail=False, no program_store/addon_catalog) —
+    existing repo, Project Editor's node context menu now only asks for
+    Name/Git URL here (show_thumbnail=False, no program_store/addon_catalog) —
     Thumbnail and Requirements/Add-ons moved to About > About and
     About > Requirement respectively, see interface/about/repo_about_page.py."""
 

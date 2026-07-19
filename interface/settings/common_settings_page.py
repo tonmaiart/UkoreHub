@@ -12,6 +12,11 @@ class CommonSettingsPage(QWidget):
     # _on_logout_requested) — logout lives here now instead of in Sidebar's
     # footer.
     logout_requested = Signal()
+    # MainWindow connects this to the same os.execv restart MainWindow's
+    # own "Update and Restart" sidebar button already uses (see
+    # _on_update_and_restart/_restart_app) — this one just restarts, no
+    # git pull first.
+    restart_requested = Signal()
 
     def __init__(self, parent=None, *, local_config_store: LocalConfigStore):
         super().__init__(parent)
@@ -24,6 +29,10 @@ class CommonSettingsPage(QWidget):
         self.logout_button = QPushButton("Logout")
         self.logout_button.clicked.connect(self.logout_requested.emit)
 
+        self.restart_button = QPushButton("Restart")
+        self.restart_button.clicked.connect(self.restart_requested.emit)
+
         form = QFormLayout(self)
         form.addRow("Workspace folder:", self.workspace_label)
         form.addRow("Account:", self.logout_button)
+        form.addRow("Application:", self.restart_button)

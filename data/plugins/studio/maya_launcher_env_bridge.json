@@ -1,0 +1,148 @@
+{
+  "contributions": {
+    "advanced_skeleton": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\AdvancedSkeleton\\maya-scripts"
+        ]
+      }
+    },
+    "dreamwall_picker": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\DreamwallPicker\\maya-scripts"
+        ]
+      }
+    },
+    "maya_ngskin": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-scripts"
+        ]
+      },
+      "MAYA_PLUG_IN_PATH": {
+        "2018": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2018"
+        ],
+        "2019": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2019"
+        ],
+        "2020": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2020"
+        ],
+        "2022": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2022"
+        ],
+        "2023": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2023"
+        ],
+        "2024": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2024"
+        ],
+        "2025": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2025"
+        ],
+        "2026": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaNgskin\\maya-plug-ins\\2026"
+        ]
+      }
+    },
+    "maya_toolkit": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaToolkit\\maya-scripts"
+        ]
+      },
+      "MAYA_PLUG_IN_PATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\MayaToolkit\\maya-plug-ins"
+        ]
+      }
+    },
+    "mgear": {
+      "MAYA_MODULE_PATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\mGear\\maya-modules"
+        ]
+      },
+      "MGEAR_SHIFTER_COMPONENT_PATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\mGear\\mgear-custom-component"
+        ]
+      }
+    },
+    "studio_library": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\StudioLibrary\\maya-scripts"
+        ]
+      }
+    },
+    "ukore_browser": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\UkoreBrowser\\maya-scripts",
+          "C:\\Tonmai\\UkoreHub"
+        ]
+      }
+    },
+    "ukore_publisher": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\UkorePublisher\\maya-scripts"
+        ]
+      }
+    },
+    "animation_publisher": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\AnimationPublisher\\maya-scripts"
+        ]
+      }
+    },
+    "model_publisher": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\ModelPublisher\\maya-scripts"
+        ]
+      }
+    },
+    "publish_api": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\PublishApi\\maya-scripts",
+          "C:\\Tonmai\\UkoreHub"
+        ]
+      }
+    },
+    "rig_publisher": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\RigPublisher\\maya-scripts"
+        ]
+      }
+    },
+    "ukore_shot_playblast": {
+      "PYTHONPATH": {
+        "*": [
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\UkoreShotPlayblast\\maya-scripts"
+        ]
+      }
+    }
+  },
+  "labels": {
+    "advanced_skeleton": "AdvancedSkeleton",
+    "dreamwall_picker": "DreamwallPicker",
+    "maya_ngskin": "MayaNgSkin",
+    "maya_toolkit": "MayaToolkit",
+    "mgear": "mGear",
+    "studio_library": "StudioLibrary",
+    "ukore_browser": "Ukore Browser",
+    "ukore_publisher": "UkorePublisher",
+    "animation_publisher": "AnimationPublisher",
+    "model_publisher": "ModelPublisher",
+    "publish_api": "PublishApi",
+    "rig_publisher": "RigPublisher",
+    "ukore_shot_playblast": "UkoreShotPlayblast"
+  }
+}

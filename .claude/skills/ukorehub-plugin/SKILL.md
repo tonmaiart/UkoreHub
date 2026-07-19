@@ -11,13 +11,20 @@ authoring guide). Same reasoning as `add-on/`'s folders (`ukorehub-addon`
 skill): reading one plugin has **zero information value** for working on a
 different one, even though some plugins are larger, multi-file trees
 rather than the single-`plugin.py` shape `software_linker` uses —
-`explorer`/`submit` are ordinary multi-file plugins, and
-`plugins/studio/maya_launcher/` goes further still, nesting 7 nominally
-separate Maya tools (each its own subfolder) inside one plugin — treat that
-whole folder as one unit too, not 7 things to read independently, unless
-the task explicitly names one of the nested tools. Treat every
-`plugins/studio/<Name>/` or `plugins/local/<Name>/` as its own repo for
-context-budget purposes.
+`explorer`/`submit` are ordinary multi-file plugins.
+`plugins/studio/maya_launcher/` itself is small (just the launch/env-merge
+logic) — the 7 Maya tools that used to be nested inside it
+(`AdvancedSkeleton`, `MayaNgskin`, `MayaToolkit`, `mGear`, `UkoreBrowser`,
+`DreamwallPicker`, `StudioLibrary`) are each their own top-level
+`plugins/studio/<Name>/` plugin as of 2026-07-19, contributing to
+`maya_launcher`'s shared `maya_launcher_env_bridge` `PluginConfigStore`
+rather than living inside its folder — treat each one as its own separate
+plugin for scoping purposes, same as any other `plugins/studio/<Name>/`.
+`plugins/studio/PublishApi/`, `ModelPublisher/`, `RigPublisher/`, and
+`AnimationPublisher/` are four more plugins in the same family, added the
+same day (the original `UkorePublisher` was extracted then split into
+these) — same scoping rule applies. Treat every `plugins/studio/<Name>/`
+or `plugins/local/<Name>/` as its own repo for context-budget purposes.
 
 ## Rule
 

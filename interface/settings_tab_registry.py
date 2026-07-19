@@ -15,11 +15,11 @@ from core.exceptions import ValidationError
 # CATEGORY_REPO explicitly when the tab's content is actually about the
 # active repo (e.g. Maya Launcher's per-repo tool toggles), or
 # CATEGORY_DEVELOPER for studio-admin/internal-plumbing tabs (GitHub OAuth
-# Client ID, Program Database, Plugins, Project Data Editor) that most
-# users never need to open. CATEGORY_REPO's header row is relabeled to the
-# active repo's own name at runtime — see SettingsView.set_active_repo_name
-# — so CATEGORY_LABELS[CATEGORY_REPO] is only the fallback shown when no
-# repo is active.
+# Client ID, Program Database, Plugins) that most users never need to
+# open. CATEGORY_REPO tabs are registered here like any other but are not
+# rendered by SettingsView (see that class's docstring) — they render
+# generically as collapsible sections in plugins/studio/project_editor/'s
+# right panel instead. CATEGORY_LABELS[CATEGORY_REPO] is only used there.
 CATEGORY_GENERAL = "general"
 CATEGORY_REPO = "repo"
 CATEGORY_DEVELOPER = "developer"

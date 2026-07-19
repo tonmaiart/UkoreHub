@@ -82,14 +82,13 @@ fields: `enabled_addon_ids` is for the separate `add-on/` catalog and never
 hides anything; `active_plugin_ids` is for `plugins/` and does.
 
 A third field, `Repo.browser_links` (`set_repo_browser_links`,
-`core/models.py`'s `BrowserLink`) and its sibling `Repo.explorer_pins`
-(`set_repo_explorer_pins`, `core/models.py`'s `ExplorerPin`) are a
-different shape again: each entry becomes its own **dynamic sidebar tab**
-while the owning repo is active, rebuilt from scratch on every repo switch
-by `interface/main_window.py`'s `_rebuild_dynamic_tabs` (Browser Links →
-`interface/about/browser_link_page.py`'s `BrowserLinkPage`; Explorer pins →
-`plugins/studio/explorer/pinned_repo_browser_page.py`'s
-`PinnedRepoBrowserPage`, bound to another repo's file browser instead of a
-URL). Edited via Settings > (repo) > Browser and > Explorer respectively.
-Unlike `active_plugin_ids`, these don't hide anything that exists elsewhere
-— they *add* tabs that only exist because the pin/link record does.
+`core/models.py`'s `BrowserLink`) is a different shape again: each entry
+becomes its own **dynamic sidebar tab** while the owning repo is active,
+rebuilt from scratch on every repo switch by `interface/main_window.py`'s
+`_rebuild_dynamic_tabs` (`interface/about/browser_link_page.py`'s
+`BrowserLinkPage`). Edited via Settings > (repo) > Browser. Unlike
+`active_plugin_ids`, this doesn't hide anything that exists elsewhere — it
+*adds* tabs that only exist because the link record does. (A sibling
+Explorer-pin mechanism used to work the same way — `Repo.explorer_pins`/
+`ExplorerPin` — but Add-Pinned-Repo was removed as no longer needed; see
+git history if it needs to come back.)

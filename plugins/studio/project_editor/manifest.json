@@ -1,0 +1,9 @@
+{
+  "id": "project_editor",
+  "name": "Project Editor",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Node-graph Project/Repo editor (1 node = 1 repo, click to switch active repo) plus pipeline input/output dependency metadata rendered as edges between nodes.",
+  "core": true
+}

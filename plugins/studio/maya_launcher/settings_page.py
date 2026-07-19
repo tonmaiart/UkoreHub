@@ -1,27 +1,46 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtWidgets import QCheckBox, QGroupBox, QLabel, QVBoxLayout, QWidget
 
 from core.exceptions import NotFoundError
 from plugins.studio.maya_launcher.repo_tools_store import RepoToolsStore
-from plugins.studio.maya_launcher.tools import TOOL_IDS, TOOL_LABELS
 
 SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
+# Convention-only string match with plugins/studio/PublishApi/plugin.py's
+# own TOOL_ID and plugins/studio/maya_launcher/plugin.py's
+# PUBLISH_API_TOOL_ID — PublishApi is pure infrastructure (no artist-facing
+# behavior, no UI), never gated by RepoToolsStore, so it's excluded from
+# this page's checkbox list entirely rather than shown as a toggle that
+# would silently do nothing. See plugin.py's PUBLISH_API_TOOL_ID comment.
+_PUBLISH_API_TOOL_ID = "publish_api"
 
 
 class MayaLauncherSettingsPage(QWidget):
-    """Settings > Maya Launcher — per-repo enable/disable for this plugin's
-    7 nested tools (whichever repo is active when this tab is shown; see
-    on_activated wiring in plugin.py's register(), which calls refresh()
-    every time this tab becomes visible — interface/settings_tab_registry.py's
-    SettingsTabSpec.on_activated), plus the Software Linker status readout
-    that used to be a separate Repo Add-on panel (see this plugin's own
-    README.md for why that moved here)."""
+    """Settings > Maya Launcher — per-repo enable/disable for whichever Maya
+    tool plugins are currently contributing to the shared
+    maya_launcher_env_bridge (whichever repo is active when this tab is
+    shown; see on_activated wiring in plugin.py's register(), which calls
+    refresh() every time this tab becomes visible —
+    interface/settings_tab_registry.py's SettingsTabSpec.on_activated),
+    plus the Software Linker status readout that used to be a separate
+    Repo Add-on panel (see this plugin's own README.md for why that moved
+    here).
 
-    def __init__(self, parent=None, *, api, tools_store: RepoToolsStore):
+    `read_bridge()` is called once here at construction (not per-refresh)
+    to build the checkbox list — safe because every plugin's register(api)
+    has already run by the time a Settings tab is ever constructed (lazy
+    page_factory(), first triggered by a user actually opening Settings),
+    so the bridge's "contributions" keys are already complete. See
+    plugins/studio/maya_launcher/README.md for the bridge shape."""
+
+    def __init__(self, parent=None, *, api, tools_store: RepoToolsStore, read_bridge: Callable[[], tuple[dict, dict]]):
         super().__init__(parent)
         self._api = api
         self._tools_store = tools_store
+        contributions, labels = read_bridge()
+        self._tool_ids = sorted(tid for tid in contributions if tid != _PUBLISH_API_TOOL_ID)
         self._checkboxes: dict[str, QCheckBox] = {}
 
         self._active_repo_label = QLabel("")
@@ -29,8 +48,8 @@ class MayaLauncherSettingsPage(QWidget):
 
         tools_group = QGroupBox("Enabled Tools for Active Repo")
         tools_layout = QVBoxLayout(tools_group)
-        for tool_id in TOOL_IDS:
-            checkbox = QCheckBox(TOOL_LABELS[tool_id])
+        for tool_id in self._tool_ids:
+            checkbox = QCheckBox(labels.get(tool_id, tool_id))
             checkbox.toggled.connect(lambda _checked, tid=tool_id: self._on_tool_toggled(tid))
             tools_layout.addWidget(checkbox)
             self._checkboxes[tool_id] = checkbox
@@ -70,7 +89,7 @@ class MayaLauncherSettingsPage(QWidget):
             return
 
         self._active_repo_label.setText(f"Active repo: {project.name} / {repo.name}")
-        enabled_tool_ids = set(self._tools_store.enabled_tool_ids_for(project_id, repo_id))
+        enabled_tool_ids = set(self._tools_store.enabled_tool_ids_for(project_id, repo_id, self._tool_ids))
         for tool_id, checkbox in self._checkboxes.items():
             checkbox.setEnabled(True)
             blocked = checkbox.blockSignals(True)
@@ -112,4 +131,4 @@ class MayaLauncherSettingsPage(QWidget):
         if not project_id or not repo_id:
             return
         enabled_tool_ids = sorted(tid for tid, checkbox in self._checkboxes.items() if checkbox.isChecked())
-        self._tools_store.set_enabled_tool_ids(project_id, repo_id, enabled_tool_ids)
+        self._tools_store.set_enabled_tool_ids(project_id, repo_id, self._tool_ids, enabled_tool_ids)

@@ -26,9 +26,9 @@ def populate_project_tree(
     caller via setHeaderLabels before calling this) determines how many
     extra columns beyond the name are shown; repo_extra_columns must return
     that many values. Defaults to Status/Last Synced (ProjectStatusPage,
-    RepoPickerDialog); plugins/studio/pipeline_architect/editor_page.py's
-    ProjectDataEditorPage passes a repo URL column instead, since it
-    already has a dedicated Project Status tab for sync state."""
+    RepoPickerDialog); plugins/studio/project_editor's graph view resolves
+    repos directly rather than via this tree, but reuses the same
+    MetadataStore.list_projects() ordering."""
     tree.clear()
     blank_columns = [""] * (tree.columnCount() - 1)
     for project in store.list_projects():
