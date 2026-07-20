@@ -87,6 +87,17 @@ plugin were ever changed back to a normal section.
   `PluginAPI`, mirroring the existing `api.file_opener_registry` pattern)
   so the Repository Setting popup can enumerate `CATEGORY_REPO` tabs
   generically.
+- `dialogs.py` — `ProjectDialog`/`RepoDialog`/`RequirementsTreeWidget`
+  (the checkable Program/Add-on tree `RepoDialog` embeds for repo
+  creation) — moved in from `interface/shared/dialogs.py` 2026-07-20 once
+  a repo-wide grep confirmed this plugin was the only real consumer left;
+  imported as a normal sibling module (`from
+  plugins.studio.project_editor.dialogs import ...`, the same
+  real-package convention `plugins/README.md`'s "Multi-file plugins"
+  section documents), not a relative import. Used by
+  `project_graph_view.py` (`RepoDialog`, node context menu Add/Edit Repo)
+  and `project_editor_page.py` (`ProjectDialog`, top-bar Add/Rename
+  Project).
 - `project_editor_page.py` — `ProjectEditorPage`: the section's top-level
   widget. Top bar = project `QComboBox` (+ "Add New Project..." as the
   trailing item), Rename/Delete Project buttons, Add Repo button. Below
@@ -115,7 +126,10 @@ plugin were ever changed back to a normal section.
   nodes (`_EDGE_Z_VALUE`), not below — a node used to hide any edge segment
   passing near/behind it — with a selected node's connected edges
   highlighted yellow one z-level higher again (`_EDGE_HIGHLIGHT_Z_VALUE`,
-  `ProjectGraphView._update_edge_highlights`).
+  `ProjectGraphView._update_edge_highlights`). The view's own background is
+  `setBackgroundBrush`-ed to `_GRAPH_BACKGROUND_COLOR_HEX` (`#141517`,
+  added 2026-07-20), darker than the app-wide theme background it would
+  otherwise inherit, so the graph reads as its own recessed canvas.
   - **Node visuals**: paints the repo's thumbnail fill-cropped (same crop
     math as `interface/login/repo_picker.py`'s `_RepoCard.paintEvent`) plus
     a name label; border/overlay react to two independent flags — `is_active`
@@ -123,6 +137,14 @@ plugin were ever changed back to a normal section.
     a subtle white wash over the thumbnail, set from `hoverEnterEvent`/
     `hoverLeaveEvent` — `setAcceptHoverEvents(True)` plus the existing
     `PointingHandCursor` together carry the "this is clickable" affordance).
+    A clone-status badge (`_clone_status_icon`, added 2026-07-20) paints
+    top-right on every node — `data/icons/icons8-connected-30.png` if
+    `RepoNodeItem.is_cloned` (computed once at construction via
+    `ProjectGraphView._is_repo_cloned`), else
+    `icons8-disconnected-30.png`; both cached as pre-scaled `QPixmap`s at
+    module level rather than reloaded per paint. Only recomputed on the
+    next `load_project()`/node rebuild — cloning a repo doesn't retroactively
+    flip an already-painted node's badge without a reload.
   - **Switching repos**: a single left-click (`mousePressEvent`, guarded to
     `Qt.LeftButton` so right-click's own `contextMenuEvent` isn't also
     treated as a switch request) calls `ProjectGraphView.request_active_repo`,
@@ -133,15 +155,33 @@ plugin were ever changed back to a normal section.
     "Internal C++ object already deleted" the moment that handler resumes;
     deferring lets it finish first (same reasoning applies to every
     scene-mutating context-menu action below). `request_active_repo` checks
-    `_is_repo_cloned` (a `.git` folder under `resolve_repo_path`) first and
-    shows a one-time "hasn't been cloned yet, clone and switch now?"
-    confirmation before the very first clone — an already-cloned repo
-    switches immediately with no prompt.
+    `_is_repo_cloned` (a `.git` folder under `workspace_root / repo.local_path`
+    — fixed 2026-07-20 to read the stored `local_path` instead of
+    recomputing the folder from the repo's current name via
+    `core.paths.resolve_repo_path`, which resolved to the wrong folder for
+    any repo renamed after creation; same fix as
+    `plugins/studio/PublishApi/maya-scripts/PublishApi/repo_paths.py`'s
+    `get_active_repo`/`resolve_ref`) first and shows a one-time "hasn't
+    been cloned yet, clone and switch now?" confirmation before the very
+    first clone — an already-cloned repo switches immediately with no
+    prompt.
   - **Right-click context menu**: "Repository Setting..." (opens
     `open_repo_settings`, see `repo_settings_panel.py` below — this one
     doesn't touch the scene, so it's called directly, no `QTimer` deferral
     needed), then rename/thumbnail/delete — every mutation delegated back
     to `ProjectGraphView`'s own methods rather than duplicated per node.
+  - **Bottom-right overlay HUD** (`ProjectGraphView._overlay`, a plain
+    child `QLabel` positioned by hand in `resizeEvent`/`_position_overlay`
+    rather than a layout, so it floats over the viewport without
+    scrolling/zooming with the graph content — added 2026-07-20):
+    active project name, active repo name, `Repo.last_synced`,
+    `Repo.status`, and this repo's own pipeline connections
+    (`pipeline_store.get_inputs`) split into "Input Custom Path"/"Output
+    Custom Path" lines by each `RepoRef.direction` — the same wording
+    `custom_paths_settings_page.py`'s "Connect Input Path" list already
+    uses. Refreshed on every `set_active_repo(project, repo)` call (now
+    takes the full `Project`/`Repo` objects instead of bare ids, since the
+    overlay needs their fields) — hidden when there's no active repo.
     There's no "Connect Pipeline Input Path..." item here anymore (moved
     2026-07-19 into Repository Setting's "Custom Paths" tab, "Connect
     Input Path" section — see `custom_paths_settings_page.py` below) and
@@ -210,7 +250,14 @@ plugin were ever changed back to a normal section.
   with zero edits to this file. Changed 2026-07-19 away from a column of
   collapsible accordion sections (`_CollapsibleSection`, now removed) so
   this popup reads as one consistent settings UI with the program's own
-  Setting view. This is also why `interface/settings/settings_view.py`
+  Setting view. Changed again 2026-07-20 to group tabs under two
+  non-selectable category header rows, same `settings_view.py`
+  General/Developer grouping mechanic: "Repository" (a hardcoded key set —
+  Local Repository, Custom Paths, Enable Plugin, Browser) and "Plugins"
+  (everything else registered under `CATEGORY_REPO`, i.e. every
+  plugin-contributed tab) — this is also when the "Project Status" tab was
+  removed entirely (no longer needed). This is also why
+  `interface/settings/settings_view.py`
   stopped rendering `CATEGORY_REPO` at all (see that file) — a single
   source of UI for repo settings. `RepoSettingsDialog` wraps a fresh
   `RepoSettingsPanel` in a `QDialog`, constructed on every open (no state

@@ -41,9 +41,10 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   button used to trigger), and a Restart button (added 2026-07-19 —
   `restart_requested` signal, connected to `MainWindow._on_restart_requested`,
   which calls the same `_restart_app()` helper
-  (`os.execv(sys.executable, [sys.executable, *sys.argv])`) Sidebar's own
-  "Update and Restart" button already used, just without the
-  `self_update.pull_update()` git pull first). `CATEGORY_GENERAL`.
+  (`os.execv(sys.executable, [sys.executable, *sys.argv])`)
+  `plugins/studio/self_updater/`'s "Update and Restart" button uses too,
+  just without the `self_update.pull_update()` git pull first).
+  `CATEGORY_GENERAL`.
 - `github_oauth_settings_page.py` — `GithubOAuthSettingsPage`: just the
   GitHub OAuth Client ID field, split out of `common_settings_page.py`
   since it's studio-admin plumbing most users never touch.
@@ -53,53 +54,36 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   for add/edit. `CATEGORY_DEVELOPER`.
 - `program_dialog.py` — `ProgramDialog`: name/version/description/icon
   editor for one `Program`, used only by `program_database_page.py`.
-- `project_status_page.py` — read-only per-repo clone/sync status tree.
-  `CATEGORY_REPO`.
-- `browser_links_settings_page.py` — `BrowserLinksSettingsPage`:
-  add/rename/remove/change-icon for the active repo's Browser Links
-  (`core/models.py`'s `BrowserLink`, `icon_filename` falls back to
-  `data/icons/icons8-browser-50.png`) — each shown as its own top-level tab
-  elsewhere, see `interface/main_window.py`'s dynamic tab rebuild. Moved
-  here from `interface/about/repo_about_page.py`'s "Browser" sub-tab since
-  it's a repo *setting*, not repo info. Unlike the other `CATEGORY_REPO`
-  tabs it's genuinely scoped to a single repo, so it can't rely on
-  `set_repo()` (MainWindow never calls that on Settings pages) — it
-  resolves the active project/repo itself from `local_config_store` in
-  `refresh()`, called on construction and on `on_activated`.
 - `plugin_catalog_page.py` — read-only listing of what got discovered
   under `plugins/`. `CATEGORY_DEVELOPER`.
-- `local_repository_page.py` — `LocalRepositoryPage`: shows the active
-  repo's local clone status/path and a "Remove Local Repositories" button
-  that `shutil.rmtree`s the clone folder (`core/paths.py`'s
-  `resolve_repo_path`) and marks the repo `not_cloned`
-  (`MetadataStore.mark_status`) — does not touch the Project/Repo registry
-  record itself, only the on-disk clone. Same self-resolving-active-repo
-  `refresh()` pattern as `browser_links_settings_page.py`. `CATEGORY_REPO`.
-- `enable_plugin_page.py` — `EnablePluginPage`: per-repo checkbox list over
-  every discovered `plugins/studio`+`plugins/local` entry
-  (`Repo.active_plugin_ids`), self-persisting like every other page here.
-  **Distinct from Add-ons** (`Repo.enabled_addon_ids`) — see
-  `core/README.md`'s note on the difference; unlike Add-ons, unchecking a
-  plugin here actually hides its sidebar section for this repo (enforced in
-  `interface/main_window.py`'s `_apply_plugin_visibility`, wired via a
-  plugin-id-to-section-key map built in `launcher.py`). An empty
-  `active_plugin_ids` (the default) means "unrestricted" — every plugin
-  stays visible. A plugin flagged `manifest.json` `"core": true`
-  (`PluginManifest.core`, e.g. `plugins/studio/project_editor/`) renders
-  here checked and disabled — it can never actually be hidden, so there's
-  nothing to toggle. `CATEGORY_REPO`.
+
+**Moved out 2026-07-20** (domain-based reorg — grouped by "kind of Settings
+tab" here even though each is really its own feature domain):
+`browser_links_settings_page.py` → `interface/browser_links/` (alongside
+the Browser Link runtime tab it configures — see that folder's `README.md`);
+`local_repository_page.py`/`enable_plugin_page.py` →
+`interface/repo_settings/` (the repo-configuration domain, distinct from
+this folder's remaining app/machine-level tabs — see that folder's
+`README.md`). Both are still registered into the same
+`SettingsTabRegistry` from `interface/builtin_settings_tabs.py`, still
+`CATEGORY_REPO`, still rendered by
+`plugins/studio/project_editor/repo_settings_panel.py` — only where their
+source files live changed.
 
 **No longer rendered here at all:** as of 2026-07-15, `SettingsView` stops
-rendering `CATEGORY_REPO` entirely — every `CATEGORY_REPO` tab (Project
-Status, Browser, Local Repository, Enable Plugin) now renders as a
-collapsible section inside `plugins/studio/project_editor/`'s right panel
-instead, read generically off the same `SettingsTabRegistry`
-(`category == CATEGORY_REPO`). The tabs
-themselves are unchanged and still registered exactly as below — only
-which container renders them changed. "Project Data Editor" (full CRUD for
-the whole Project/Repo registry, formerly `CATEGORY_DEVELOPER`) moved out
-to `plugins/studio/project_editor/` the same day, now as a node-graph
-top-level section rather than a Settings tab — see that plugin's README.
+rendering `CATEGORY_REPO` entirely — every `CATEGORY_REPO` tab (Browser,
+Local Repository, Enable Plugin, plus `project_editor`'s own Custom Paths)
+now renders as a grouped tab list inside
+`plugins/studio/project_editor/`'s "Repository Setting" popup instead,
+read generically off the same `SettingsTabRegistry`
+(`category == CATEGORY_REPO`) — see that plugin's `repo_settings_panel.py`.
+The tabs themselves are unchanged and still registered exactly as below —
+only which container renders them changed. "Project Data Editor" (full
+CRUD for the whole Project/Repo registry, formerly `CATEGORY_DEVELOPER`)
+moved out to `plugins/studio/project_editor/` the same day, now as a
+node-graph top-level section rather than a Settings tab — see that
+plugin's README. "Project Status" (read-only per-repo clone/sync status
+tree, `CATEGORY_REPO`) was removed entirely 2026-07-20 — no longer needed.
 
 **Removed:** `addon_settings_page.py`/`AddonSettingsPage` (the "Add-ons"
 tab) — deprecated and removed as of 2026-07-14. It used to be the only UI

@@ -99,6 +99,7 @@ def check_git_lfs_prerequisite() -> bool:
 def main() -> None:
     ensure_dependencies()
 
+    from PySide6.QtCore import QTimer
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -141,13 +142,13 @@ def main() -> None:
     from core.github.token_store import TokenStore
     from core.program_store import ProgramStore
     from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
-    from interface.builtin_sections import register_builtin_sections
     from interface.builtin_settings_tabs import register_builtin_settings_tabs
     from interface.main_window import MainWindow
     from interface.plugin_api import PLUGIN_API_VERSION, PluginAPI
     from interface.repo_addon_panel_registry import RepoAddonPanelRegistry
     from interface.section_registry import SectionRegistry
     from interface.settings_tab_registry import SettingsTabRegistry
+    from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
     from interface.theme_apply import apply_theme
 
     data_dir = REPO_ROOT / "data"
@@ -179,7 +180,7 @@ def main() -> None:
     # is shared today; plugins/local is gitignored, per-machine/experimental.
     # Discovery runs before registry construction so its result (the plugin
     # catalog) can be threaded into the builtin registrations below (Plugins
-    # settings tab, repo editor's plugin picker, Repo About).
+    # settings tab, repo editor's plugin picker).
     plugins_root = REPO_ROOT / "plugins"
     (plugins_root / "studio").mkdir(parents=True, exist_ok=True)
     (plugins_root / "local").mkdir(parents=True, exist_ok=True)
@@ -196,17 +197,8 @@ def main() -> None:
     file_opener_registry = FileOpenerRegistry()
 
     section_registry = SectionRegistry()
-    register_builtin_sections(
-        section_registry,
-        store=store,
-        local_config_store=local_config_store,
-        git_service=git_service,
-        program_store=program_store,
-        addon_store=addon_store,
-        repo_addon_panel_registry=repo_addon_panel_registry,
-        addon_catalog=addon_discovery.loaded,
-    )
     settings_tab_registry = SettingsTabRegistry()
+    sidebar_footer_action_registry = SidebarFooterActionRegistry()
     register_builtin_settings_tabs(
         settings_tab_registry,
         store=store,
@@ -227,6 +219,7 @@ def main() -> None:
         settings_tab_registry=settings_tab_registry,
         repo_addon_panel_registry=repo_addon_panel_registry,
         file_opener_registry=file_opener_registry,
+        sidebar_footer_action_registry=sidebar_footer_action_registry,
         plugins_data_dir=data_dir / "plugins",
         app_root=REPO_ROOT,
         addon_store=addon_store,
@@ -273,17 +266,21 @@ def main() -> None:
         section_registry,
         settings_tab_registry,
         file_opener_registry,
+        sidebar_footer_action_registry,
         section_key_to_plugin_id=section_key_to_plugin_id,
         core_plugin_ids=core_plugin_ids,
     )
     # MainWindow.__init__ already calls showMaximized() early (so the login
     # gate itself never flashes unmaximized before real content loads), but
     # that happens before this window has ever actually been realized on
-    # screen — a plain window.show() here can silently leave it at its
-    # pre-realization "normal" geometry instead of a true maximized one on
-    # Windows. Calling showMaximized() again here, as the last step right
-    # before the window is actually shown, is what makes it stick.
-    window.showMaximized()
+    # screen. A second showMaximized() call made synchronously here, still
+    # before app.exec() has run a single event, is *also* pre-realization —
+    # empirically it did not reliably override a clobbered maximized state
+    # on Windows (see bug-history/2026-07-20-main-window-not-maximizing.md).
+    # QTimer.singleShot(0, ...) queues this call to run right after the
+    # event loop actually starts, once the native window exists — the
+    # standard, reliable fix for this Qt/Windows quirk.
+    QTimer.singleShot(0, window.showMaximized)
     sys.exit(app.exec())
 
 

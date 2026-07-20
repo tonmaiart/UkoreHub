@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from interface.section_registry import SectionSpec
 from interface.settings_tab_registry import CATEGORY_REPO, SettingsTabSpec
-from plugins.studio.UkoreShot.repo_video_settings_page import RepoVideoSettingsPage
-from plugins.studio.UkoreShot.video_library_page import UkoreShotPage
+from plugins.studio.UkoreShot.interface.repo_video_settings_page import RepoVideoSettingsPage
+from plugins.studio.UkoreShot.interface.video_library_page import UkoreShotPage
 
 PLUGIN_ID = "ukore_shot"
 

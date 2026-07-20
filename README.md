@@ -55,8 +55,8 @@ terminal window. Admins rebuild and recommit this exe via
 before; the exe itself rarely needs to change.
 
 Setting > Program Database keeps a shared catalog of pipeline software (name,
-icon, description) that repos can list as requirements in Project Data
-Editor — shown on the Repo About tab for each repo.
+icon, description) that repos can list as requirements at repo-creation
+time (`RepoDialog`'s Requirements/Add-ons tree).
 
 ## System config vs. local config
 

@@ -104,7 +104,7 @@ after every plugin has finished registering (see `core/extensibility/loader.py`)
 | `plugins/studio/ModelPublisher` | `PYTHONPATH` |
 | `plugins/studio/RigPublisher` | `PYTHONPATH` |
 | `plugins/studio/AnimationPublisher` | `PYTHONPATH` |
-| `plugins/studio/UkoreShotPlayblast` | `PYTHONPATH` |
+| `plugins/studio/UkorePlayblast` | `PYTHONPATH` |
 
 `mGear.mod` is itself version-aware (`+MAYAVERSION:2018 ...` blocks), so
 `MAYA_MODULE_PATH` only needs mGear's flat `maya-modules` folder — Maya

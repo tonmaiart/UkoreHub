@@ -79,6 +79,20 @@ def build_stylesheet(colors: ThemeColors) -> str:
         color: {colors.text_secondary};
         background-color: {colors.surface_alt};
     }}
+    QToolButton {{
+        background-color: {colors.surface};
+        border: 1px solid {colors.border};
+        border-radius: 4px;
+        padding: 4px;
+    }}
+    QToolButton:hover {{
+        background-color: {colors.hover};
+    }}
+    QToolButton:checked {{
+        background-color: {colors.accent};
+        border: 1px solid {colors.accent_hover};
+        color: white;
+    }}
     QWidget#sidebar {{
         background-color: {colors.surface};
         border-right: 1px solid {colors.border};
@@ -140,6 +154,32 @@ def build_stylesheet(colors: ThemeColors) -> str:
            drawn by hand in _RepoCard.paintEvent instead, since a QSS
            border didn't reliably paint on top of a transparent background. */
         background: transparent;
+    }}
+    QFrame#videoCard {{
+        background-color: {colors.surface};
+        border: 1px solid {colors.border};
+        border-radius: 6px;
+        margin-bottom: 6px;
+    }}
+    QFrame#videoCard:hover {{
+        background-color: {colors.hover};
+    }}
+    QFrame#videoCard[selected="true"] {{
+        border: 2px solid {colors.accent};
+        background-color: {colors.hover};
+    }}
+    QLabel[cardTitle="true"] {{
+        font-weight: bold;
+    }}
+    QFrame#textBoxItem {{
+        background-color: {colors.surface};
+        border: 1px solid {colors.accent};
+        border-radius: 4px;
+    }}
+    QFrame#commentBubble {{
+        background-color: {colors.surface_alt};
+        border: 1px solid {colors.border};
+        border-radius: 4px;
     }}
     QLabel[status="cloned"] {{
         color: {colors.success};

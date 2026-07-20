@@ -5,6 +5,16 @@ login is required before the app is usable
 (`MainWindow._show_login_gate` shows the gate at launch and again on
 logout, via `_on_initial_login_completed`/`_on_relogin_completed`).
 
+- `login_gate.py` — `LoginGate`: owns the actual login *mechanics* —
+  constructing `LoginOverlay`, the token/username restore-on-launch check
+  (`is_logged_in`), pushing session state into Sidebar's
+  `GitHubAuthWidget` + `GitService` (`restore_session_state`), and
+  clearing everything on logout (`logout`) — extracted out of
+  `main_window.py` entirely so that file doesn't need to hold any login
+  state itself. `MainWindow` only owns *when* to show/teardown the gate
+  (`_show_login_gate`/`_teardown_login_gate`, thin wrappers calling
+  `LoginGate.show`/`.teardown`) and `setCentralWidget`/`takeCentralWidget`
+  — those are window-layout concerns, not login ones, so they stay put.
 - `login_overlay.py` — `LoginOverlay`: the mandatory login gate. A plain
   `QWidget` (not a `QDialog`) that `main_window.py` sets as its central
   widget by itself, instead of a separate popup window *and* instead of

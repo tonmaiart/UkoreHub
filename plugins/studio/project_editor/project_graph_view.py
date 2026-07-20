@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QGraphicsSceneHoverEvent,
     QGraphicsSceneMouseEvent,
     QGraphicsView,
+    QLabel,
     QMenu,
     QMessageBox,
     QVBoxLayout,
@@ -22,12 +23,11 @@ from PySide6.QtWidgets import (
 from core.addon_store import AddonMetadataStore
 from core.exceptions import NotFoundError, UkoreHubError
 from core.extensibility.loader import DiscoveredPlugin
-from core.models import Repo
-from core.paths import resolve_repo_path
+from core.models import Project, Repo
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 from interface.settings_tab_registry import SettingsTabRegistry
-from interface.shared.dialogs import RepoDialog
+from plugins.studio.project_editor.dialogs import RepoDialog
 from interface.shared.image_asset import pick_image_file, save_image_asset
 from interface.shared.widget_helpers import confirm_action
 from plugins.studio.project_editor.pipeline_store import PipelineStore
@@ -58,12 +58,46 @@ _EDGE_HIGHLIGHT_COLOR_HEX = "#ffcc00"
 # reads as "on top of everything" while a node is selected.
 _EDGE_Z_VALUE = 1
 _EDGE_HIGHLIGHT_Z_VALUE = 2
+# Darker than the app-wide theme background (core/theme.py's "grey_dark"
+# background="#1e1f22", inherited by default since this view sets no
+# stylesheet of its own) so the graph reads as its own recessed canvas
+# rather than blending into the surrounding chrome.
+_GRAPH_BACKGROUND_COLOR_HEX = "#141517"
+
+# Clone-status corner icon, drawn top-right on every node — file lives at
+# plugins/studio/project_editor/project_graph_view.py, three parents up is
+# the UkoreHub repo root.
+_ICONS_DIR = Path(__file__).resolve().parents[3] / "data" / "icons"
+_CONNECTED_ICON_PATH = _ICONS_DIR / "icons8-connected-30.png"
+_DISCONNECTED_ICON_PATH = _ICONS_DIR / "icons8-disconnected-30.png"
+_CLONE_STATUS_ICON_SIZE = 16
+_CLONE_STATUS_ICON_MARGIN = 6
+_clone_status_icon_cache: dict[bool, QPixmap | None] = {}
+
+# Bottom-right HUD (active project/repo, sync state, pipeline connections).
+_OVERLAY_MARGIN = 12
 
 
 def _theme_colors():
     from core.theme import DEFAULT_THEME_NAME, get_theme
 
     return get_theme(DEFAULT_THEME_NAME)
+
+
+def _clone_status_icon(is_cloned: bool) -> QPixmap | None:
+    """Cached, pre-scaled QPixmap for the clone/not-cloned corner badge —
+    loaded once per status value, not once per node per paint() call."""
+    if is_cloned not in _clone_status_icon_cache:
+        path = _CONNECTED_ICON_PATH if is_cloned else _DISCONNECTED_ICON_PATH
+        pixmap = QPixmap(str(path)) if path.exists() else None
+        if pixmap is not None and not pixmap.isNull():
+            pixmap = pixmap.scaled(
+                _CLONE_STATUS_ICON_SIZE, _CLONE_STATUS_ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+        else:
+            pixmap = None
+        _clone_status_icon_cache[is_cloned] = pixmap
+    return _clone_status_icon_cache[is_cloned]
 
 
 class RepoNodeItem(QGraphicsItem):
@@ -83,6 +117,7 @@ class RepoNodeItem(QGraphicsItem):
         self.repo_id = repo.id
         self.repo_name = repo.name
         self.is_active = False
+        self.is_cloned = view._is_repo_cloned(project_id, repo.id)
         self._is_hovered = False
         self._pixmap: QPixmap | None = None
         self.set_thumbnail(thumbnail_path)
@@ -124,6 +159,16 @@ class RepoNodeItem(QGraphicsItem):
             # cursor, on top of the PointingHandCursor already set.
             painter.fillPath(clip_path, QColor(255, 255, 255, 25))
         painter.restore()
+
+        clone_icon = _clone_status_icon(self.is_cloned)
+        if clone_icon is not None:
+            icon_rect = QRectF(
+                rect.right() - clone_icon.width() - _CLONE_STATUS_ICON_MARGIN,
+                rect.top() + _CLONE_STATUS_ICON_MARGIN,
+                clone_icon.width(),
+                clone_icon.height(),
+            )
+            painter.drawPixmap(icon_rect.topLeft(), clone_icon)
 
         painter.save()
         font = painter.font()
@@ -359,11 +404,34 @@ class ProjectGraphView(QGraphicsView):
         self._nodes: dict[str, RepoNodeItem] = {}
         self._edges: list[PipelineEdgeItem] = []
         self._active_repo_id: str | None = None
+        self._active_project: Project | None = None
+        self._active_repo: Repo | None = None
 
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
         self.setRenderHint(QPainter.Antialiasing)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setBackgroundBrush(QColor(_GRAPH_BACKGROUND_COLOR_HEX))
+
+        # Bottom-right HUD, a plain child QLabel positioned by hand in
+        # resizeEvent/_position_overlay rather than a layout — it floats
+        # over the QGraphicsView viewport, not inside the scene, so it
+        # never scrolls/zooms with the graph content.
+        self._overlay = QLabel(self)
+        self._overlay.setObjectName("projectGraphOverlay")
+        self._overlay.setTextFormat(Qt.RichText)
+        self._overlay.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._overlay.setStyleSheet(
+            "QLabel#projectGraphOverlay {"
+            " background-color: rgba(0, 0, 0, 150);"
+            " color: #dcddde;"
+            " padding: 8px 10px;"
+            " border-radius: 6px;"
+            " font-size: 11px;"
+            "}"
+        )
+        self._overlay.hide()
 
     # -- wiring ---------------------------------------------------------
 
@@ -391,11 +459,16 @@ class ProjectGraphView(QGraphicsView):
         if not workspace_root:
             return False
         try:
-            project = self.store.get_project(project_id)
             repo = self.store.get_repo(project_id, repo_id)
         except NotFoundError:
             return False
-        dest_path = resolve_repo_path(workspace_root, project.name, repo.name)
+        # repo.local_path, not a recompute from repo.name — a repo renamed
+        # after creation keeps its original on-disk folder (core/store.py's
+        # add_repo only computes the name-based path once, at creation), so
+        # recomputing here would check the wrong folder and report a
+        # cloned repo as not-cloned. Same fix as PublishApi.repo_paths'
+        # get_active_repo/resolve_ref (2026-07-20).
+        dest_path = Path(workspace_root) / repo.local_path
         return (dest_path / ".git").exists()
 
     # -- loading / layout / active-repo highlight -------------------------
@@ -630,12 +703,65 @@ class ProjectGraphView(QGraphicsView):
                 x = x_offset + index * (NODE_WIDTH + NODE_H_SPACING)
                 self._nodes[repo_id].setPos(x, y)
 
-    def set_active_repo(self, project_id: str | None, repo_id: str | None) -> None:
+    def set_active_repo(self, project: Project | None, repo: Repo | None) -> None:
+        self._active_project = project
+        self._active_repo = repo
+        project_id = project.id if project is not None else None
+        repo_id = repo.id if repo is not None else None
         self._active_repo_id = repo_id
         for node in self._nodes.values():
             node.is_active = project_id == self._project_id and node.repo_id == repo_id
             node.update()
         self._update_edge_highlights()
+        self._refresh_overlay()
+
+    def _refresh_overlay(self) -> None:
+        project = self._active_project
+        repo = self._active_repo
+        if project is None or repo is None:
+            self._overlay.hide()
+            return
+
+        # Split this repo's own pipeline connections (Repository Setting >
+        # Custom Paths > "Connect Input Path") by RepoRef.direction — the
+        # same Input/Output wording custom_paths_settings_page.py's
+        # connection list already uses (defaults to "input" for refs saved
+        # before `direction` existed).
+        input_labels: list[str] = []
+        output_labels: list[str] = []
+        for ref in self.pipeline_store.get_inputs(project.id, repo.id):
+            try:
+                target_repo = self.store.get_repo(ref.project_id, ref.repo_id)
+            except NotFoundError:
+                continue
+            custom_path = self.pipeline_store.get_custom_path(ref.project_id, ref.repo_id, ref.custom_path_id)
+            entry = f"{target_repo.name} – {custom_path.label if custom_path is not None else '?'}"
+            (output_labels if ref.direction == "output" else input_labels).append(entry)
+
+        lines = [
+            f"<b>Project:</b> {project.name}",
+            f"<b>Repo:</b> {repo.name}",
+            f"<b>Last Sync:</b> {repo.last_synced or 'Never'}",
+            f"<b>Status:</b> {repo.status}",
+            f"<b>Input Custom Path:</b> {', '.join(input_labels) if input_labels else '—'}",
+            f"<b>Output Custom Path:</b> {', '.join(output_labels) if output_labels else '—'}",
+        ]
+        self._overlay.setText("<br>".join(lines))
+        self._overlay.adjustSize()
+        self._overlay.show()
+        self._position_overlay()
+
+    def _position_overlay(self) -> None:
+        if not self._overlay.isVisible():
+            return
+        viewport_rect = self.viewport().rect()
+        x = viewport_rect.right() - self._overlay.width() - _OVERLAY_MARGIN
+        y = viewport_rect.bottom() - self._overlay.height() - _OVERLAY_MARGIN
+        self._overlay.move(max(0, x), max(0, y))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_overlay()
 
     def _update_edge_highlights(self) -> None:
         active_repo_id = self._active_repo_id
@@ -644,11 +770,6 @@ class ProjectGraphView(QGraphicsView):
                 edge.source_repo_id == active_repo_id or edge.target_repo_id == active_repo_id
             )
             edge.set_highlighted(connected)
-
-    def refresh_repo_thumbnail(self, repo: Repo) -> None:
-        node = self._nodes.get(repo.id)
-        if node is not None:
-            node.set_thumbnail(self.store.resolve_thumbnail_path(repo))
 
     # -- Add Repo (called by the top bar button) -------------------------
 

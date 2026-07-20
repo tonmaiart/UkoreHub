@@ -143,6 +143,18 @@ class SettingsView(QWidget):
         needs to force a redraw without changing rows."""
         self._on_row_changed(self.tab_list.currentRow())
 
+    def get_tab_widget(self, key: str) -> QWidget | None:
+        """Looks up a constructed settings page by its SettingsTabSpec key —
+        e.g. so MainWindow can connect to a signal a specific built-in page
+        exposes (CommonSettingsPage.logout_requested) without MainWindow
+        needing to know about SettingsView's internal storage. Fixed
+        2026-07-20: SettingsDialog.get_tab_widget used to reference
+        self._tab_widgets, which only ever existed on this class — every
+        call from MainWindow._on_settings_requested raised AttributeError
+        before dialog.exec() ever ran, so clicking the Setting button built
+        the dialog but never actually showed it."""
+        return self._tab_widgets.get(key)
+
 
 class SettingsDialog(QDialog):
     """Popup wrapper around SettingsView — opened from Sidebar's footer
@@ -173,4 +185,4 @@ class SettingsDialog(QDialog):
         e.g. so MainWindow can connect to a signal a specific built-in page
         exposes (CommonSettingsPage.logout_requested) without SettingsView
         needing to know about that page's internals itself."""
-        return self._tab_widgets.get(key)
+        return self.view.get_tab_widget(key)

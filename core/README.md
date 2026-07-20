@@ -38,12 +38,12 @@ beyond "core infrastructure":
   manifest.json — icon, description override, and which Program(s) it
   requires. Edited via Settings > Add-ons, never by an add-on's own
   `register(api)`. Also has `group_addon_ids_by_program`, the pure helper
-  Repo About / the repo editor's add-on picker use to nest add-ons under
-  the Program they declare. `resolve_display_icon_path` falls back to
+  the repo editor's add-on picker uses to nest add-ons under the Program
+  they declare. `resolve_display_icon_path` falls back to
   `DEFAULT_ICON_FILENAME` (`data/addon_icons/icons8-tools-50.png`) for
-  add-ons with no icon of their own — used by Repo About's `AddonCard`;
-  `resolve_icon_path` itself still returns `None` when unset, for editing
-  UIs that need to tell the difference.
+  add-ons with no icon of their own; `resolve_icon_path` itself still
+  returns `None` when unset, for editing UIs that need to tell the
+  difference.
 - `paths.py` — resolves a repo's on-disk clone path from workspace root +
   project/repo name.
 - `theme.py` — color theme definitions and stylesheet generation.
@@ -59,8 +59,8 @@ beyond "core infrastructure":
 
 Note: a `Repo.enabled_addon_ids` field also exists on `models.py`/`store.py`
 (`set_repo_enabled_addons`) — this is pure metadata (which discovered
-add-ons a repo declares it uses, shown on Repo About and editable in the
-repo editor's "Enabled Add-on" picker), not an execution gate; every loaded
+add-ons a repo declares it uses, editable in the repo editor's "Enabled
+Add-on" picker), not an execution gate; every loaded
 plugin/add-on's hooks/sections stay active app-wide regardless. Add-ons are
 discovered from a *second*, separate catalog — the top-level `add-on/`
 folder (single flat folder, no studio/local split, everything git-tracked) —

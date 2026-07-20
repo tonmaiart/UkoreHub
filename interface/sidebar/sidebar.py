@@ -10,6 +10,7 @@ from interface.login.github_auth_widget import GitHubAuthWidget
 from interface.section_registry import SectionRegistry
 from interface.sidebar.active_repo_widget import ActiveRepoWidget
 from interface.sidebar.section_tab_list import SectionTabList
+from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
 
 SIDEBAR_WIDTH = 230
 SETTING_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "icons" / "setting.png"
@@ -24,18 +25,20 @@ class Sidebar(QWidget):
     height; Project Editor is NOT a row here, it's an always-visible docked
     panel instead, see plugins/studio/project_editor/ and
     interface/section_registry.py's SectionSpec.persistent), and a footer
-    strip for sync status, the Update button, and an account row (GitHub
-    avatar/username + an icon-only Setting button right after it). Double-
-    clicking a node in Project Editor's graph is the only way to change the
-    active repo. Logging out lives in Settings > Common now, not here —
-    GitHubAuthWidget is display-only (Sidebar only ever shows a logged-in
-    user)."""
+    strip for sync status, SidebarFooterActionRegistry-provided widgets
+    (e.g. plugins/studio/self_updater/'s Update button), and an account row
+    (GitHub avatar/username + an icon-only Setting button right after it).
+    Double-clicking a node in Project Editor's graph is the only way to
+    change the active repo. Logging out lives in Settings > Common now, not
+    here — GitHubAuthWidget is display-only (Sidebar only ever shows a
+    logged-in user)."""
 
-    update_requested = Signal()
     navigation_changed = Signal(str)
     settings_requested = Signal()
 
-    def __init__(self, parent=None, *, section_registry: SectionRegistry):
+    def __init__(
+        self, parent=None, *, section_registry: SectionRegistry, sidebar_footer_action_registry: SidebarFooterActionRegistry
+    ):
         super().__init__(parent)
         self.setObjectName("sidebar")
         self.setFixedWidth(SIDEBAR_WIDTH)
@@ -47,10 +50,6 @@ class Sidebar(QWidget):
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
-
-        self.update_button = QPushButton("Update and Restart")
-        self.update_button.clicked.connect(self.update_requested.emit)
-        self.update_button.setVisible(False)
 
         self.sync_progress_bar = QProgressBar()
         self.sync_progress_bar.setRange(0, 0)
@@ -79,7 +78,15 @@ class Sidebar(QWidget):
         footer_layout.setSpacing(6)
         footer_layout.addWidget(self.status_label)
         footer_layout.addWidget(self.sync_progress_bar)
-        footer_layout.addWidget(self.update_button)
+        # One widget per SidebarFooterActionRegistry entry (e.g.
+        # plugins/studio/self_updater/'s Update button) — stored keyed by
+        # spec.key so MainWindow.closeEvent can reach a plugin's own
+        # background_threads without Sidebar knowing what they are.
+        self.footer_action_widgets: dict[str, QWidget] = {}
+        for spec in sidebar_footer_action_registry.ordered():
+            widget = spec.widget_factory()
+            self.footer_action_widgets[spec.key] = widget
+            footer_layout.addWidget(widget)
         footer_layout.addLayout(account_row)
 
         layout = QVBoxLayout(self)
@@ -91,6 +98,3 @@ class Sidebar(QWidget):
 
     def set_sync_message(self, text: str) -> None:
         self.status_label.setText(text)
-
-    def set_update_available(self, available: bool) -> None:
-        self.update_button.setVisible(available)

@@ -83,9 +83,9 @@ class AddonMetadataStore:
     def resolve_display_icon_path(self, addon: AddonMetadata) -> Path | None:
         """Like resolve_icon_path, but falls back to the shared
         DEFAULT_ICON_FILENAME when no custom icon is configured — for
-        display contexts (Repo About's AddonCard) that always want to show
-        something. Editing UIs that need to distinguish "no icon set" from
-        "has an icon" should keep using resolve_icon_path directly."""
+        display contexts that always want to show something. Editing UIs
+        that need to distinguish "no icon set" from "has an icon" should
+        keep using resolve_icon_path directly."""
         icon_path = self.resolve_icon_path(addon)
         if icon_path is not None and icon_path.exists():
             return icon_path

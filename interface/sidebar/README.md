@@ -8,8 +8,12 @@ account), not Qt's `QMenuBar`/dropdown-menu widget.
 - `sidebar.py` — `Sidebar`: top to bottom, `ActiveRepoWidget` (thumbnail +
   name label, display-only — see below), `SectionTabList` (stretched to
   fill the remaining height), then a footer strip (`sidebarFooter`) holding
-  sync status, the Update button, and an account row —
-  `interface/login/github_auth_widget.py`'s `GitHubAuthWidget` (display-only,
+  sync status, one widget per `interface/sidebar_footer_action_registry.py`
+  entry (built via `spec.widget_factory()`, stored in
+  `self.footer_action_widgets` keyed by `spec.key` — e.g.
+  `plugins/studio/self_updater/`'s Update button; nothing here is
+  hardcoded, Sidebar just renders whatever's registered), and an account
+  row — `interface/login/github_auth_widget.py`'s `GitHubAuthWidget` (display-only,
   avatar+username, no login/logout control of its own — logging out lives
   in Settings > Common now) plus the icon-only `setting_button` right after
   it. Fixed width (`SIDEBAR_WIDTH`). Setting is deliberately its own button

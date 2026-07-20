@@ -4,6 +4,25 @@ Pipeline tool to launch/sync projects in Ukore Studio — a Git repo launcher
 built on PySide6. See [README.md](README.md) for the full project overview,
 prerequisites, and config split (system vs. local).
 
+**Before acting on a casual/colloquial term the user uses for a feature**
+(e.g. "the program's setting", "Viewgraph", "Custom Path") **or before
+asking a clarifying question about one, read [GLOSSARY.md](GLOSSARY.md)
+first** — it maps terms that are easy to misread onto the actual feature/
+file, recorded specifically because one of these got misread once already
+(see its own entries for the incidents). If a term isn't in there and the
+mapping is genuinely ambiguous, ask the user rather than guessing — and
+add the resolved mapping to `GLOSSARY.md` afterward so it doesn't need
+asking again.
+
+**Before changing code in a file or area listed in
+[bug-history/README.md](bug-history/README.md)'s index, read that entry
+first** — each one ends with a "Lesson" describing a reusable mistake
+pattern (e.g. a specific circular-import shape, a specific stale-path
+bug), not just a one-off incident. After fixing any real bug (a crash, a
+silent failure, wrong behavior — not a feature change), add a new entry
+there following its own "Adding a new entry" format, so the next change
+in that area doesn't reintroduce it.
+
 ## Reading this codebase
 
 Before exploring a folder's `.py` files, check whether it has its own

@@ -1,0 +1,9 @@
+{
+  "id": "debug_console",
+  "name": "DebugConsole",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "core": true,
+  "description": "Live viewer for core.extensibility.debug_log — any plugin can register a named log source and stream debug messages into it, for troubleshooting without a console window."
+}

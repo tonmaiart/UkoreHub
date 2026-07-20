@@ -1,0 +1,19 @@
+{
+  "repo_options": {
+    "0e05b23f-3bab-4183-b78c-2d47f46d0c62:d930b619-2774-4ab4-b381-899e0464e121": {
+      "resolution_mode": "custom",
+      "width": 1920,
+      "height": 1080,
+      "format": "qt",
+      "compression": "H.264",
+      "quality": 80,
+      "percent": 80,
+      "frame_range_mode": "current_timeline",
+      "start_frame": 1,
+      "end_frame": 100,
+      "camera": "",
+      "sound": false,
+      "show_ornaments": false
+    }
+  }
+}

@@ -17,6 +17,7 @@ from core.store import LocalConfigStore, MetadataStore
 from interface.repo_addon_panel_registry import RepoAddonPanelRegistry, RepoAddonPanelSpec
 from interface.section_registry import SectionRegistry, SectionSpec
 from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
+from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry, SidebarFooterActionSpec
 
 PLUGIN_API_VERSION = 1
 
@@ -44,6 +45,7 @@ class PluginAPI:
         settings_tab_registry: SettingsTabRegistry,
         repo_addon_panel_registry: RepoAddonPanelRegistry,
         file_opener_registry: FileOpenerRegistry,
+        sidebar_footer_action_registry: SidebarFooterActionRegistry,
         plugins_data_dir: Path,
         app_root: Path,
         addon_store: AddonMetadataStore,
@@ -58,6 +60,7 @@ class PluginAPI:
         self._settings_tab_registry = settings_tab_registry
         self._repo_addon_panel_registry = repo_addon_panel_registry
         self._file_opener_registry = file_opener_registry
+        self._sidebar_footer_action_registry = sidebar_footer_action_registry
         self._plugins_data_dir = Path(plugins_data_dir)
         self._app_root = Path(app_root)
         self._addon_store = addon_store
@@ -99,8 +102,8 @@ class PluginAPI:
         """Studio-editable overrides for discovered add-ons (icon,
         description, required Program(s)) — data/addon_settings.json. Used
         alongside addon_catalog by anything building the same
-        Program/Add-on requirements picker RepoDialog/RequirementsEditDialog
-        already use (interface/shared/dialogs.py)."""
+        Program/Add-on requirements picker RepoDialog already uses
+        (interface/shared/dialogs.py)."""
         return self._addon_store
 
     @property
@@ -142,6 +145,9 @@ class PluginAPI:
                 always_enabled=always_enabled,
             )
         )
+
+    def register_sidebar_footer_action(self, spec: SidebarFooterActionSpec) -> None:
+        self._sidebar_footer_action_registry.register(spec)
 
     def register_git_hook(self, event: GitHookEvent, handler: HookHandler) -> None:
         self._hooks.subscribe(event, handler)

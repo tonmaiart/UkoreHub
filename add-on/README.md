@@ -45,7 +45,7 @@ add-on/YourAddonName/
   "version": "1.0.0",
   "api_version": 1,
   "entry_point": "plugin.py",
-  "description": "One sentence — shown in Repo About and the repo editor's add-on picker."
+  "description": "One sentence — shown in the repo editor's add-on picker."
 }
 ```
 `id` must be globally unique across every plugin *and* add-on (both share
@@ -96,12 +96,13 @@ behavior:
   `core/extensibility/file_opener.py`'s `FileOpenerRegistry` enforces this,
   so there's no risk of your opener firing for files opened outside
   UkoreHub or on a repo that hasn't enabled you.
-- `api.register_repo_addon_panel(addon_id, panel_factory)` — a status
-  widget (`panel_factory(repo) -> QWidget`) shown as its own sub-tab
-  (named after your manifest's `name`) inside the About tab's left tab
-  bar, whenever this add-on is enabled for the active repo. Purely
-  informational (e.g. "is the linked executable configured?") — optional,
-  skip it if your add-on has nothing to show.
+- `api.register_repo_addon_panel(addon_id, panel_factory)` — registers a
+  status widget (`panel_factory(repo) -> QWidget`) for this add-on, shown
+  whenever it's enabled for the active repo. **Currently has no UI host**:
+  the Repo About tab that used to render these panels as sub-tabs was
+  removed 2026-07-20, and nothing else consumes this registry yet — a
+  panel registered here is stored but never displayed. Skip this call
+  until a new host exists.
 
 The rest of the surface is shared with plugins, and just as usable from an
 add-on:
@@ -168,9 +169,9 @@ a replacement UI exists. An add-on's **required Program(s)** (e.g. "this
 add-on requires Autodesk Maya") is deliberately *not* a manifest field or
 something `register(api)` sets, so studio admins can retarget an add-on to
 a different/renamed Program catalog entry without a code change. Declaring a
-required program is what makes an add-on's card nest under that program's
-`RequirementCard` in Repo About and the repo editor's add-on picker
-(`core/addon_store.py`'s `group_addon_ids_by_program`) — an add-on with no
+required program is what makes an add-on nest under that program's node in
+the repo editor's add-on picker (`RequirementsTreeWidget`, using
+`core/addon_store.py`'s `group_addon_ids_by_program`) — an add-on with no
 declared required program (yet) just shows in the "Other Add-ons" fallback
 group, not hidden.
 

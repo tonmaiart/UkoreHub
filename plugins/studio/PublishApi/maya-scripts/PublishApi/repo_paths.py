@@ -49,7 +49,6 @@ def get_active_repo():
         return None, None, None
 
     from core.exceptions import NotFoundError
-    from core.paths import resolve_repo_path
 
     store = MetadataStore(root / "data" / "projects.json")
     try:
@@ -58,7 +57,7 @@ def get_active_repo():
     except NotFoundError:
         return None, None, None
 
-    repo_path = resolve_repo_path(local_config.workspace_root, project.name, repo.name)
+    repo_path = Path(local_config.workspace_root) / repo.local_path
     return project, repo, repo_path
 
 
@@ -92,7 +91,6 @@ def resolve_ref(ref: dict):
     should check `repo_path.is_dir()` themselves if that matters."""
     root = find_ukorehub_root()
     from core.exceptions import NotFoundError
-    from core.paths import resolve_repo_path
     from core.store import LocalConfigStore, MetadataStore
 
     local_config = LocalConfigStore(root / "data" / "local_config.json")
@@ -102,7 +100,7 @@ def resolve_ref(ref: dict):
         repo = store.get_repo(ref["project_id"], ref["repo_id"])
     except NotFoundError:
         return None
-    repo_path = resolve_repo_path(local_config.workspace_root, project.name, repo.name)
+    repo_path = Path(local_config.workspace_root) / repo.local_path
     return project, repo, repo_path
 
 

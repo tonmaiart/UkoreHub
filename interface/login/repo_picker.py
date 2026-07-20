@@ -23,11 +23,8 @@ class _RepoCard(QFrame):
     only ever accepted via its own OK button, not by clicking a card, so a
     stray double-click can't jump into the wrong repo. Shows only
     "Project / Repo" and status — this picker's whole point is a fast way
-    to jump to a repo, not a status/admin view (see
-    interface/shared/project_repo_tree.py's QTreeWidget for that, used by
-    Settings' Project Status tab; Project Editor's node graph is the other
-    place repos are managed now, but renders its own QGraphicsView instead
-    of this tree).
+    to jump to a repo, not a status/admin view (Project Editor's node
+    graph is where repos are actually managed, via its own QGraphicsView).
 
     When the repo has a thumbnail, it's painted fill-cropped as the card's
     own background with a dark dimming overlay (paintEvent) so the name/

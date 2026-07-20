@@ -65,8 +65,8 @@ def _repo_root_path(api, repo) -> Path:
     workspace.mel always lives, per studio convention, so this is what gets
     passed to Maya's `setProject`. `repo.local_path` is stored relative to
     the workspace root (see core/store.py's `add_repo`), the same join every
-    other page does (e.g. repo_about_page.py via core/paths.py's
-    resolve_repo_path)."""
+    other page does (e.g. plugins/studio/project_editor/project_graph_view.py
+    via core/paths.py's resolve_repo_path)."""
     return Path(api.local_config.workspace_root) / repo.local_path
 
 

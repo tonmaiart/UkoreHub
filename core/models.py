@@ -6,8 +6,8 @@ from dataclasses import dataclass, field, asdict
 @dataclass
 class BrowserLink:
     """A repo-scoped bookmark (e.g. a Google Sheet, a Canva board) shown as
-    its own top-level tab embedding that URL — see Repo About's Browser
-    Links section and interface/about/browser_link_page.py."""
+    its own top-level tab embedding that URL — configured under
+    Settings > Repo > Browser, see interface/about/browser_link_page.py."""
 
     name: str
     url: str

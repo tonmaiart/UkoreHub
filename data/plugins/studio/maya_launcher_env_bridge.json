@@ -122,10 +122,10 @@
         ]
       }
     },
-    "ukore_shot_playblast": {
+    "ukore_playblast": {
       "PYTHONPATH": {
         "*": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\UkoreShotPlayblast\\maya-scripts"
+          "C:\\Tonmai\\UkoreHub\\plugins\\studio\\UkorePlayblast\\maya-scripts"
         ]
       }
     }
@@ -143,6 +143,6 @@
     "model_publisher": "ModelPublisher",
     "publish_api": "PublishApi",
     "rig_publisher": "RigPublisher",
-    "ukore_shot_playblast": "UkoreShotPlayblast"
+    "ukore_playblast": "UkorePlayblast"
   }
 }

@@ -1,0 +1,8 @@
+{
+  "id": "ukore_playblast",
+  "name": "UkorePlayblast",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Configurable Maya playblast (resolution, format/codec, quality, frame range, camera, sound, ornaments) — replaces UkoreMaya's old hardcoded Quick Playblast, writing into whichever folder UkoreShot has configured for the active repo."
+}

@@ -76,8 +76,10 @@ right:
   in `_section_view_index`/`_dynamic_view_index`. There is no "Repo"/Project
   Info section anymore — it was removed; its "Repo Add-on" sub-tab's job
   (showing each enabled add-on's per-repo panel via `RepoAddonPanelRegistry`)
-  moved into `interface/about/repo_about_page.py`'s own left-tab-bar
-  sub-tabs instead (see below).
+  moved into a "Repo About" section next. That section was itself removed
+  2026-07-20 (no longer needed) — `RepoAddonPanelRegistry` currently has no
+  UI consumer at all; a panel registered via `api.register_repo_addon_panel`
+  is stored but never rendered anywhere.
 - **Persistent sections** (`SectionSpec.persistent=True`, currently only
   Project Editor): never a `SectionTabList` row, never added to `view_stack`
   at all — instead `MainWindow._build_main_ui` docks it permanently beside
@@ -108,15 +110,15 @@ don't go looking for it here, even though it's UI-adjacent in purpose.
 
 | Registry | Spec dataclass | Keyed? | Purpose |
 |---|---|---|---|
-| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level sections, rendered as rows in Sidebar's `SectionTabList` (Explorer, Submit, About, ...) — unless `persistent=True` (Project Editor), which docks permanently beside `view_stack` instead of getting a row |
+| `SectionRegistry` | `SectionSpec` | yes, rejects dup keys | Top-level sections, rendered as rows in Sidebar's `SectionTabList` (Explorer, Submit, ...) — unless `persistent=True` (Project Editor), which docks permanently beside `view_stack` instead of getting a row |
 | `SettingsTabRegistry` | `SettingsTabSpec` | yes | Tabs shown in the "Setting" view |
-| `RepoAddonPanelRegistry` | (factory keyed by addon_id) | yes | Per-add-on per-repo panel, consumed by `interface/about/repo_about_page.py`'s dynamic sub-tabs (one per enabled add-on with a registered panel) |
+| `RepoAddonPanelRegistry` | (factory keyed by addon_id) | yes | Per-add-on per-repo panel — currently has no UI consumer (its only renderer, Repo About, was removed 2026-07-20); a registered panel is stored but never displayed |
 | `FileOpenerRegistry` | `FileOpenerSpec` | **no**, plain list, first-match-wins | Add-on can claim responsibility for opening a file extension (lives in `core/`) |
 
-Every registered page/tab factory follows the same **`page_factory: Callable[[], QWidget]`** convention — no arguments, construct-on-demand. This is also why pytest can smoke-test registries without ever instantiating a real `QWidget`: tests register `page_factory=lambda: None` and only assert on registry bookkeeping (duplicate-key rejection, ordering), never call the factory. `RepoAddonPanelRegistry`'s `panel_factory` is the one exception — it takes the active `Repo` directly (`Callable[[Repo], QWidget]`), since `interface/about/repo_about_page.py` rebuilds these panels fresh on every `set_repo()` rather than constructing once.
+Every registered page/tab factory follows the same **`page_factory: Callable[[], QWidget]`** convention — no arguments, construct-on-demand. This is also why pytest can smoke-test registries without ever instantiating a real `QWidget`: tests register `page_factory=lambda: None` and only assert on registry bookkeeping (duplicate-key rejection, ordering), never call the factory. `RepoAddonPanelRegistry`'s `panel_factory` is the one exception — it takes the active `Repo` directly (`Callable[[Repo], QWidget]`), for whatever future consumer rebuilds these panels fresh on every repo switch rather than constructing once.
 
 Built-ins register into the exact same registries a plugin/add-on would —
-`interface/builtin_sections.py`, `interface/builtin_settings_tabs.py` call
+`interface/builtin_settings_tabs.py` calls
 the same `register_*`/`api.register_*` surface as
 `plugins/studio/maya_launcher/plugin.py` does. This "dogfooding" is deliberate: if a
 built-in page needs something the registry API can't express, that's a
@@ -174,7 +176,7 @@ Notable surface:
 ## Page protocol: `set_repo()`
 
 Most pages that need to react to the active repo changing (Repo Browser,
-Repo About and its sub-tabs, Repo Git Status) implement a
+Repo Git Status) implement a
 `set_repo(repo: Repo | None) -> None` method, called by `MainWindow`
 whenever the active repo or the visible top-level tab changes. If you're
 adding a new page that cares which repo is active, implement this method

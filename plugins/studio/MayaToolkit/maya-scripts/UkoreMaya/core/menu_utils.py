@@ -212,16 +212,16 @@ def faster_plugin():
 def playblast():
     # Split out into its own plugin 2026-07-19 (configurable options +
     # destination now live entirely inside Maya instead of being
-    # hardcoded here) — see plugins/studio/UkoreShotPlayblast/README.md.
-    from UkoreShotPlayblast import function as ukore_shot_playblast
+    # hardcoded here) — see plugins/studio/UkorePlayblast/README.md.
+    from UkorePlayblast import function as ukore_playblast
 
-    ukore_shot_playblast.publish_playblast()
+    ukore_playblast.publish_playblast()
 
 
 def playblast_options():
-    from UkoreShotPlayblast import options_dialog as ukore_shot_playblast_options
+    from UkorePlayblast import options_dialog as ukore_playblast_options
 
-    ukore_shot_playblast_options.show()
+    ukore_playblast_options.show()
 
 
 def print_selected():

@@ -11,7 +11,7 @@ from core.models import Project, Repo
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 from interface.settings_tab_registry import SettingsTabRegistry
-from interface.shared.dialogs import ProjectDialog
+from plugins.studio.project_editor.dialogs import ProjectDialog
 from interface.shared.widget_helpers import confirm_action
 from plugins.studio.project_editor.pipeline_store import PipelineStore
 from plugins.studio.project_editor.project_graph_view import ProjectGraphView
@@ -90,7 +90,7 @@ class ProjectEditorPage(QWidget):
     # -- page protocol (see interface/section_registry.py) ----------------
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
-        self.graph_view.set_active_repo(project.id if project else None, repo.id if repo else None)
+        self.graph_view.set_active_repo(project, repo)
         # Only reload the graph when the active repo's project actually
         # differs from what's already loaded — set_repo() fires on every
         # active-repo change, including a node click inside the very
@@ -101,9 +101,6 @@ class ProjectEditorPage(QWidget):
         # handler resumes.
         if project is not None and project.id != self._last_project_id:
             self._select_project_in_combo(project.id)
-
-    def refresh_repo_thumbnail(self, repo: Repo) -> None:
-        self.graph_view.refresh_repo_thumbnail(repo)
 
     # -- project dropdown --------------------------------------------------
 

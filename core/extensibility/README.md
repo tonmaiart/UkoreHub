@@ -39,11 +39,23 @@ plugin's or add-on's `register(api)` receives.
   when a file is opened through Repo Browser (double-click in the file
   table) — never for files opened outside UkoreHub entirely. Gated by
   `Repo.enabled_addon_ids`, consistent with Add-ons being per-repo opt-in.
+- `debug_log.py` — `register_source`/`log`/`entries`/`sources`/
+  `add_listener`/`remove_listener`/`clear`: an in-memory, cross-plugin
+  debug log bus, added 2026-07-20 alongside `plugins/studio/DebugConsole/`
+  (that plugin's own README has the full story — this file is just the
+  Qt-free data side of it). Any plugin/add-on/core code can call
+  `log(source, message)` directly (import the module, no `api` handle
+  needed) from anywhere at runtime, not just inside `register(api)` —
+  the same "construct/reach directly, convention not import" pattern
+  `config_store.py`'s `PluginConfigStore` already relies on elsewhere in
+  this codebase. Not persisted (ephemeral, cleared on app restart or via
+  DebugConsole's "Clear" button) and capped at 1000 entries.
 
-None of these four files import each other. `hooks.py` and `file_opener.py`
+None of these five files import each other. `hooks.py` and `file_opener.py`
 import `core.models` (for `Project`/`Repo`); `config_store.py` imports
-`core.store._atomic_write`. All are absolute imports to modules that live
-directly in `core/`, not in this subpackage.
+`core.store._atomic_write`; `debug_log.py` has no internal imports at all.
+All are absolute imports to modules that live directly in `core/`, not in
+this subpackage.
 
 ## Plugins vs Add-ons
 

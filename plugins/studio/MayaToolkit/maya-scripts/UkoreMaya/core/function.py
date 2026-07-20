@@ -133,7 +133,7 @@ def reference_file():
 
 
 # Playblast moved out to its own plugin 2026-07-19 — see
-# plugins/studio/UkoreShotPlayblast/maya-scripts/UkoreShotPlayblast/
+# plugins/studio/UkorePlayblast/maya-scripts/UkorePlayblast/
 # function.py's publish_playblast (called from menu_utils.py's playblast()).
 
 # ================================

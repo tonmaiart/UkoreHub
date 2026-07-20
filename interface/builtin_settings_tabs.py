@@ -3,14 +3,13 @@ from __future__ import annotations
 from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
-from interface.settings.browser_links_settings_page import BrowserLinksSettingsPage
+from interface.browser_links.browser_links_settings_page import BrowserLinksSettingsPage
+from interface.repo_settings.enable_plugin_page import EnablePluginPage
+from interface.repo_settings.local_repository_page import LocalRepositoryPage
 from interface.settings.common_settings_page import CommonSettingsPage
-from interface.settings.enable_plugin_page import EnablePluginPage
 from interface.settings.github_oauth_settings_page import GithubOAuthSettingsPage
-from interface.settings.local_repository_page import LocalRepositoryPage
 from interface.settings.plugin_catalog_page import PluginCatalogPage
 from interface.settings.program_database_page import ProgramDatabasePage
-from interface.settings.project_status_page import ProjectStatusPage
 from interface.settings_tab_registry import (
     CATEGORY_DEVELOPER,
     CATEGORY_GENERAL,
@@ -20,7 +19,6 @@ from interface.settings_tab_registry import (
 )
 
 COMMON = "common"
-PROJECT_STATUS = "project_status"
 PROGRAM_DATABASE = "program_database"
 PLUGINS = "plugins"
 GITHUB_OAUTH = "github_oauth"
@@ -51,17 +49,14 @@ def register_builtin_settings_tabs(
     built new pages on every open. Every page persists its own changes
     immediately — no on_save/on_cancel polling anymore."""
 
-    def _activate_project_status(widget: ProjectStatusPage) -> None:
-        widget.refresh()
-
-    def _activate_browser_links(widget: BrowserLinksSettingsPage) -> None:
-        widget.refresh()
-
-    def _activate_local_repository(widget: LocalRepositoryPage) -> None:
-        widget.refresh()
-
-    def _activate_enable_plugin(widget: EnablePluginPage) -> None:
-        widget.refresh()
+    # Shared on_activated for every tab whose only refresh need is
+    # "call refresh() if this page has one" — BrowserLinksSettingsPage,
+    # LocalRepositoryPage, EnablePluginPage all just want that, so one
+    # duck-typed callback replaces a 1:1 wrapper per page type.
+    def _trigger_refresh(widget) -> None:
+        refresh = getattr(widget, "refresh", None)
+        if callable(refresh):
+            refresh()
 
     registry.register(
         SettingsTabSpec(
@@ -74,21 +69,11 @@ def register_builtin_settings_tabs(
     )
     registry.register(
         SettingsTabSpec(
-            key=PROJECT_STATUS,
-            label="Project Status",
-            order=10,
-            page_factory=lambda: ProjectStatusPage(store=store, local_config_store=local_config_store),
-            on_activated=_activate_project_status,
-            category=CATEGORY_REPO,
-        )
-    )
-    registry.register(
-        SettingsTabSpec(
             key=BROWSER_LINKS,
             label="Browser",
             order=20,
             page_factory=lambda: BrowserLinksSettingsPage(store=store, local_config_store=local_config_store),
-            on_activated=_activate_browser_links,
+            on_activated=_trigger_refresh,
             category=CATEGORY_REPO,
         )
     )
@@ -98,7 +83,7 @@ def register_builtin_settings_tabs(
             label="Local Repository",
             order=25,
             page_factory=lambda: LocalRepositoryPage(store=store, local_config_store=local_config_store),
-            on_activated=_activate_local_repository,
+            on_activated=_trigger_refresh,
             category=CATEGORY_REPO,
         )
     )
@@ -110,7 +95,7 @@ def register_builtin_settings_tabs(
             page_factory=lambda: EnablePluginPage(
                 store=store, local_config_store=local_config_store, plugin_catalog=plugin_catalog
             ),
-            on_activated=_activate_enable_plugin,
+            on_activated=_trigger_refresh,
             category=CATEGORY_REPO,
         )
     )

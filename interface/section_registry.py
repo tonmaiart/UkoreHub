@@ -6,7 +6,7 @@ from typing import Callable
 
 from PySide6.QtWidgets import QWidget
 
-from core.exceptions import ValidationError
+from interface.registry_base import KeyedOrderedRegistry
 
 
 @dataclass(frozen=True)
@@ -54,25 +54,16 @@ class SectionSpec:
     persistent: bool = False
 
 
-class SectionRegistry:
+class SectionRegistry(KeyedOrderedRegistry[SectionSpec]):
     """Open, ordered replacement for the old closed SectionKey enum — every
     section is its own full-width top-level view in MainWindow.view_stack,
     switched to via Sidebar's SectionTabList; both built-in and
-    plugin-provided sections register into the same collection."""
+    plugin-provided sections register into the same collection.
+    register()/ordered()/keys() come from KeyedOrderedRegistry
+    (interface/registry_base.py) — keys() specifically is used by
+    launcher.py to diff before/after a single plugin's register(api) call
+    and learn which section(s) that plugin contributed, for per-repo
+    Plugin gating."""
 
     def __init__(self) -> None:
-        self._specs: dict[str, SectionSpec] = {}
-
-    def register(self, spec: SectionSpec) -> None:
-        if spec.key in self._specs:
-            raise ValidationError(f"Section key '{spec.key}' is already registered")
-        self._specs[spec.key] = spec
-
-    def ordered(self) -> list[SectionSpec]:
-        return sorted(self._specs.values(), key=lambda spec: (spec.order, spec.key))
-
-    def keys(self) -> set[str]:
-        """Every registered section key so far — used by launcher.py to diff
-        before/after a single plugin's register(api) call and learn which
-        section(s) that plugin contributed, for per-repo Plugin gating."""
-        return set(self._specs.keys())
+        super().__init__(label="Section")
