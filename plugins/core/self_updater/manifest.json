@@ -1,0 +1,8 @@
+{
+  "id": "self_updater",
+  "name": "Self Updater",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Checks for UkoreHub app updates on startup and shows an Update and Restart button in the sidebar footer when one is available."
+}

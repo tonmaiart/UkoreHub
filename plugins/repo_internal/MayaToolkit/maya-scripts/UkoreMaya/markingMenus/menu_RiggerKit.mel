@@ -1,0 +1,135 @@
+
+    menuItem
+        -label "Build Auto" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "cmds.select(cmds.ls(\"rig\"))\ncmds.delete()\ncmds.select(cmds.ls(\"guide\"))\nfrom mgear.shifter import guide_manager\nguide_manager.build_from_selection()\n" 
+        -optionBox 0
+        -header 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "N" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "python" 
+        -longDivider 1
+        menuEditorMenuItem1;
+
+    menuItem
+        -label "Reload Guide" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "\nfrom mgear import shifter\nshifter.reloadComponents()\n" 
+        -optionBox 0
+        -header 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "SE" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "python" 
+        -longDivider 1
+        menuEditorMenuItem2;
+
+    menuItem
+        -label "Update Guide" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "\nfrom mgear.shifter import guide_template\nguide_template.updateGuide()\n" 
+        -optionBox 0
+        -header 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "W" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "python" 
+        -longDivider 1
+        menuEditorMenuItem3;
+
+    menuItem
+        -label "Guide Manager" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "\nfrom mgear.shifter import guide_manager_gui\nguide_manager_gui.show_guide_manager()\n" 
+        -optionBox 0
+        -header 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "S" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "python" 
+        -longDivider 1
+        menuEditorMenuItem4;
+
+    menuItem
+        -label "Setting" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "from mgear.shifter import guide_manager\n\nif not cmds.ls(sl=1):\n\tcmds.select(\"guide*\")\n\nguide_manager.inspect_settings(0)\n" 
+        -optionBox 0
+        -header 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "NW" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "python" 
+        -longDivider 1
+        menuEditorMenuItem5;
+
+    menuItem
+        -label "Toggle Rig-Guide" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "guide_target = cmds.ls(\"guide\")\n\nif cmds.getAttr(\"{}.v\".format(guide_target[0])) is False:\n\tguide_bool = True\n\trig_bool = False\nelse:\n\tguide_bool = False\n\trig_bool = True\n\nfor rig in cmds.ls(\"rig\"):\n\tcmds.setAttr(\"{}.v\".format(rig),rig_bool)\n\nfor guide in cmds.ls(\"guide\"):\n\tcmds.setAttr(\"{}.v\".format(guide),guide_bool)\n\n\n\n" 
+        -optionBox 0
+        -header 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "NE" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "python" 
+        -longDivider 1
+        menuEditorMenuItem7;
+
+setParent -m ..;
+

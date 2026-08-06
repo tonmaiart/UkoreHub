@@ -1,0 +1,540 @@
+
+    menuItem
+        -label "Reset All" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "python(\"import UkoreMaya\");\npython(\"UkoreMaya.menu.General.reset_transform()\");" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "S" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "undo.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem6;
+
+    menuItem
+        -label "Isolate" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "//super basic script but sharing some useful hotkeys by request\n//\n// tj, april 12, 2000\n\n///isolate select\n$currentPanel = `getPanel -withFocus`;\nstring $panelType = `getPanel -to $currentPanel`;\nif ($panelType ==  \"modelPanel\"){\n int $on_flag = `isolateSelect -q -s $currentPanel`;\n if ($on_flag == 0){\n  enableIsolateSelect $currentPanel true;\n }\n else{\n  enableIsolateSelect $currentPanel false;\n  }\n}\n\n" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "NW" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "zoom.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem24;
+
+    menuItem
+        -label "Delete" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "doDelete;" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "N" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "delete.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem23;
+
+    menuItem
+        -label "Clear Anim" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "doCutKeyArgList 3 { \"1\",\"0:10\",\"keys\",\"none\",\"0\",\"1\",\"0\",\"animationList\",\"noOptions\",\"0\",\"0\" };" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "W" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "teZeroKey.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem5;
+
+    menuItem
+        -label "Sort Ctrl" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "python(\"import UkoreMaya\");\npython(\"UkoreMaya.menu.General.sort_by_type(typ='anim_curve')\");" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "SE" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "HIKCharacterToolStancePose_100.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem3;
+
+    menuItem
+        -label "Smart Parent" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "python(\"import UkoreMaya\");\npython(\"UkoreMaya.menu.General.smart_parent()\");" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "E" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "showDag.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem4;
+
+    menuItem
+        -label "Reset Attr" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "python(\"import UkoreMaya\");\npython(\"UkoreMaya.menu.General.reset_selected_attrs()\");" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "SW" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "undo_s.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem12;
+
+    menuItem
+        -label "Parent" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "parentPreset(0,1)" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem8;
+
+    menuItem
+        -label "Unparent" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "parent -w" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem9;
+
+    menuItem
+        -label "Freeze Group" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "python(\"import UkoreMaya\");\npython(\"UkoreMaya.menu.Rig.freeze_group()\");" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -radialPosition "NE" 
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -image "browseFolder.png" 
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem1;
+
+    menuItem
+        -label "separator" 
+        -divider 1
+        -dividerLabel "separator" 
+        -subMenu 0
+        -tearOff 0
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem7;
+
+    menuItem
+        -label "Match Transform" 
+        -divider 0
+        -subMenu 1
+        -tearOff 0
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -allowOptionBoxes 1
+        -enableCommandRepeat 1
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem19;
+
+        menuItem
+            -label "All" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchTransform" 
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -radialPosition "E" 
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem2;
+
+        menuItem
+            -label "menuEditorMenuItem10" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchTransformOptions" 
+            -optionBox 1
+            -enable 1
+            -visible 0
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 0
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem13;
+
+        menuItem
+            -label "separator" 
+            -divider 1
+            -dividerLabel "separator" 
+            -subMenu 0
+            -tearOff 0
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem11;
+
+        menuItem
+            -label "Translation" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchTranslation" 
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -radialPosition "W" 
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem3;
+
+        menuItem
+            -label "menuEditorMenuItem11" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchTranslationOptions" 
+            -optionBox 1
+            -enable 1
+            -visible 0
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 0
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem14;
+
+        menuItem
+            -label "Rotation" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchRotation" 
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -radialPosition "NW" 
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem5;
+
+        menuItem
+            -label "menuEditorMenuItem12" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchRotationOptions" 
+            -optionBox 1
+            -enable 1
+            -visible 0
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 0
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem15;
+
+        menuItem
+            -label "Scale" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchScaling" 
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -radialPosition "N" 
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem6;
+
+        menuItem
+            -label "menuEditorMenuItem13" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchScalingOptions" 
+            -optionBox 1
+            -enable 1
+            -visible 0
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 0
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem16;
+
+        menuItem
+            -label "separator" 
+            -divider 1
+            -dividerLabel "separator" 
+            -subMenu 0
+            -tearOff 0
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem12;
+
+        menuItem
+            -label "Pivots" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchPivots" 
+            -optionBox 0
+            -enable 1
+            -visible 1
+            -data 0
+            -radialPosition "NE" 
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 1
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem7;
+
+        menuItem
+            -label "menuEditorMenuItem14" 
+            -divider 0
+            -subMenu 0
+            -tearOff 0
+            -command "MatchPivotsOptions" 
+            -optionBox 1
+            -enable 1
+            -visible 0
+            -data 0
+            -allowOptionBoxes 1
+            -postMenuCommandOnce 0
+            -enableCommandRepeat 0
+            -echoCommand 0
+            -italicized 0
+            -boldFont 1
+            -sourceType "mel" 
+            -longDivider 1
+            menuEditorMenuItem17;
+
+    setParent -m ..;
+
+    menuItem
+        -label "Freeze Transforms" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 -pn 1;" 
+        -optionBox 0
+        -enable 1
+        -visible 1
+        -data 0
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 1
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem10;
+
+    menuItem
+        -label "menuEditorMenuItem27" 
+        -divider 0
+        -subMenu 0
+        -tearOff 0
+        -command "FreezeTransformationsOptions" 
+        -optionBox 1
+        -enable 1
+        -visible 0
+        -data 0
+        -allowOptionBoxes 1
+        -postMenuCommandOnce 0
+        -enableCommandRepeat 0
+        -echoCommand 0
+        -italicized 0
+        -boldFont 1
+        -sourceType "mel" 
+        -longDivider 1
+        menuEditorMenuItem11;
+
+setParent -m ..;
+

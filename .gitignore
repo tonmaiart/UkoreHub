@@ -1,0 +1,33 @@
+.venv/
+__pycache__/
+*.pyc
+# data/projects.json, data/system_config.json, and data/thumbnails/ are
+# intentionally NOT ignored — they're shared studio-wide (registry, settings,
+# repo thumbnail images), tracked in this repo so everyone gets them via
+# git pull / Update and Restart.
+data/local_config.json
+data/github_token.json
+# Per-machine QWebEngineProfile storage (cookies/session for Browser Link
+# tabs) — see interface/web_engine_profile.py. Never shared/tracked.
+data/webengine_profile/
+# Per-plugin settings mirror the same split: data/plugins/core/*.json is
+# shared (written by studio-authored plugins), data/plugins/local/*.json is
+# per-machine/experimental — see core/plugin_config_store.py.
+data/plugins/local/
+.pytest_cache/
+# plugins/core and plugins/repo_internal are both git-tracked and
+# distributed like data/programs.json — bundled with the app, no separate
+# fetch. See core/extensibility/loader.py.
+# Forced workspace_root (see launcher.py) — actual cloned target repos live
+# here, per-machine and potentially huge; never tracked.
+/projects/
+# Per-user cache for repo plugins — each one is its own git clone
+# (its own remote, own history), fetched/updated on demand for a repo that
+# declares it as a requirement. Never tracked here; see plugins/README.md.
+/cache/
+# PyInstaller intermediates from developer/packaging/build_exe.py —
+# regenerate every build, never committed. The resulting UkoreHub.exe at
+# the repo root IS committed — a shared studio-wide binary, same pattern as
+# data/thumbnails/ and data/programs.json above.
+/developer/build/
+*.spec

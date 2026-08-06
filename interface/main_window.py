@@ -1,0 +1,594 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import (
+    QApplication,
+    QHBoxLayout,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QSplitterHandle,
+    QStackedWidget,
+    QWidget,
+)
+
+from core.exceptions import NotFoundError
+from core.extensibility.file_opener import FileOpenerRegistry
+from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
+from core.git_service import GitService
+from core.github.token_store import TokenStore
+from core.paths import resolve_repo_path
+from core.program_store import ProgramStore
+from core.store import LocalConfigStore, MetadataStore
+from core.theme import DEFAULT_THEME_NAME, get_theme
+from core.version import APP_NAME, APP_VERSION
+from interface import builtin_settings_tabs
+from interface.browser_links.browser_link_page import BrowserLinkPage
+from interface.browser_links.web_engine_profile import make_persistent_browser_link_profile
+from interface.section_registry import SectionHost, SectionRegistry
+from interface.settings.settings_view import SettingsDialog
+from interface.settings_tab_registry import SettingsTabRegistry
+from interface.sidebar.sidebar import Sidebar
+from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
+
+# interface/main_window.py -> interface/ -> repo root — used only to find
+# UkoreHub.exe for _relaunch_to_login (the launcher exe built at the repo
+# root by developer/packaging/build_exe.py).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Explicit floor rather than a computed one (minimumSizeHint() right after
+# setCentralWidget() is unreliable — layout isn't fully activated yet, and
+# even once it is, widgets like the file table/list compress to a tiny
+# hint, so doubling it barely moves) — and only a constraint on shrinking,
+# not something that grows an already-taller window, so _build_main_ui()
+# also force-resizes if the window is currently shorter than this.
+MAIN_WINDOW_MIN_HEIGHT = 600
+
+# Width of the grab bar between view_stack and the persistent-section panel
+# (see _build_main_ui's content_splitter) — wide and hand-painted rather
+# than the default ~1px handle, which was too thin to reliably grab and
+# gave no visual cue it was draggable at all.
+_CONTENT_SPLITTER_HANDLE_WIDTH = 30
+
+
+class _ContentSplitterHandle(QSplitterHandle):
+    """Paints its own background instead of relying on QSS `::handle`/
+    `::handle:hover` selectors — those looked correct on paper but the
+    Windows native style (`windowsvista`) still painted over them, so
+    neither the resting bar color nor the hover highlight ever actually
+    showed up. Tracking hover state by hand (WA_Hover + enter/leaveEvent)
+    and filling the whole rect directly in paintEvent sidesteps that
+    native-style painting entirely, guaranteeing both the bar and its
+    hover highlight actually render."""
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WA_Hover, True)
+        self._hovered = False
+
+    def enterEvent(self, event) -> None:
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event) -> None:
+        colors = get_theme(DEFAULT_THEME_NAME)
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(colors.accent if self._hovered else colors.border))
+
+
+class _ContentSplitter(QSplitter):
+    """QSplitter whose handles are _ContentSplitterHandle instead of the
+    plain native one — see that class's docstring for why."""
+
+    def createHandle(self) -> QSplitterHandle:
+        return _ContentSplitterHandle(self.orientation(), self)
+
+
+class MainWindow(QMainWindow):
+    def __init__(
+        self,
+        store: MetadataStore,
+        local_config_store: LocalConfigStore,
+        program_store: ProgramStore,
+        git_service: GitService,
+        token_store: TokenStore,
+        hook_registry: HookRegistry,
+        section_registry: SectionRegistry,
+        settings_tab_registry: SettingsTabRegistry,
+        file_opener_registry: FileOpenerRegistry,
+        sidebar_footer_action_registry: SidebarFooterActionRegistry,
+        section_key_to_plugin_id: dict[str, str] | None = None,
+        core_plugin_ids: set[str] | None = None,
+        opt_in_plugin_ids: set[str] | None = None,
+    ):
+        super().__init__()
+        self.store = store
+        self.local_config_store = local_config_store
+        self.program_store = program_store
+        self.git_service = git_service
+        # Only used for logout (clearing the cached token) — login itself
+        # happens entirely in the launcher exe now, see
+        # developer/packaging/updater.py and _on_logout_requested below.
+        self._token_store = token_store
+        self.hook_registry = hook_registry
+        self.section_registry = section_registry
+        self.settings_tab_registry = settings_tab_registry
+        self.file_opener_registry = file_opener_registry
+        self.sidebar_footer_action_registry = sidebar_footer_action_registry
+        # Maps a SectionRegistry key back to the plugin id that registered
+        # it (built in launcher.py by diffing section_registry.keys() around
+        # each plugin's register(api) call) — used by _apply_plugin_visibility
+        # to hide a disabled plugin's sidebar row for the active repo. Keys
+        # with no entry here (e.g. the built-in "About" section) are never
+        # gated, so at least one row always stays visible.
+        self._section_key_to_plugin_id = section_key_to_plugin_id or {}
+        # Plugin ids discovered under plugins/core/ (plugin_source() returns
+        # "core" — see core.extensibility.loader) — their section always
+        # stays visible in _apply_plugin_visibility, no per-repo opt-out
+        # (see that method below). Built in launcher.py.
+        self._core_plugin_ids = core_plugin_ids or set()
+        # Plugin ids discovered under plugins/repo_internal/ or cache/plugins/
+        # (plugin_source() returns "repo_internal"/"repo" — see
+        # core.extensibility.loader) — gated opt-in per repo via
+        # Repo.required_plugin_ids. repo_internal ships bundled with the
+        # app like core; a "repo" plugin is its own separate git clone under
+        # cache/plugins/ — different in kind, but the same "hidden until a
+        # repo requires it" visibility rule applies to both. Built in
+        # launcher.py.
+        self._opt_in_plugin_ids = opt_in_plugin_ids or set()
+
+        self._active_project = None
+        self._active_repo = None
+        self.pages: dict[str, QWidget] = {}
+        self.sidebar: Sidebar | None = None
+        self.view_stack: QStackedWidget | None = None
+        self._section_view_index: dict[str, int] = {}
+        self._persistent_pages: list[QWidget] = []
+        self._dynamic_view_index: dict[str, int] = {}
+        # Shared across every Browser Link tab so a login persists across
+        # app restarts — see interface/web_engine_profile.py.
+        self._web_engine_profile = make_persistent_browser_link_profile(
+            self.store.json_path.parent / "webengine_profile", self
+        )
+
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
+
+        # No show()/showMaximized() call here on purpose — see
+        # developer/bug-history/2026-07-20-main-window-not-maximizing.md. Nothing is
+        # ever actually painted on screen until app.exec() starts running
+        # the event loop, so building the whole widget tree first and only
+        # then showing it, once, deferred via launcher.py's
+        # QTimer.singleShot(0, window.showMaximized), is what makes the
+        # window reliably come up maximized with no flash of a smaller
+        # window first — a widget that's never been shown has no "size" for
+        # the user to glimpse.
+        #
+        # GitHub login now happens in the launcher exe before this process
+        # is even spawned (see developer/packaging/updater.py) — by the time
+        # MainWindow is constructed, GitService already has whatever token
+        # was cached (see launcher.py's main()), so there's no in-app login
+        # gate to show first.
+        self._build_main_ui()
+        self._start_app()
+
+    # -- main UI construction -----------------------------------------------
+
+    def _build_main_ui(self) -> None:
+        section_registry = self.section_registry
+        settings_tab_registry = self.settings_tab_registry
+
+        # Built from the registry uniformly for built-in and plugin-provided
+        # sections alike — a plugin's factory constructs its page on this
+        # first (and only) call.
+        self.pages = {spec.key: spec.page_factory() for spec in section_registry.ordered()}
+
+        # Generic per-page wiring — lets a plugin page (Explorer, Submit)
+        # connect its own signals to app-level services without MainWindow
+        # importing that page's specific type. See
+        # interface/section_registry.py's SectionHost/SectionSpec.wire.
+        section_host = SectionHost(
+            set_status_message=self._set_status_message,
+            navigate_and_focus=self._navigate_and_focus,
+            set_active_repo=self._set_active_repo,
+            open_settings_tab=lambda key: self._on_settings_requested(select_key=key),
+        )
+        for spec in section_registry.ordered():
+            if spec.wire is not None:
+                spec.wire(self.pages[spec.key], section_host)
+
+        self.sidebar = Sidebar(
+            section_registry=section_registry, sidebar_footer_action_registry=self.sidebar_footer_action_registry
+        )
+        self.sidebar.navigation_changed.connect(self._on_navigation_changed)
+        self.sidebar.settings_requested.connect(self._on_settings_requested)
+
+        # Every non-persistent section is its own full-width top-level page,
+        # switched to via the Sidebar's SectionTabList. A persistent section
+        # (SectionSpec.persistent=True, e.g. Project Editor) never joins
+        # view_stack at all — it's always visible, docked beside it (see the
+        # QSplitter below) rather than switched to.
+        self.view_stack = QStackedWidget()
+        self._section_view_index = {
+            spec.key: self.view_stack.addWidget(self.pages[spec.key])
+            for spec in section_registry.ordered()
+            if not spec.persistent
+        }
+        self._persistent_pages = [self.pages[spec.key] for spec in section_registry.ordered() if spec.persistent]
+
+        # Setting is a popup dialog (SettingsDialog), not a view_stack page
+        # — see _on_settings_requested, which constructs one fresh on every
+        # open, same as Repository Setting's own RepoSettingsDialog.
+
+        # One top-level tab + page per Browser Link on the active repo —
+        # rebuilt from scratch on every repo switch and whenever it changes,
+        # see _rebuild_dynamic_tabs.
+        self._dynamic_view_index = {}
+
+        central = QWidget()
+        central_layout = QHBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.sidebar)
+
+        # view_stack plus any persistent section pages (Project Editor)
+        # share a user-resizable splitter, so the always-visible panel
+        # doesn't permanently steal a fixed chunk of width from whichever
+        # section is currently showing.
+        content_splitter = _ContentSplitter()
+        content_splitter.setHandleWidth(_CONTENT_SPLITTER_HANDLE_WIDTH)
+        content_splitter.addWidget(self.view_stack)
+        for persistent_page in self._persistent_pages:
+            content_splitter.addWidget(persistent_page)
+        content_splitter.setStretchFactor(0, 1)
+        if self._persistent_pages:
+            # Initial split favoring view_stack — QSplitter defaults to an
+            # even split otherwise, which would give Project Editor's panel
+            # as much width as whatever section (Explorer/Submit/About) is
+            # showing next to it. setStretchFactor above only governs how
+            # extra space is distributed on a window resize, not this
+            # initial layout pass. Project Editor's Graph View still gets a
+            # generous share (not a even 50/50) so the section pages keep
+            # the larger side.
+            content_splitter.setSizes([1000, 900] + [0] * (len(self._persistent_pages) - 1))
+        central_layout.addWidget(content_splitter, stretch=1)
+        self.setCentralWidget(central)
+
+        self.setMinimumHeight(MAIN_WINDOW_MIN_HEIGHT)
+        # This runs synchronously inside __init__ — safe to resize()
+        # unconditionally here because, as of
+        # developer/bug-history/2026-07-20-main-window-not-maximizing.md,
+        # nothing ever calls show()/showMaximized() before this point
+        # anymore (that's now deferred to launcher.py's single
+        # QTimer.singleShot(0, window.showMaximized), after app.exec()
+        # starts). The isMaximized() guard is kept anyway as defense in
+        # depth — see that file's Lesson — in case a future change adds an
+        # early show() call back and needs this to stay safe against it.
+        if not self.isMaximized() and self.height() < MAIN_WINDOW_MIN_HEIGHT:
+            self.resize(self.width(), MAIN_WINDOW_MIN_HEIGHT)
+
+    def _start_app(self) -> None:
+        self.sidebar.set_account_username(self.local_config_store.github_username)
+        self._restore_active_repo()
+        self._apply_to_current_page()
+        self._apply_to_persistent_pages()
+        QTimer.singleShot(0, self._start_auto_sync)
+        self._fire_app_started()
+
+    # -- navigation (Explorer / Submit / About / Setting / Browser Links) ---
+
+    def _on_navigation_changed(self, key: str) -> None:
+        index = self._section_view_index.get(key)
+        if index is None:
+            index = self._dynamic_view_index.get(key)
+        if index is None:
+            return
+        self.view_stack.setCurrentIndex(index)
+        self._apply_to_current_page()
+
+    def _on_settings_requested(self, select_key: str | None = None) -> None:
+        # Setting is its own icon button in Sidebar's footer, opened as a
+        # popup dialog (reverted 2026-07-19 from an embedded view_stack
+        # page back to a dialog — see SettingsDialog's own docstring) —
+        # whatever section is showing behind it stays exactly as it was,
+        # so unlike the old view_stack-page version there's no sidebar row
+        # to deselect here. select_key lets a section's own "Open Setting"
+        # button (via SectionHost.open_settings_tab) land directly on one
+        # tab instead of whatever opens by default — see
+        # interface/section_registry.py's SectionHost.
+        dialog = SettingsDialog(self, settings_tab_registry=self.settings_tab_registry)
+        common_settings_page = dialog.view.get_tab_widget(builtin_settings_tabs.COMMON)
+        if common_settings_page is not None:
+            common_settings_page.logout_requested.connect(self._on_logout_requested)
+            # Logging out closes the whole app (see _on_logout_requested) —
+            # close the dialog itself too rather than leaving it floating
+            # over nothing.
+            common_settings_page.logout_requested.connect(dialog.accept)
+            common_settings_page.restart_requested.connect(self._on_restart_requested)
+        browser_links_page = dialog.view.get_tab_widget(builtin_settings_tabs.BROWSER_LINKS)
+        if browser_links_page is not None:
+            browser_links_page.browser_links_changed.connect(self._rebuild_dynamic_tabs)
+        if select_key is not None:
+            dialog.select_tab(select_key)
+        dialog.exec()
+
+    def _set_status_message(self, message: str) -> None:
+        self.sidebar.set_sync_message(message)
+
+    def _navigate_and_focus(self, key: str, path: Path) -> None:
+        # A page (e.g. Submit's "Inspect in Explorer") asking to jump to
+        # another section and focus a specific file there — switches the
+        # sidebar row + view stack to `key`, then calls that page's optional
+        # browse_to_path(path) protocol method if it implements one (see
+        # interface/section_registry.py's SectionHost).
+        self.sidebar.tab_list.select(key)
+        self._on_navigation_changed(key)
+        page = self.pages.get(key)
+        browse_to_path = getattr(page, "browse_to_path", None)
+        if callable(browse_to_path):
+            browse_to_path(path)
+
+    def _rebuild_dynamic_tabs(self) -> None:
+        """Rebuilds every dynamic (non-fixed) sidebar tab — one per
+        active-repo Browser Link. Called on every repo switch and whenever
+        browser_links_changed fires."""
+        dynamic_indexes = set(self._dynamic_view_index.values())
+        was_showing_dynamic = self.view_stack.currentIndex() in dynamic_indexes
+        # Resolve every widget by its (still-valid) index BEFORE removing
+        # any of them — QStackedWidget re-indexes remaining widgets after
+        # each removeWidget(), so removing by stale index one at a time
+        # would skip/miss widgets once earlier removals shift things down.
+        old_dynamic_pages = [self.view_stack.widget(index) for index in self._dynamic_view_index.values()]
+        for page in old_dynamic_pages:
+            self.view_stack.removeWidget(page)
+            page.deleteLater()
+        self._dynamic_view_index = {}
+        self.sidebar.tab_list.clear_dynamic_tabs()
+
+        if self._active_repo is not None:
+            for link_index, link in enumerate(self._active_repo.browser_links):
+                key = f"browser_link:{link_index}"
+                view_index = self.view_stack.addWidget(BrowserLinkPage(link.url, self._web_engine_profile))
+                self._dynamic_view_index[key] = view_index
+                icon_path = self.store.resolve_browser_link_icon_path(link)
+                self.sidebar.tab_list.add_dynamic_tab(key, link.name, icon_path)
+
+        if was_showing_dynamic:
+            # The tab the user was looking at just got torn down (its link/
+            # pin was removed, or the repo changed) — land on the first
+            # remaining static section rather than hardcoding one.
+            fallback_key = next(iter(self._section_view_index))
+            self.sidebar.tab_list.select(fallback_key)
+            self._on_navigation_changed(fallback_key)
+
+    def _apply_plugin_visibility(self) -> None:
+        """Hides the sidebar row of any plugins/ section the active repo
+        doesn't currently want shown. A section with no entry in
+        _section_key_to_plugin_id (e.g. the built-in "About" section) is
+        never gated, so at least one row is always visible. Two different
+        gating rules apply depending on where the section's plugin was
+        discovered from (core.extensibility.loader.plugin_source):
+        - plugins/core/ (self._core_plugin_ids) — always visible, no matter
+          what (2026-08-04: no more per-repo opt-out here at all — anything
+          repo-specific belongs under plugins/repo_internal/ instead, so
+          plugins/core/ is meant to be universal app-level functionality,
+          e.g. Project Editor, where switching the active repo has no other
+          entry point).
+        - plugins/repo_internal/ or cache/plugins/ (self._opt_in_plugin_ids,
+          plugin_source() "repo_internal"/"repo") — opt-in: hidden unless the
+          plugin id is in Repo.required_plugin_ids. A repo_internal plugin is
+          bundled with the app like core but stays off until a repo declares
+          it needed; a "repo" plugin is its own separate git clone under
+          cache/plugins/ and is never on by default either. Same "off until
+          required" shape as a Program requirement either way."""
+        required_ids = self._active_repo.required_plugin_ids if self._active_repo is not None else []
+        visible_keys = set()
+        for key in self._section_view_index:
+            plugin_id = self._section_key_to_plugin_id.get(key)
+            if plugin_id is None or plugin_id in self._core_plugin_ids:
+                visible_keys.add(key)
+            elif plugin_id in self._opt_in_plugin_ids:
+                if plugin_id in required_ids:
+                    visible_keys.add(key)
+        self.sidebar.tab_list.set_visible_keys(visible_keys)
+
+        current_key = next(
+            (key for key, index in self._section_view_index.items() if index == self.view_stack.currentIndex()),
+            None,
+        )
+        if current_key is not None and current_key not in visible_keys:
+            # Insertion-order (registry order) fallback, same
+            # determinism as _rebuild_dynamic_tabs' own fallback.
+            fallback_key = next(key for key in self._section_view_index if key in visible_keys)
+            self.sidebar.tab_list.select(fallback_key)
+            self._on_navigation_changed(fallback_key)
+
+    # -- active repo -----------------------------------------------------
+
+    def _restore_active_repo(self) -> None:
+        project_id = self.local_config_store.active_project_id
+        repo_id = self.local_config_store.active_repo_id
+        if not project_id or not repo_id:
+            return
+        try:
+            project = self.store.get_project(project_id)
+            repo = self.store.get_repo(project_id, repo_id)
+        except NotFoundError:
+            self.local_config_store.clear_active_repo()
+            return
+        self._active_project = project
+        self._active_repo = repo
+        self.sidebar.active_repo_widget.set_active_labels(repo.name, project.name)
+        self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(repo))
+        self._rebuild_dynamic_tabs()
+        self._apply_plugin_visibility()
+
+    def _current_page(self):
+        # Setting is a popup dialog now (SettingsDialog), not a view_stack
+        # page, so the current page is always a real section — no more
+        # "is this actually Settings" special case needed here.
+        return self.view_stack.currentWidget()
+
+    def _apply_to_current_page(self) -> None:
+        page = self._current_page()
+        if page is not None:
+            page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
+
+    def _apply_to_persistent_pages(self) -> None:
+        """Persistent section pages (e.g. Project Editor) aren't in
+        view_stack at all, so _current_page()/_apply_to_current_page()
+        never reaches them — push the active repo to every one of them
+        directly instead, alongside every _apply_to_current_page() call."""
+        for page in self._persistent_pages:
+            page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
+
+    def _set_active_repo(self, project_id: str, repo_id: str) -> None:
+        self.local_config_store.set_active_repo(project_id, repo_id)
+        self._active_project = self.store.get_project(project_id)
+        self._active_repo = self.store.get_repo(project_id, repo_id)
+        self.sidebar.active_repo_widget.set_active_labels(self._active_repo.name, self._active_project.name)
+        self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
+        self._rebuild_dynamic_tabs()
+        self._apply_plugin_visibility()
+        self._apply_to_current_page()
+        self._apply_to_persistent_pages()
+        self._fire_repo_selected()
+        self._start_auto_sync()
+
+    def _fire_repo_selected(self) -> None:
+        if not self.local_config_store.workspace_root:
+            return
+        repo_path = resolve_repo_path(
+            self.local_config_store.workspace_root, self._active_project.name, self._active_repo.name
+        )
+        self.hook_registry.fire(
+            GitHookEvent.REPO_SELECTED,
+            GitHookContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path),
+        )
+
+    def _fire_app_started(self) -> None:
+        workspace_root = self.local_config_store.workspace_root
+        repo_path = Path(workspace_root) if workspace_root else Path.cwd()
+        self.hook_registry.fire(
+            GitHookEvent.APP_STARTED,
+            GitHookContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path),
+        )
+
+    def _start_auto_sync(self) -> None:
+        """Clone/pull the active repo. Runs on every "Select Repo..." pick and
+        again on every app launch, so the working copy is always up to date
+        without the user having to remember to sync manually. Calls the
+        optional sync_active_repo(...) protocol method (see
+        interface/section_registry.py's SectionHost) on whichever registered
+        page(s) implement it — today, just Submit — rather than hardcoding
+        a specific page type."""
+        if self._active_repo is None or self._active_project is None:
+            return
+        workspace_root = self.local_config_store.workspace_root
+        if not workspace_root:
+            QMessageBox.information(
+                self, "Select Repo", "Set a workspace folder in Setting > Common first."
+            )
+            return
+        for page in self.pages.values():
+            sync_active_repo = getattr(page, "sync_active_repo", None)
+            if callable(sync_active_repo):
+                sync_active_repo(self._active_project, self._active_repo, workspace_root)
+
+    # -- GitHub logout ----------------------------------------------------
+
+    def _on_logout_requested(self) -> None:
+        # Login/token-caching moved entirely to the launcher exe (see
+        # developer/packaging/updater.py) — there's no in-app login gate to
+        # send the user back to, so "logout" here means: clear the cached
+        # token + username, then close this app and reopen the launcher
+        # exe, whose own login step will show the GitHub login screen again
+        # since the token is now gone.
+        self._token_store.clear_token()
+        self.local_config_store.set_github_username(None)
+        self.sidebar.set_account_username(None)
+        self._relaunch_to_login()
+
+    @staticmethod
+    def _relaunch_to_login() -> None:
+        exe_path = _REPO_ROOT / "UkoreHub.exe"
+        if exe_path.is_file():
+            # This process's own environment still carries PyInstaller
+            # onefile bootloader variables (_PYI_APPLICATION_HOME_DIR,
+            # _PYI_ARCHIVE_FILE, _PYI_PARENT_PROCESS_LEVEL) inherited all
+            # the way down from the original UkoreHub.exe launch — Popen
+            # inherits the full environment by default, and nothing along
+            # this process chain (updater.py's own _launch(), this one)
+            # clears them. A onefile bootloader treats a nonempty
+            # _PYI_APPLICATION_HOME_DIR as "reuse this already-extracted
+            # payload instead of extracting a fresh one" (its
+            # multiprocessing-in-a-frozen-app support) — but that directory
+            # belonged to the *original* exe process, long since exited and
+            # cleaned up, so the new bootloader fails with "Failed to load
+            # Python DLL ... LoadLibrary: The specified module could not be
+            # found" trying to load a DLL from a folder that no longer
+            # exists. Confirmed 100% reproducible via a captured env dump
+            # from a real logout — see developer/bug-history/ for the full
+            # writeup. Stripping every _PYI_-prefixed var forces a genuine
+            # fresh self-extraction.
+            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+            subprocess.Popen([str(exe_path)], cwd=str(_REPO_ROOT), env=clean_env)
+        else:
+            # Dev environment running via `python launcher.py` directly,
+            # with no built exe next to it — there's no login UI left in
+            # the plain-Python app to fall back to (see root README.md's
+            # "Running" section), so just tell the user what to do.
+            QMessageBox.information(
+                None,
+                "Logout",
+                "Logged out. Run UkoreHub.exe to log back in.",
+            )
+        QApplication.quit()
+
+    # -- restart --------------------------------------------------------------
+
+    def _on_restart_requested(self) -> None:
+        # Settings > Common's plain "Restart" button. Self-update's own
+        # "Update and Restart" (plugins/core/self_updater/) uses the same
+        # os.execv mechanism independently rather than calling this — it
+        # isn't reachable from here without a MainWindow reference.
+        self._restart_app()
+
+    @staticmethod
+    def _restart_app() -> None:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+
+    # -- shutdown -------------------------------------------------------------
+
+    def closeEvent(self, event) -> None:
+        # Qt aborts the process if a QThread object is garbage-collected while
+        # still running (e.g. an update check or sync in flight when the user
+        # closes the window) — terminate and wait for any live worker first.
+        # Built-in and plugin sections alike opt into this via
+        # SectionSpec.background_threads, so main_window.py never needs to
+        # know a section's internals.
+        workers: list = []
+        if self.sidebar is not None:
+            for spec in self.sidebar_footer_action_registry.ordered():
+                if spec.background_threads is not None:
+                    workers.extend(spec.background_threads(self.sidebar.footer_action_widgets[spec.key]))
+        if self.pages:
+            for spec in self.section_registry.ordered():
+                if spec.background_threads is not None:
+                    workers.extend(spec.background_threads(self.pages[spec.key]))
+        for thread in workers:
+            if thread is not None and thread.isRunning():
+                thread.terminate()
+                thread.wait(3000)
+        super().closeEvent(event)

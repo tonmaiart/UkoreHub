@@ -1,0 +1,8 @@
+{
+  "id": "notification",
+  "name": "Notification",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "First sidebar tab providing a shared notification card template and an in-memory socket (core.extensibility.notification_bus) for other plugins/add-ons to push notifications into."
+}

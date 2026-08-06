@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "programs": [
+    {
+      "id": "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0",
+      "name": "Autodesk Maya",
+      "versions": [
+        "2024",
+        "2026"
+      ],
+      "icon_filename": "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0.png",
+      "description": "3D Rigging and Animation Programs"
+    },
+    {
+      "id": "ab07c675-48ef-4f04-8c57-876dced7ddf1",
+      "name": "Unity",
+      "versions": [
+        "2022.3.62f3"
+      ],
+      "icon_filename": "ab07c675-48ef-4f04-8c57-876dced7ddf1.png",
+      "description": "3D Game"
+    },
+    {
+      "id": "f279e7c0-e89c-404a-8dfc-dec4477d83cc",
+      "name": "Unity Hub",
+      "versions": [],
+      "icon_filename": "f279e7c0-e89c-404a-8dfc-dec4477d83cc.png",
+      "description": ""
+    }
+  ]
+}
