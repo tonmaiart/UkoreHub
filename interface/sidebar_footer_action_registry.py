@@ -14,8 +14,8 @@ class SidebarFooterActionSpec:
     order: int
     # Constructs (or returns an already-constructed) widget to place in
     # Sidebar's footer strip — called once, at Sidebar construction time.
-    # See plugins/core/self_updater/plugin.py for the eagerly-constructed-
-    # then-lambda-returns-it pattern (same shape as SectionSpec.page_factory).
+    # Same eagerly-constructed-then-lambda-returns-it shape as
+    # SectionSpec.page_factory.
     widget_factory: Callable[[], QWidget]
     # Optional: given the constructed widget, return any background QThread
     # workers it owns, so MainWindow.closeEvent can terminate them safely —
@@ -26,9 +26,8 @@ class SidebarFooterActionSpec:
 class SidebarFooterActionRegistry(KeyedOrderedRegistry[SidebarFooterActionSpec]):
     """Open, ordered collection of widgets contributed into Sidebar's footer
     strip (sync status, account row, ...) — lets a plugin add a footer
-    control (e.g. an Update button) without Sidebar hardcoding it.
-    register()/ordered()/keys() come from KeyedOrderedRegistry
-    (interface/registry_base.py)."""
+    control without Sidebar hardcoding it. register()/ordered()/keys() come
+    from KeyedOrderedRegistry (interface/registry_base.py)."""
 
     def __init__(self) -> None:
         super().__init__(label="Sidebar footer action")

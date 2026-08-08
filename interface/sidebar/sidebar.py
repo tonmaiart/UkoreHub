@@ -24,9 +24,8 @@ class Sidebar(QWidget):
     height; Project Editor is NOT a row here, it's an always-visible docked
     panel instead, see plugins/core/project_editor/ and
     interface/section_registry.py's SectionSpec.persistent), and a footer
-    strip for sync status, SidebarFooterActionRegistry-provided widgets
-    (e.g. plugins/core/self_updater/'s Update button), a display-only
-    account_label (the GitHub username — actual login/logout happens in
+    strip for sync status, SidebarFooterActionRegistry-provided widgets,
+    a display-only account_label (the GitHub username — actual login/logout happens in
     the launcher exe, see developer/packaging/updater.py; MainWindow just
     pushes local_config_store.github_username in here, and Settings >
     Common's Logout button clears it and relaunches to the login screen —
@@ -79,8 +78,7 @@ class Sidebar(QWidget):
         footer_layout.setSpacing(6)
         footer_layout.addWidget(self.status_label)
         footer_layout.addWidget(self.sync_progress_bar)
-        # One widget per SidebarFooterActionRegistry entry (e.g.
-        # plugins/core/self_updater/'s Update button) — stored keyed by
+        # One widget per SidebarFooterActionRegistry entry — stored keyed by
         # spec.key so MainWindow.closeEvent can reach a plugin's own
         # background_threads without Sidebar knowing what they are.
         self.footer_action_widgets: dict[str, QWidget] = {}

@@ -29,7 +29,13 @@ beyond "core infrastructure":
   background commit poll so it never touches the working tree), commit,
   stage/unstage, revert, status, conflict resolution, commit log (optional
   `ref=` to log `origin/<branch>` instead of local HEAD), per-commit
-  changed-files (`get_commit_files`). Fires hooks from
+  changed-files (`get_commit_files`), ahead/behind counts vs. upstream
+  (`get_ahead_behind`, `None` if no upstream), a raw `origin` URL lookup
+  (`get_remote_url`), and a stricter clone check (`is_repo_root` —
+  confirms `local_path` is really a repo's own root, not just that a
+  `.git` entry exists there; see bug-history 2026-08-08 for why
+  `is_cloned()` alone isn't safe to gate a mutating git call on) — all
+  used by `plugins/core/ExternalPlugins/`. Fires hooks from
   `extensibility/hooks.py` around each operation. Every subprocess call
   passes `CREATE_NO_WINDOW` (Windows-only) so git never flashes a console
   behind the GUI.

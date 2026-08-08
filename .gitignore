@@ -31,3 +31,8 @@ data/plugins/local/
 # data/thumbnails/ and data/programs.json above.
 /developer/build/
 *.spec
+# Old UkoreHub.exe renamed aside by updater.py's _relocate_self_exe during a
+# self-update (Windows won't let git overwrite the exe while it's running,
+# but it will let it be renamed) — cleaned up automatically on the next
+# launch, never committed.
+/UkoreHub.exe.old-*

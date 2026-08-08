@@ -43,10 +43,8 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   shows the GitHub login screen again since the token is now gone; this
   app has no in-app login UI of its own to "go back to" otherwise), and a
   Restart button (`restart_requested` signal, connected to
-  `MainWindow._on_restart_requested`, which calls the same `_restart_app()`
-  helper (`os.execv(sys.executable, [sys.executable, *sys.argv])`)
-  `plugins/core/self_updater/`'s "Update and Restart" button uses too,
-  just without the `self_update.pull_update()` git pull first).
+  `MainWindow._on_restart_requested`, which calls the `_restart_app()`
+  helper: `os.execv(sys.executable, [sys.executable, *sys.argv])`).
   `CATEGORY_GENERAL`.
 - `github_oauth_settings_page.py` — `GithubOAuthSettingsPage`: just the
   GitHub OAuth Client ID field, split out of `common_settings_page.py`

@@ -87,8 +87,7 @@ a new top-level section that needs `section_registry.py`).
   change the active repo now), `SectionTabList` (a vertical list of section
   tabs + dynamic Browser Link tabs + a trailing Setting row — Project
   Editor is not one of these rows, see below), and a footer built from
-  `sidebar_footer_action_registry.py` (e.g. `plugins/core/self_updater/`'s
-  Update button). See `sidebar/README.md`.
+  `sidebar_footer_action_registry.py`. See `sidebar/README.md`.
 - `browser_links/` — the Browser Link feature end-to-end: its Settings tab
   and its runtime `QWebEngineView` tab, previously split across
   `settings/`/`about/` by UI-kind rather than domain (`about/` itself was

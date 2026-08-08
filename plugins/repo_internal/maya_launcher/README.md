@@ -94,7 +94,7 @@ after every plugin has finished registering (see `core/extensibility/loader.py`)
 | Tool plugin | Contributes |
 |---|---|
 | `plugins/core/AdvancedSkeleton` | `PYTHONPATH` + `ADVANCEDSKELETON_ROOT` (single-directory value, not a search-path list — see that plugin's README) |
-| `plugins/repo_internal/MayaNgskin` | `PYTHONPATH` + versioned `MAYA_PLUG_IN_PATH` |
+| `cache/plugins/MayaNgSkin` | `PYTHONPATH` + versioned `MAYA_PLUG_IN_PATH` |
 | `plugins/repo_internal/MayaToolkit` | `PYTHONPATH` + flat `MAYA_PLUG_IN_PATH` |
 | `plugins/core/mGear` | `MAYA_MODULE_PATH` + `MGEAR_SHIFTER_COMPONENT_PATH` |
 | `plugins/repo_internal/UkoreBrowser` | `PYTHONPATH` (its own `maya-scripts/` **and** `api.app_root`, so `import core.store`/`core.paths` resolves inside Maya's Python — that's how its vendored `core/repo_context.py` talks to UkoreHub's own Project/Repo model) |
@@ -121,7 +121,7 @@ manages for every plugin's sidebar visibility (see that page and
 `_prepare_env_and_plugins` intersects `repo.required_plugin_ids` with the
 bridge's `"contributions"` keys — this works with no extra mapping because
 every contributing tool's manifest `id` is identical to its own bridge
-`tool_id` (e.g. `plugins/repo_internal/MayaNgskin/manifest.json`'s
+`tool_id` (e.g. `cache/plugins/MayaNgSkin/manifest.json`'s
 `"id": "maya_ngskin"` matches its `plugin.py`'s `TOOL_ID = "maya_ngskin"`).
 Enable Plugin is **opt-in** (unchecked by default) — a repo that has never
 had a tool checked there gets **zero** tool contributions on Maya launch,

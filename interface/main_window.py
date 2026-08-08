@@ -559,10 +559,7 @@ class MainWindow(QMainWindow):
     # -- restart --------------------------------------------------------------
 
     def _on_restart_requested(self) -> None:
-        # Settings > Common's plain "Restart" button. Self-update's own
-        # "Update and Restart" (plugins/core/self_updater/) uses the same
-        # os.execv mechanism independently rather than calling this — it
-        # isn't reachable from here without a MainWindow reference.
+        # Settings > Common's plain "Restart" button.
         self._restart_app()
 
     @staticmethod

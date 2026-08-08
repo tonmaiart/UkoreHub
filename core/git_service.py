@@ -87,6 +87,42 @@ class GitService:
     def is_cloned(self, local_path: Path) -> bool:
         return (Path(local_path) / ".git").exists()
 
+    def is_repo_root(self, local_path: Path) -> bool:
+        """Stricter than is_cloned(): actually asks git to resolve
+        local_path's repo root and confirms it's local_path itself, not
+        just that a `.git` entry exists there. A `.git` directory that
+        exists but is empty/corrupt (e.g. an interrupted clone) doesn't
+        stop git's normal repo-discovery walk up the parent directories —
+        `git -C <local_path> status` then silently operates on whatever
+        real repository is further up the tree instead of failing, which
+        is exactly wrong for a caller about to stage/commit/push against
+        what it believes is local_path's own repo (see bug-history
+        2026-08-08, cache/plugins/<name> entries with a broken `.git`
+        resolving to UkoreHub's own repo root). Prefer this over
+        is_cloned() before any mutating git operation on a path whose
+        `.git` validity isn't otherwise guaranteed."""
+        local_path = Path(local_path)
+        if not self.is_cloned(local_path):
+            return False
+        try:
+            toplevel = self._run_capture(["rev-parse", "--show-toplevel"], cwd=local_path).strip()
+        except GitOperationError:
+            return False
+        try:
+            return Path(toplevel).resolve() == local_path.resolve()
+        except OSError:
+            return False
+
+    def get_remote_url(self, repo_path: Path) -> str:
+        """Raw `origin` URL of an already-cloned repo, or "" if it can't be
+        read (e.g. not a git repo, no origin remote) — for a caller that
+        wants the URL itself rather than get_github_owner_repo's parsed
+        owner/repo pair."""
+        try:
+            return self._run_capture(["remote", "get-url", "origin"], cwd=Path(repo_path)).strip()
+        except GitOperationError:
+            return ""
+
     def get_current_branch(self, repo_path: Path) -> str:
         return self._run_capture(["rev-parse", "--abbrev-ref", "HEAD"], cwd=Path(repo_path)).strip()
 
@@ -467,6 +503,18 @@ class GitService:
             return None
         hash_, author, email, date, message = output.split(_FIELD_SEP, 4)
         return CommitInfo(hash=hash_, author=author, email=email, date=date, message=message)
+
+    def get_ahead_behind(self, repo_path: Path) -> tuple[int, int] | None:
+        """(ahead, behind) commit counts of HEAD vs. its upstream
+        (`origin/<branch>`) — `None` if there's no upstream yet (see
+        has_upstream). Caller should fetch() first so this reflects the
+        remote's latest state rather than whatever was last fetched."""
+        repo_path = Path(repo_path)
+        if not self.has_upstream(repo_path):
+            return None
+        output = self._run_capture(["rev-list", "--left-right", "--count", "HEAD...@{u}"], cwd=repo_path)
+        left, right = output.split()
+        return int(left), int(right)
 
     def get_working_tree_status(self, repo_path: Path) -> tuple[list[str], list[str], list[str]]:
         repo_path = Path(repo_path)

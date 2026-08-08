@@ -27,7 +27,7 @@ _SHOT_CODE_PATTERN = re.compile(r"^([A-Za-z]+)(\d+)")
 # convention" section. Every one of the first three tokens is sanitized to
 # letters/digits only before a filename is ever built (_sanitize_token),
 # so splitting a stem on "_" and expecting exactly 5 parts is safe; this
-# is also what lets plugins/repo_internal/UkoreShot/video_naming.py (the
+# is also what lets cache/plugins/UkoreShot/video_naming.py (the
 # desktop-side reader of these same filenames) parse them back reliably.
 _FILENAME_PATTERN = re.compile(r"^([^_]+)_([^_]+)_([^_]+)_(\d+)_v(\d+)$")
 
@@ -47,7 +47,7 @@ def _sanitize_token(value: str) -> str:
 
 
 def _resolve_video_root(project_id: str, repo_id: str, repo_path):
-    """Mirrors plugins/repo_internal/UkoreShot/video_path_store.py's
+    """Mirrors cache/plugins/UkoreShot/video_path_store.py's
     resolve_video_root exactly (same resolution order: explicit choice,
     else the repo's only declared Custom Path, else nothing) — duplicated
     for the same "Maya's Python can't import the desktop-side plugins/
@@ -279,6 +279,7 @@ def publish_playblast() -> None:
             }
             cmds.playblast(**playblast_kwargs)
             saved_path = _finalize_single_frame_image(export_file_path, image_format)
+            sequence_saved_dir = None
         else:
             playblast_kwargs = {
                 "filename": export_file_path,
@@ -311,8 +312,36 @@ def publish_playblast() -> None:
             cmds.playblast(**playblast_kwargs)
             saved_path = "{}.{}".format(export_file_path, options["format"])
 
+            # Also capture the same range as a numbered image sequence, in a
+            # subfolder named after the video's own stem (a same-named file
+            # and directory can coexist — _matching_versions only inspects
+            # is_file() entries at video_root's top level, so this subfolder
+            # is invisible to version/index scanning, same reasoning a
+            # pre-2026-07-20 shot/version subfolder already relies on). No
+            # ffmpeg or extra dependency — cmds.playblast(format="image", ...)
+            # over a real range (unlike the pinned-to-one-frame is_image
+            # branch above) already writes one file per frame natively. A
+            # failure here doesn't invalidate the video already saved above.
+            sequence_saved_dir = None
+            try:
+                sequence_dir = os.path.join(str(video_root), stem)
+                os.makedirs(sequence_dir, exist_ok=True)
+                sequence_kwargs = dict(playblast_kwargs)
+                sequence_kwargs["filename"] = os.path.join(sequence_dir, stem)
+                sequence_kwargs["format"] = "image"
+                sequence_kwargs["compression"] = options.get("image_format") or "png"
+                sequence_kwargs.pop("sound", None)
+                cmds.playblast(**sequence_kwargs)
+                sequence_saved_dir = sequence_dir
+            except Exception as seq_exc:
+                print("[UkorePlayblast] Image sequence capture failed (video still saved): {}".format(seq_exc))
+
         print("[UkorePlayblast] Playblast saved: {}".format(saved_path))
-        cmds.inViewMessage(amg="<hl>Playblast saved:</hl> {}".format(saved_path), pos="midCenter", fade=True)
+        message = "<hl>Playblast saved:</hl> {}".format(saved_path)
+        if sequence_saved_dir:
+            print("[UkorePlayblast] Image sequence saved: {}".format(sequence_saved_dir))
+            message += "<br><hl>Sequence saved:</hl> {}".format(sequence_saved_dir)
+        cmds.inViewMessage(amg=message, pos="midCenter", fade=True)
     except Exception as e:
         print("[UkorePlayblast] Playblast failed: {}".format(e))
         cmds.confirmDialog(title="UkorePlayblast", message=str(e))

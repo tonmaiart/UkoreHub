@@ -31,10 +31,17 @@ it's on by default per repo vs. opt-in:
   only for a repo that requires it. Not bundled with the app in any sense —
   see `plugin_source()` returning `"repo"` for one of these
   (`core/extensibility/loader.py`). `AdvancedSkeleton`, `DreamwallPicker`,
-  `mGear`, and `StudioLibrary` are the first plugins converted to this
-  shape; a `plugin.py` here locates its own folder via
+  `mGear`, `StudioLibrary`, `UkoreShot`, and `MayaNgSkin` are the first
+  plugins converted to this shape; a `plugin.py` here locates its own folder via
   `Path(__file__).resolve().parent` rather than `api.app_root`, since it
-  isn't at a fixed path relative to the app install.
+  isn't at a fixed path relative to the app install. Note there's no
+  auto-fetch/clone mechanism implemented anywhere yet — `launcher.py` only
+  `mkdir`s `cache/plugins/` and discovers whatever's already physically
+  cloned there; every plugin in this root today was cloned into place by
+  hand. `UkoreShot` (a genuine multi-file plugin, unlike the single-file
+  `mGear`/`StudioLibrary`) is the reference example for how a multi-file
+  repo plugin wires up its own sibling imports without a `plugins.*`
+  dotted path — see its own `plugin.py` and top-level `README.md`.
 
 There is no more `plugins/local/` — the old gitignored/per-machine
 prototyping root was removed 2026-08-04 (unused). Prototype a new plugin

@@ -26,6 +26,13 @@ plugins" sections). As of 2026-08-04, home to nine Maya-pipeline plugins
 moved here from `plugins/core/` (none of them need to be on for every
 repo — a non-Maya project shouldn't see a Maya Launcher tab):
 `MayaNgskin`, `MayaPublisher`, `MayaToolkit`, `PublishApi`, `UkoreBrowser`,
-`UkorePlayblast`, `UkoreReferenceEditor`, `UkoreShot`, and `maya_launcher`
-itself. `MayaPublisher` merged the former `RigPublisher`/`ModelPublisher`/
-`AnimationPublisher` (2026-08-05) — see its own README.
+`UkorePlayblast`, `UkoreReferenceEditor`, and `maya_launcher` itself.
+`MayaPublisher` merged the former `RigPublisher`/`ModelPublisher`/
+`AnimationPublisher` (2026-08-05) — see its own README. `UkoreShot` and
+`MayaNgskin` were two of these nine too, until each moved again — out of
+this repo entirely, into their own standalone git repositories cloned at
+`cache/plugins/UkoreShot/` (2026-08-08) and `cache/plugins/MayaNgSkin/`
+(2026-08-08) respectively (see `plugins/README.md`'s `cache/plugins/`
+section) — `UkorePlayblast` (UkoreShot's companion) stayed here, as did
+`maya_launcher` itself, still read by every remaining/moved-out tool via
+the shared `maya_launcher_env_bridge` convention.

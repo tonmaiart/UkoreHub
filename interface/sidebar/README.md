@@ -10,8 +10,7 @@ Qt's `QMenuBar`/dropdown-menu widget.
   fill the remaining height), then a footer strip (`sidebarFooter`) holding
   sync status, one widget per `interface/sidebar_footer_action_registry.py`
   entry (built via `spec.widget_factory()`, stored in
-  `self.footer_action_widgets` keyed by `spec.key` — e.g.
-  `plugins/core/self_updater/`'s Update button; nothing here is
+  `self.footer_action_widgets` keyed by `spec.key`; nothing here is
   hardcoded, Sidebar just renders whatever's registered), then an account
   row — `account_label` (display-only GitHub username, pushed in by
   `MainWindow._start_app` from `local_config_store.github_username`; no

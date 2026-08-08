@@ -59,8 +59,10 @@ class PlayblastOptionsDialog(QtWidgets.QDialog):
         # frame the playhead is on right now, not the timeline range, and
         # adds a new index onto the *existing* version for this shot/
         # variation instead of starting a fresh one — see function.py's
-        # _resolve_filename_stem). image_format_combo only matters/is only
-        # enabled in the latter.
+        # _resolve_filename_stem). image_format_combo used to only matter
+        # in the latter — Video mode now also writes a full-range image
+        # sequence alongside the video (function.py's still-image capture
+        # pass), using this same format, so it stays enabled in both modes.
         self.output_video_radio = QtWidgets.QRadioButton("Video")
         self.output_image_radio = QtWidgets.QRadioButton("Image (Current Frame)")
         output_mode_group = QtWidgets.QButtonGroup(self)
@@ -249,11 +251,12 @@ class PlayblastOptionsDialog(QtWidgets.QDialog):
     def _on_output_mode_changed(self, image_checked: bool) -> None:
         # Frame range and sound don't apply to a single-current-frame
         # image capture; format/compression are the video container's own
-        # settings — image mode uses image_format_combo instead.
+        # settings, only relevant in Video mode. image_format_combo stays
+        # enabled in both modes now — Video mode uses it for its own
+        # image-sequence capture, not just Image (Current Frame)'s still.
         self._format_box.setEnabled(not image_checked)
         self._frame_range_box.setEnabled(not image_checked)
         self.sound_check.setEnabled(not image_checked)
-        self.image_format_combo.setEnabled(image_checked)
 
     def _reload_variation_combo(self, select=None) -> None:
         current = select if select is not None else self.variation_combo.currentText()

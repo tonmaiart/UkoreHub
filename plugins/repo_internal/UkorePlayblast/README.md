@@ -11,7 +11,7 @@ picking Publish Mode). This plugin's own
 hardcoded "Quick Playblast" (Animation menu), which had no options dialog
 at all — resolution, format/codec, quality, frame range, camera, sound,
 and show-ornaments were all either hardcoded or implicit. Writes into
-whichever folder `plugins/repo_internal/UkoreShot/` has configured for the active
+whichever folder `cache/plugins/UkoreShot/` has configured for the active
 repo, so a playblast immediately shows up in that plugin's video
 library/review tab. Renamed from `UkoreShotPlayblast` on 2026-07-20 (id
 `ukore_shot_playblast` -> `ukore_playblast`) — see `developer/bug-history/` entries
@@ -48,7 +48,7 @@ KBA_KBA030_Blocking_001_v001.mov
   sequence/shot/variation, are sanitized to letters-and-digits-only
   (`_sanitize_token`) before ever landing in a filename — the stem is
   split on `"_"` into exactly 5 parts by both this plugin's own
-  `_FILENAME_PATTERN` and `plugins/repo_internal/UkoreShot/video_naming.py` (the
+  `_FILENAME_PATTERN` and `cache/plugins/UkoreShot/video_naming.py` (the
   desktop-side reader of these same files), so nothing in the first three
   tokens may itself contain an underscore.
 
@@ -64,7 +64,9 @@ files matching that exact triple via `_FILENAME_PATTERN`, building
 
 - **Video** playblast: always a **new** version (`_next_version` = highest
   existing + 1, or `1`), index always `001` — one clip is the whole
-  version.
+  version. As of 2026-08-08, a Video playblast also writes a full-range
+  image sequence for the same take — see "Image sequence alongside Video"
+  below.
 - **Image (Current Frame)** playblast (see "Current-frame image mode"
   below): reuses whichever version **already exists** for that triple
   (`_latest_version`; creates `v001` if this is the first playblast for it
@@ -102,6 +104,33 @@ the exact `<stem>.<image_format>` this convention expects, rather than
 assuming a specific padding width (not guaranteed stable across Maya
 versions).
 
+### Image sequence alongside Video
+
+Added 2026-08-08, part of a broader move toward frame-accurate review
+tooling (UkoreShot/BananaSketch) that a video container doesn't give
+cheaply. `publish_playblast()`'s Video output branch now runs a *second*
+`cmds.playblast(format="image", ...)` over the same range right after the
+video capture, writing into `<video_root>/<stem>/<stem>.####.<image_format>`
+— a subfolder named exactly after the video's own stem, using whatever
+format `image_format_combo` is set to (that field is no longer
+Image-Current-Frame-only). No ffmpeg or other new dependency — Maya's own
+`format="image"` already writes one numbered file per frame natively when
+the range isn't pinned to a single current frame (unlike the
+current-frame-image branch above). `_matching_versions`' scan only
+inspects `is_file()` entries at `video_root`'s top level, so this
+same-stem subfolder is invisible to it — no naming collision, no change
+needed there. A failure in this second capture is caught separately and
+only logged (`[UkorePlayblast] Image sequence capture failed...`) — it
+never invalidates the video already saved by the first call. Known
+tradeoff: this doubles viewport capture time for Video mode (two full
+passes over the range); not addressed yet.
+
+`cache/plugins/UkoreShot/` (the desktop-side video library/player) does
+**not** read these sequence subfolders yet — its library scan is
+recursive but filters to `.mov`/`.mp4`/`.avi`, so it harmlessly ignores
+the new image files. Teaching the desktop side to actually use them is a
+separate, not-yet-scheduled piece.
+
 ### Pre-2026-07-20 shot/version subfolders
 
 Playblasts already written under the old `<sequence>/<shot_code>/vNNN/`
@@ -109,7 +138,7 @@ scheme are **left exactly where they are** (confirmed with the user
 2026-07-20, "ปล่อยไว้เหมือนเดิม") — nothing here migrates or renames them.
 They're simply invisible to `_matching_versions`' flat top-level scan (so
 they can never collide with a new flat-named file), and
-`plugins/repo_internal/UkoreShot/video_naming.py`'s parser treats anything that
+`cache/plugins/UkoreShot/video_naming.py`'s parser treats anything that
 doesn't match the new flat convention as unparseable, bucketing it under
 "Unknown" in that plugin's filter sidebar rather than erroring or hiding
 it.
@@ -199,14 +228,16 @@ it.
   image mode" above). Resolves the active repo via
   `PublishApi.repo_paths.get_active_repo()`, the video root via
   `_resolve_video_root` (mirrors
-  `plugins/repo_internal/UkoreShot/video_path_store.py`'s `resolve_video_root`
+  `cache/plugins/UkoreShot/video_path_store.py`'s `resolve_video_root`
   exactly — reads `data/plugins/core/ukore_shot.json` and
   `PublishApi.repo_paths.get_custom_paths`/`get_custom_path` directly off
   disk, no shared "bridge" file needed for this), this repo's options via
   `options_store.get_options`, and the destination filename via
   `_resolve_filename_stem` (see "Flat naming convention" above — no more
   per-shot subfolder, `os.makedirs` now just ensures the flat `video_root`
-  itself exists). `resolve_destination_path()` exposes just the
+  itself exists). Video mode's branch also runs a second `cmds.playblast()`
+  pass into a `<stem>/` image-sequence subfolder — see "Image sequence
+  alongside Video" above. `resolve_destination_path()` exposes just the
   active-repo/scene/options/filename resolution (no `os.makedirs`, no
   playblast) for `options_dialog.py`'s destination label. Prints
   `[UkorePlayblast]`-prefixed progress lines to Maya's Script

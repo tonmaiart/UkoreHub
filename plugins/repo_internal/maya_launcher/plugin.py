@@ -18,7 +18,7 @@ PLUGIN_ID = "maya_launcher"
 # PluginConfigStore, no coupling API needed.
 SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
 # Convention-only string match with every Maya env-contributing plugin
-# (plugins/core/AdvancedSkeleton, .../MayaNgskin, .../MayaToolkit,
+# (plugins/core/AdvancedSkeleton, cache/plugins/MayaNgSkin, .../MayaToolkit,
 # .../mGear, .../UkoreBrowser, .../DreamwallPicker, .../StudioLibrary,
 # .../PublishApi, .../MayaPublisher) — each writes its own contributions[tool_id] entry
 # (plus labels[tool_id]) into this shared, studio-tracked PluginConfigStore
@@ -211,9 +211,10 @@ def _prepare_env_and_plugins(api, repo, maya_version: str) -> tuple[dict, list[s
 
     Which tools' contributions actually apply is gated by
     `repo.required_plugin_ids` — Repository Setting > Enable Plugin — since
-    every contributing tool (MayaNgskin, MayaToolkit, UkoreBrowser, ...) is
-    its own plugins/repo_internal/<Name>/ plugin with a manifest id that
-    matches its bridge tool_id exactly (see this plugin's README). This
+    every contributing tool (MayaNgSkin, MayaToolkit, UkoreBrowser, ...) is
+    its own plugin (plugins/repo_internal/<Name>/ or cache/plugins/<Name>/)
+    with a manifest id that matches its bridge tool_id exactly (see this
+    plugin's README). This
     used to be a separate opt-out toggle owned by this plugin
     (RepoToolsStore, removed 2026-08-05) — folded into Enable Plugin so
     there's a single place that decides whether a repo uses a given tool,

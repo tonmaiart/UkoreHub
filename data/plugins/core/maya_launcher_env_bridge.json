@@ -22,33 +22,33 @@
     "maya_ngskin": {
       "PYTHONPATH": {
         "*": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-scripts"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-scripts"
         ]
       },
       "MAYA_PLUG_IN_PATH": {
         "2018": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2018"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2018"
         ],
         "2019": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2019"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2019"
         ],
         "2020": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2020"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2020"
         ],
         "2022": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2022"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2022"
         ],
         "2023": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2023"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2023"
         ],
         "2024": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2024"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2024"
         ],
         "2025": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2025"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2025"
         ],
         "2026": [
-          "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaNgskin\\maya-plug-ins\\2026"
+          "C:\\Tonmai\\UkoreHub\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2026"
         ]
       }
     },
