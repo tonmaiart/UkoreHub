@@ -1,6 +1,9 @@
 {
   "repo_options": {
     "0e05b23f-3bab-4183-b78c-2d47f46d0c62:d930b619-2774-4ab4-b381-899e0464e121": {
+      "variation": "layout",
+      "output_mode": "video",
+      "image_format": "png",
       "resolution_mode": "custom",
       "width": 1920,
       "height": 1080,

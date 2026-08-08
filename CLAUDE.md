@@ -75,15 +75,15 @@ changes that would normally warrant self-verification (UI rewiring,
 renamed modules, registry changes) — implement the change, report what
 changed, and stop there.
 
-## Headless/smoke testing — never point at real `data/`
+## Headless/smoke testing — never point at real `data/`/`cache/`
 
 If you need to construct real app objects (`MetadataStore`, `LocalConfigStore`,
 `MainWindow`, etc.) outside of `pytest` — e.g. a throwaway headless
 smoke-test script to verify wiring after a registry/constructor change —
-**never point them at the repo's real `data/` directory or the real
-`REPO_ROOT`**. Copy `data/` into a scratch/tmp directory first and construct
-everything against that copy instead. `data/local_config.json` can have a
-real `active_repo_id` saved, which makes `MainWindow.__init__` kick off a
+**never point them at the repo's real `data/`/`cache/` directories or the
+real `REPO_ROOT`**. Copy them into a scratch/tmp directory first and
+construct everything against that copy instead. `cache/local_config.json`
+can have a real `active_repo_id` saved, which makes `MainWindow.__init__` kick off a
 real background git sync (`MainWindow._start_auto_sync`, delegating to
 `plugins/core/submit/repo_git_status_page.py`'s
 `RepoGitStatusPage.sync_active_repo`) on a background `QThread` that starts
@@ -98,27 +98,30 @@ any change to a shared JSON store is safe to discard or revert.
 
 - `core/` — non-UI logic: metadata store, git operations, GitHub auth, theming.
 - `interface/` — PySide6 GUI: sidebar, pages, dialogs, background workers.
-- `data/` — tracked shared config (`projects.json`, `programs.json`,
-  thumbnails/icons) plus gitignored per-machine config. See
-  [data/README.md](data/README.md) — don't open the JSON stores unless the
-  task needs a concrete current value, and never open the image
-  directories (`thumbnails/`, `program_icons/`) at all.
+- `data/` — tracked shared config only (`projects.json`, `programs.json`,
+  thumbnails/icons). See [data/README.md](data/README.md) — don't open the
+  JSON stores unless the task needs a concrete current value, and never
+  open the image directories (`thumbnails/`, `program_icons/`) at all.
 - `plugins/` — UkoreHub's own sub-systems: `plugins/core/` (bundled,
   on-by-default, opt-out per repo) and `plugins/repo_internal/` (bundled,
   off-by-default, opt-in per repo). See `core/extensibility/README.md` for
   the discovery mechanism and `plugins/README.md` plus the `ukorehub-plugin`
   skill for the "stay inside one folder" editing discipline it uses.
-- `cache/plugins/` — **repo plugins**: gitignored, per-machine. Each entry
-  is its own separate git clone (own remote/history, not part of this repo
-  at all), fetched/updated on demand only for a repo that requires it. Never
-  read or list files under here unless the task explicitly names a repo
-  plugin by folder name — same reasoning as `projects/` below, this is
-  fetched/generated content, not something to explore speculatively (though
-  unlike `projects/`, its plugin.py/manifest.json are real code worth
-  reading when a task is actually about that specific plugin — see
-  `plugins/README.md`).
+- `cache/` — every per-machine, gitignored file UkoreHub owns:
+  `local_config.json`, `github_token.json` (a credential — never open,
+  quote, or otherwise surface its contents), `webengine_profile/`,
+  `plugin_local_config/`, and `plugins/` — **repo plugins**: each entry is
+  its own separate git clone (own remote/history, not part of this repo at
+  all), fetched/updated on demand only for a repo that requires it. Never
+  read or list files under `cache/` unless the task explicitly needs to
+  (e.g. names a repo plugin by folder name) — same reasoning as `projects/`
+  below, this is fetched/generated/runtime content, not something to
+  explore speculatively (though unlike `projects/`, a `cache/plugins/`
+  entry's plugin.py/manifest.json are real code worth reading when a task
+  is actually about that specific plugin — see `plugins/README.md`). See
+  [cache/README.md](cache/README.md) for the full breakdown.
 - `projects/` — **the actual workspace root**, pointed to by
-  `data/local_config.json`'s `workspace_root`: real cloned production repos
+  `cache/local_config.json`'s `workspace_root`: real cloned production repos
   (Maya/Blender scenes, huge binaries, studio artwork), gitignored. **Never
   read or list files under here unless the user explicitly asks** — there
   is no code in it, it can be enormous, and its contents are production

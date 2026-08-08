@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         program_store: ProgramStore,
         git_service: GitService,
         token_store: TokenStore,
+        cache_dir: Path,
         hook_registry: HookRegistry,
         section_registry: SectionRegistry,
         settings_tab_registry: SettingsTabRegistry,
@@ -122,6 +123,7 @@ class MainWindow(QMainWindow):
         # happens entirely in the launcher exe now, see
         # developer/packaging/updater.py and _on_logout_requested below.
         self._token_store = token_store
+        self._cache_dir = Path(cache_dir)
         self.hook_registry = hook_registry
         self.section_registry = section_registry
         self.settings_tab_registry = settings_tab_registry
@@ -158,9 +160,11 @@ class MainWindow(QMainWindow):
         self._persistent_pages: list[QWidget] = []
         self._dynamic_view_index: dict[str, int] = {}
         # Shared across every Browser Link tab so a login persists across
-        # app restarts — see interface/web_engine_profile.py.
+        # app restarts — see interface/web_engine_profile.py. Lives under
+        # cache/ (per-machine, gitignored — see launcher.py), not data/,
+        # since it holds cookies/session state, not shared config.
         self._web_engine_profile = make_persistent_browser_link_profile(
-            self.store.json_path.parent / "webengine_profile", self
+            self._cache_dir / "webengine_profile", self
         )
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")

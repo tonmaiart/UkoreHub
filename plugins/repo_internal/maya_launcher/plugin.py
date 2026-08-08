@@ -14,8 +14,8 @@ from plugins.repo_internal.maya_launcher.settings_page import MayaLauncherSettin
 
 PLUGIN_ID = "maya_launcher"
 # Convention-only string match with plugins/core/software_linker/plugin.py
-# — both resolve to the same data/plugins/local/software_linker.json via
-# PluginConfigStore, no coupling API needed.
+# — both resolve to the same cache/plugin_local_config/software_linker.json
+# via PluginConfigStore, no coupling API needed.
 SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
 # Convention-only string match with every Maya env-contributing plugin
 # (plugins/core/AdvancedSkeleton, cache/plugins/MayaNgSkin, .../MayaToolkit,

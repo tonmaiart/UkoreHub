@@ -1,0 +1,5 @@
+2026/08/08-19:43:43.380 a490 Reusing MANIFEST C:\Tonmai\UkoreHub\data\webengine_profile\IndexedDB\https_flame-fox-875.notion.site_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/08-19:43:43.381 a490 Recovering log #315
+2026/08/08-19:43:43.382 a490 Reusing old log C:\Tonmai\UkoreHub\data\webengine_profile\IndexedDB\https_flame-fox-875.notion.site_0.indexeddb.leveldb/000315.log 
+2026/08/08-19:43:43.382 a490 Delete type=2 #313
+2026/08/08-19:44:01.984 4734 Manual compaction at level-0 from '\x00j\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00k\x00\x00\x00' @ 0 : 0; will stop at (end)

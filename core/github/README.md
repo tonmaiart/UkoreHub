@@ -9,8 +9,8 @@ rule as the rest of `core/`).
   history (used as the preferred data source before falling back to local
   `git log` — see `core/git_service.py`).
 - `token_store.py` — stores the GitHub token via the OS keyring, falling
-  back to a gitignored local file (`data/github_token.json`) if the keyring
-  isn't available.
+  back to a gitignored local file (`cache/github_token.json`, see
+  `cache/README.md`) if the keyring isn't available.
 - `repo_access.py` — `check_repo_access(owner, repo, token)`: a lightweight
   `GET /repos/{owner}/{repo}` used to predict whether a clone would succeed
   *before* attempting one, so a private repo the current GitHub account

@@ -27,8 +27,8 @@ from interface.section_registry import SectionHost, SectionSpec
 
 PLUGIN_ID = "program_launcher"
 # Convention-only string match with plugins/core/software_linker/plugin.py
-# — both resolve to the same data/plugins/local/software_linker.json via
-# PluginConfigStore, no coupling API needed. Same pattern
+# — both resolve to the same cache/plugin_local_config/software_linker.json
+# via PluginConfigStore, no coupling API needed. Same pattern
 # plugins/repo_internal/maya_launcher uses to find a linked executable.
 SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
 

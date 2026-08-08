@@ -87,11 +87,13 @@ Settings are split into two files with different sharing behavior:
   normal way, e.g. by clicking **Update and Restart** (which runs `git pull`)
   or any other `git pull` of this repo. UkoreHub itself does not auto-commit
   or push on your behalf.
-- **Local config** — `data/local_config.json` (workspace folder, color theme,
+- **Local config** — `cache/local_config.json` (workspace folder, color theme,
   which repo you currently have selected, cached GitHub username) and
-  `data/github_token.json` (GitHub token, only if the OS keyring isn't
-  available). These are gitignored and stay per-machine — everyone picks
-  their own workspace folder and theme.
+  `cache/github_token.json` (GitHub token, only if the OS keyring isn't
+  available). These live under `cache/`, not `data/`, and are gitignored and
+  stay per-machine — everyone picks their own workspace folder and theme.
+  Keeping them out of `data/` means a stray folder copy of the app (as
+  opposed to a fresh `git clone`) never carries your login along with it.
 
 ## GitHub Login Setup (optional, needed for private repos)
 
@@ -129,8 +131,10 @@ setting instead of attempting to log in.
 - `core/` — metadata store, git operations, theming, GitHub auth; no UI code.
 - `interface/` — PySide6 GUI (sidebar, content pages, settings dialog, repo browser).
 - `data/` — `projects.json`, `system_config.json`, `thumbnails/`, `programs.json`,
-  `program_icons/` (tracked, shared); `local_config.json` and `github_token.json`
-  (gitignored, per-machine).
+  `program_icons/` (tracked, shared).
+- `cache/` — `local_config.json`, `github_token.json`, `webengine_profile/`,
+  `plugin_local_config/` (gitignored, per-machine — see `cache/README.md`),
+  plus `plugins/`, per-repo plugin git clones.
 - `launcher.py` — entry point.
 - `developer/` — dev-only tooling (packaging, bug-history, glossary); lives
   only in this repo (UkoreHubDev), stripped when publishing to the separate

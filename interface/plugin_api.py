@@ -43,6 +43,7 @@ class PluginAPI:
         program_launch_registry: ProgramLaunchRegistry,
         sidebar_footer_action_registry: SidebarFooterActionRegistry,
         plugins_data_dir: Path,
+        plugins_local_dir: Path,
         app_root: Path,
     ):
         self._store = store
@@ -56,6 +57,7 @@ class PluginAPI:
         self._program_launch_registry = program_launch_registry
         self._sidebar_footer_action_registry = sidebar_footer_action_registry
         self._plugins_data_dir = Path(plugins_data_dir)
+        self._plugins_local_dir = Path(plugins_local_dir)
         self._app_root = Path(app_root)
 
     @property
@@ -136,5 +138,11 @@ class PluginAPI:
         self._hooks.subscribe(event, handler)
 
     def plugin_config_store(self, plugin_id: str, *, shared: bool = False) -> PluginConfigStore:
-        subdir = "core" if shared else "local"
-        return PluginConfigStore(self._plugins_data_dir / subdir / f"{plugin_id}.json")
+        # shared=True -> data/plugins/core/ (tracked, same for everyone).
+        # shared=False -> cache/plugin_local_config/ (gitignored, per-machine
+        # — lives under cache/ rather than data/ so it's excluded the same
+        # way UkoreHub.exe/developer/commit-main.ps1 already excludes cache/
+        # when publishing a release).
+        if shared:
+            return PluginConfigStore(self._plugins_data_dir / "core" / f"{plugin_id}.json")
+        return PluginConfigStore(self._plugins_local_dir / f"{plugin_id}.json")

@@ -23,18 +23,22 @@ unless explicitly asked.
   git-tracked, small.
 - `system_config.json` — `SystemConfigStore`, studio-wide settings (GitHub
   OAuth client id). Shared/git-tracked, tiny.
-- `local_config.json` — `LocalConfigStore`: workspace root, theme, active
-  project/repo. **Gitignored, per-machine.**
 - `projects.example.json` — a checked-in sample shape for `projects.json`,
   not read by the app itself.
-- `plugins/core/*.json`, `plugins/local/*.json` — `PluginConfigStore`
-  files, one per `plugin_id` a plugin's `register(api)` chose
-  (`api.plugin_config_store(plugin_id, shared=...)`). `core/`
-  shared/git-tracked, `local/` gitignored/per-machine — mirrors the same
-  split as the top-level stores above. Named after `shared=True/False`, not
-  after which `plugins/` source root the calling plugin itself lives under —
-  a `plugins/repo_internal/` or `cache/plugins/` plugin still writes to
-  `data/plugins/core/` for `shared=True`.
+- `plugins/core/*.json` — `PluginConfigStore` files, one per `plugin_id` a
+  plugin's `register(api)` chose with `shared=True`
+  (`api.plugin_config_store(plugin_id, shared=True)`). Shared/git-tracked.
+  Named after `shared=True/False`, not after which `plugins/` source root
+  the calling plugin itself lives under — a `plugins/repo_internal/` or
+  `cache/plugins/` plugin still writes here for `shared=True`. The
+  `shared=False` counterpart (per-machine) writes to
+  `cache/plugin_local_config/*.json` instead — see `cache/README.md`.
+
+Everything per-machine/gitignored that used to live here
+(`local_config.json`, `github_token.json`, `webengine_profile/`,
+`plugins/local/*.json`) now lives under `cache/` instead — see
+`cache/README.md`. This means `data/` today holds only files meant to be
+the same for everyone at the studio.
 
 ## Binary/image directories — not code, skip unless verifying a specific file
 

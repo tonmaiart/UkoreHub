@@ -105,14 +105,22 @@ def main() -> None:
 
     data_dir = REPO_ROOT / "data"
     data_dir.mkdir(exist_ok=True)
+    # cache/ is where every per-machine, gitignored file lives now (not
+    # data/) — it's already excluded wholesale from UkoreHub.exe (git-
+    # tracked) and from developer/commit-main.ps1's release publish, so
+    # anything placed here can never accidentally ship in a release the way
+    # a stray copy of data/ would. See cache/README.md.
+    cache_dir = REPO_ROOT / "cache"
+    cache_dir.mkdir(exist_ok=True)
 
     # projects.json, system_config.json, and programs.json are shared/tracked
-    # in this repo; local_config.json and github_token.json are per-machine
-    # and gitignored.
+    # in this repo.
     store = MetadataStore(data_dir / "projects.json")
     system_config_store = SystemConfigStore(data_dir / "system_config.json")
     program_store = ProgramStore(data_dir / "programs.json")
-    local_config_store = LocalConfigStore(data_dir / "local_config.json")
+    # local_config.json and github_token.json are per-machine and gitignored
+    # — see cache_dir comment above.
+    local_config_store = LocalConfigStore(cache_dir / "local_config.json")
     # Workspace root is fixed to the repo's own projects/ folder — there is no
     # UI to point it elsewhere (see interface/settings/common_settings_page.py),
     # so force it here on every launch rather than only defaulting it once.
@@ -121,7 +129,7 @@ def main() -> None:
         local_config_store.set_workspace_root(forced_workspace_root)
     hook_registry = HookRegistry()
     git_service = GitService(hooks=hook_registry)
-    token_store = TokenStore(data_dir / "github_token.json")
+    token_store = TokenStore(cache_dir / "github_token.json")
     # GitHub login now happens in the launcher exe before this process is
     # even spawned (developer/packaging/updater.py owns the token cache) —
     # just load whatever it already cached, same "presence, not validity"
@@ -150,7 +158,7 @@ def main() -> None:
     # catalog) can be threaded into the builtin registrations below (Plugins
     # settings tab, repo editor's plugin picker).
     plugins_root = REPO_ROOT / "plugins"
-    cache_plugins_root = REPO_ROOT / "cache" / "plugins"
+    cache_plugins_root = cache_dir / "plugins"
     (plugins_root / "core").mkdir(parents=True, exist_ok=True)
     (plugins_root / "repo_internal").mkdir(parents=True, exist_ok=True)
     cache_plugins_root.mkdir(parents=True, exist_ok=True)
@@ -187,6 +195,7 @@ def main() -> None:
         program_launch_registry=program_launch_registry,
         sidebar_footer_action_registry=sidebar_footer_action_registry,
         plugins_data_dir=data_dir / "plugins",
+        plugins_local_dir=cache_dir / "plugin_local_config",
         app_root=REPO_ROOT,
     )
     # Applied one plugin at a time (rather than one bulk apply_plugins(discovery.loaded, ...)
@@ -227,6 +236,7 @@ def main() -> None:
         program_store,
         git_service,
         token_store,
+        cache_dir,
         hook_registry,
         section_registry,
         settings_tab_registry,
