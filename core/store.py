@@ -237,6 +237,7 @@ class LocalConfigStore:
         self.active_project_id: str | None = None
         self.active_repo_id: str | None = None
         self.github_username: str | None = None
+        self.github_login_at: str | None = None
         self.load()
 
     def load(self) -> None:
@@ -248,6 +249,7 @@ class LocalConfigStore:
         self.active_project_id = data.get("active_project_id")
         self.active_repo_id = data.get("active_repo_id")
         self.github_username = data.get("github_username")
+        self.github_login_at = data.get("github_login_at")
 
     def save(self) -> None:
         _atomic_write(
@@ -259,6 +261,7 @@ class LocalConfigStore:
                 "active_project_id": self.active_project_id,
                 "active_repo_id": self.active_repo_id,
                 "github_username": self.github_username,
+                "github_login_at": self.github_login_at,
             },
         )
 
@@ -282,6 +285,10 @@ class LocalConfigStore:
 
     def set_github_username(self, username: str | None) -> None:
         self.github_username = username
+        self.save()
+
+    def set_github_login_at(self, timestamp: str | None) -> None:
+        self.github_login_at = timestamp
         self.save()
 
 

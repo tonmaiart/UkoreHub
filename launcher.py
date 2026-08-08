@@ -93,6 +93,7 @@ def main() -> None:
     from core.git_service import GitService
     from core.github.token_store import TokenStore
     from core.program_store import ProgramStore
+    from core.relaunch import relaunch_ukorehub_exe
     from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
     from interface.builtin_settings_tabs import register_builtin_settings_tabs
     from interface.main_window import MainWindow
@@ -133,14 +134,30 @@ def main() -> None:
     # GitHub login now happens in the launcher exe before this process is
     # even spawned (developer/packaging/updater.py owns the token cache) —
     # just load whatever it already cached, same "presence, not validity"
-    # semantics the old in-app LoginGate.restore_session_state() used. If
-    # this is None (e.g. running `python launcher.py` directly without ever
-    # going through the launcher exe first), GitService simply stays
-    # unauthenticated — private-repo git operations fail with a normal auth
-    # error, same as before anyone had ever logged in.
+    # semantics updater.py's own _check_login uses (never calls GitHub to
+    # confirm the token still works, only that a login happened at some
+    # point on this machine).
+    #
+    # Mandatory gate: this process refuses to open the main window at all
+    # without a cached token. The whole point of moving login into the
+    # launcher exe was for it to be the *only* way in — without this check,
+    # `python launcher.py` run directly (bypassing UkoreHub.exe entirely)
+    # would silently open the full app unauthenticated instead. This is a
+    # hard rule, not a soft warning: no MainWindow construction, no plugin
+    # discovery, nothing past this point without a token.
     token = token_store.load_token()
-    if token:
-        git_service.set_github_token(token)
+    if not token:
+        box = QMessageBox(
+            QMessageBox.Icon.Critical,
+            "Login Required",
+            "You must log in to GitHub through UkoreHub.exe before UkoreHub "
+            "can open.\n\nRun UkoreHub.exe (the Launcher) and complete the "
+            "GitHub login step, then try again.",
+        )
+        box.exec()
+        relaunch_ukorehub_exe(REPO_ROOT)
+        sys.exit(1)
+    git_service.set_github_token(token)
 
     apply_theme(app, local_config_store.theme)
 

@@ -35,9 +35,17 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   since logout closes the whole app — see `common_settings_page.py` below)
   and `BrowserLinksSettingsPage.browser_links_changed` without this view
   needing to know what those pages are.
-- `common_settings_page.py` — workspace folder (read-only), the Logout
-  button (`logout_requested` signal, connected in `main_window.py` to
-  `_on_logout_requested` — clears the cached token/username via
+- `common_settings_page.py` — account info (avatar, GitHub username, login
+  date — `LocalConfigStore.github_username`/`github_login_at`, the latter
+  set in `developer/packaging/updater.py`'s `_start_login_flow` on every
+  successful device-flow login and cleared alongside the username on
+  logout/switch-account; the avatar itself is fetched off the UI thread by
+  a small `_AvatarFetchWorker(QThread)` calling
+  `core/github/auth.py`'s `fetch_avatar_bytes`, the same
+  background-thread pattern `plugins/core/explorer/path_commit_history_worker.py`
+  uses), workspace folder (read-only), the Logout button
+  (`logout_requested` signal, connected in `main_window.py` to
+  `_on_logout_requested` — clears the cached token/username/login-date via
   `core/github/token_store.py`'s `TokenStore` and relaunches
   `UkoreHub.exe`, whose own login step, `developer/packaging/updater.py`,
   shows the GitHub login screen again since the token is now gone; this

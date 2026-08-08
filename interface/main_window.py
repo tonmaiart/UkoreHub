@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from core.git_service import GitService
 from core.github.token_store import TokenStore
 from core.paths import resolve_repo_path
 from core.program_store import ProgramStore
+from core.relaunch import relaunch_ukorehub_exe
 from core.store import LocalConfigStore, MetadataStore
 from core.theme import DEFAULT_THEME_NAME, get_theme
 from core.version import APP_NAME, APP_VERSION
@@ -521,34 +521,18 @@ class MainWindow(QMainWindow):
         # since the token is now gone.
         self._token_store.clear_token()
         self.local_config_store.set_github_username(None)
+        self.local_config_store.set_github_login_at(None)
         self.sidebar.set_account_username(None)
         self._relaunch_to_login()
 
     @staticmethod
     def _relaunch_to_login() -> None:
-        exe_path = _REPO_ROOT / "UkoreHub.exe"
-        if exe_path.is_file():
-            # This process's own environment still carries PyInstaller
-            # onefile bootloader variables (_PYI_APPLICATION_HOME_DIR,
-            # _PYI_ARCHIVE_FILE, _PYI_PARENT_PROCESS_LEVEL) inherited all
-            # the way down from the original UkoreHub.exe launch — Popen
-            # inherits the full environment by default, and nothing along
-            # this process chain (updater.py's own _launch(), this one)
-            # clears them. A onefile bootloader treats a nonempty
-            # _PYI_APPLICATION_HOME_DIR as "reuse this already-extracted
-            # payload instead of extracting a fresh one" (its
-            # multiprocessing-in-a-frozen-app support) — but that directory
-            # belonged to the *original* exe process, long since exited and
-            # cleaned up, so the new bootloader fails with "Failed to load
-            # Python DLL ... LoadLibrary: The specified module could not be
-            # found" trying to load a DLL from a folder that no longer
-            # exists. Confirmed 100% reproducible via a captured env dump
-            # from a real logout — see developer/bug-history/ for the full
-            # writeup. Stripping every _PYI_-prefixed var forces a genuine
-            # fresh self-extraction.
-            clean_env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
-            subprocess.Popen([str(exe_path)], cwd=str(_REPO_ROOT), env=clean_env)
-        else:
+        # relaunch_ukorehub_exe (core/relaunch.py) owns the _PYI_-env-var
+        # stripping needed to avoid developer/bug-history/2026-08-04-
+        # relaunch-inherits-pyinstaller-onefile-env.md — shared with
+        # launcher.py's own mandatory login gate, see that module's
+        # docstring.
+        if not relaunch_ukorehub_exe(_REPO_ROOT):
             # Dev environment running via `python launcher.py` directly,
             # with no built exe next to it — there's no login UI left in
             # the plain-Python app to fall back to (see root README.md's

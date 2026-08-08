@@ -47,6 +47,14 @@ beyond "core infrastructure":
 - `theme.py` — color theme definitions and stylesheet generation.
 - `os_utils.py` — OS-level helpers (open in file explorer, open with default
   app).
+- `relaunch.py` — `relaunch_ukorehub_exe(repo_root)`: spawns `UkoreHub.exe`
+  detached with PyInstaller's `_PYI_*` onefile bootloader env vars stripped
+  (see bug-history 2026-08-04 for why a bare `subprocess.Popen` here
+  crashes the new process). Shared by `interface/main_window.py`'s
+  `_relaunch_to_login` (logout) and `launcher.py`'s own mandatory login
+  gate (refuses to open the main window without a cached token) — the one
+  place that knows how to spawn `UkoreHub.exe` safely from within a
+  running UkoreHub process.
 - `self_update.py` — pulls UkoreHub's own repo to self-update; also exposes
   `run_git`, a bare synchronous `git <args>` helper against an arbitrary
   `cwd` (as opposed to `git_service.py`'s `GitService`, which is built
