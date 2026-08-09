@@ -160,7 +160,7 @@ def main() -> None:
     from core.github.token_store import TokenStore
     from core.program_store import ProgramStore
     from core.relaunch import relaunch_ukorehub_exe
-    from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
+    from core.store import LocalConfigStore, MetadataStore, SystemConfigStore, read_project_ids
     from interface.builtin_settings_tabs import register_builtin_settings_tabs
     from interface.main_window import MainWindow
     from interface.plugin_api import PLUGIN_API_VERSION, PluginAPI
@@ -200,6 +200,15 @@ def main() -> None:
     # studio-wide via Google Cloud Storage (core/cloud_sync.py), not git —
     # pull whatever's newest before constructing the stores that read them,
     # and wire on_save so every local edit pushes straight back up.
+    #
+    # projects.json is itself just a lightweight index now (id/name only) —
+    # the real per-project data lives in projects/<id>.json blobs (see
+    # core/store.py's MetadataStore, data/README.md). Once the index is
+    # pulled, pull every project blob it references too; a still-old-shape
+    # index (schema_version < 2, repos embedded) means nothing has migrated
+    # yet, so read_project_ids returns None and there's nothing per-project
+    # to pull — MetadataStore.load()'s one-time migration handles that
+    # locally and pushes the new blobs itself once constructed below.
     cloud_sync = _build_cloud_sync(data_dir, appdata_dir, cache_dir)
     if cloud_sync is None:
         print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
@@ -209,6 +218,12 @@ def main() -> None:
             for blob_name in ("projects.json", "programs.json", "system_config.json"):
                 cloud_sync.pull(blob_name, data_dir / blob_name)
                 debug_log.log("CloudSync", f"pulled '{blob_name}'")
+            project_ids = read_project_ids(data_dir / "projects.json")
+            if project_ids is not None:
+                for project_id in project_ids:
+                    blob_name = f"projects/{project_id}.json"
+                    cloud_sync.pull(blob_name, data_dir / "projects" / f"{project_id}.json")
+                    debug_log.log("CloudSync", f"pulled '{blob_name}'")
         except Exception as exc:
             # Revoked/expired Google login, no network, IAM not granted yet,
             # etc. — never block the app from opening over a cloud problem;
@@ -238,8 +253,26 @@ def main() -> None:
             print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
             debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
+    def _delete_shared_blob(blob_name: str) -> None:
+        # Only used by MetadataStore.delete_project, to clean up a removed
+        # project's now-orphaned projects/<id>.json blob. Same
+        # never-fail-the-local-edit-over-a-transient-cloud-problem posture as
+        # _push_shared_blob above — the project is already gone locally
+        # either way.
+        if cloud_sync is None:
+            return
+        try:
+            cloud_sync.delete(blob_name)
+            debug_log.log("CloudSync", f"deleted '{blob_name}'")
+        except Exception as exc:
+            print(f"UkoreHub: cloud delete of '{blob_name}' failed ({exc}) — it may linger in the bucket.")
+            debug_log.log("CloudSync", f"delete of '{blob_name}' failed ({exc}) — it may linger in the bucket")
+
     store = MetadataStore(
-        data_dir / "projects.json", assets_dir=assets_dir, on_save=lambda: _push_shared_blob("projects.json")
+        data_dir / "projects.json",
+        assets_dir=assets_dir,
+        on_save=_push_shared_blob,
+        on_delete=_delete_shared_blob,
     )
     system_config_store = SystemConfigStore(
         data_dir / "system_config.json", on_save=lambda: _push_shared_blob("system_config.json")
@@ -250,10 +283,10 @@ def main() -> None:
     # local_config.json and github_token.json are per-machine and gitignored
     # — see cache_dir comment above.
     local_config_store = LocalConfigStore(cache_dir / "local_config.json")
-    # Workspace root is fixed to the repo's own projects/ folder — there is no
+    # Workspace root is fixed to the repo's own storage/ folder — there is no
     # UI to point it elsewhere (see interface/settings/common_settings_page.py),
     # so force it here on every launch rather than only defaulting it once.
-    forced_workspace_root = str(REPO_ROOT / "projects")
+    forced_workspace_root = str(REPO_ROOT / "storage")
     if local_config_store.workspace_root != forced_workspace_root:
         local_config_store.set_workspace_root(forced_workspace_root)
     hook_registry = HookRegistry()

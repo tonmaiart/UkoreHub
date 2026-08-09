@@ -12,7 +12,7 @@ from core.models import BrowserLink, Project, Repo
 from core.paths import resolve_repo_path
 from core.theme import DEFAULT_THEME_NAME
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _atomic_write(path: Path, data: dict) -> None:
@@ -26,8 +26,38 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def read_project_ids(json_path: Path) -> list[str] | None:
+    """Reads just the project ids out of a projects.json index file, without
+    constructing a full MetadataStore — used by launcher.py to know which
+    per-project blobs to pull from GCS before MetadataStore.load() runs.
+    Returns None if json_path doesn't exist yet, or is still the old
+    pre-split shape (schema_version < 2, repos embedded) — callers should
+    skip per-project pulls in that case and let MetadataStore.load()'s
+    one-time migration handle it locally."""
+    json_path = Path(json_path)
+    if not json_path.exists():
+        return None
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    if data.get("schema_version", 1) < 2:
+        return None
+    return [entry["id"] for entry in data.get("projects", [])]
+
+
 class MetadataStore:
-    def __init__(self, json_path: Path, *, assets_dir: Path | None = None, on_save: Callable[[], None] | None = None):
+    """Project/Repo registry. On disk (and as GCS blobs, see core/cloud_sync.py)
+    this is split into a lightweight index (json_path itself, id/name only)
+    plus one file per project under projects_dir — editing one project's repos
+    only ever rewrites/pushes that project's own blob, never the whole
+    registry. See data/README.md for the exact layout."""
+
+    def __init__(
+        self,
+        json_path: Path,
+        *,
+        assets_dir: Path | None = None,
+        on_save: Callable[[str], None] | None = None,
+        on_delete: Callable[[str], None] | None = None,
+    ):
         self.json_path = Path(json_path)
         # Binary images (thumbnails, browser link icon overrides) are
         # git-tracked assets, not cloud-synced data — they live in their own
@@ -35,26 +65,64 @@ class MetadataStore:
         # grandparent / "assets" (<repo_root>/assets) for callers that don't
         # care about resolving image paths and never pass this explicitly.
         self.assets_dir = Path(assets_dir) if assets_dir is not None else self.json_path.parent.parent / "assets"
+        # Per-project blobs live in a sibling "projects" folder next to the
+        # index, e.g. data/projects.json (index) + data/projects/<id>.json.
+        self.projects_dir = self.json_path.parent / "projects"
         self.projects: list[Project] = []
+        # Unlike SystemConfigStore/ProgramStore's on_save (no-arg — one fixed
+        # blob), this store's on_save takes the blob name that just changed
+        # ("projects.json" for the index, "projects/<id>.json" for a single
+        # project) so a repo-level edit only ever pushes that one project's
+        # blob, not the whole registry.
         self.on_save = on_save
+        # Only used by delete_project — pushes a blob's deletion to the
+        # shared bucket so removing a project doesn't leave a permanent
+        # orphan behind.
+        self.on_delete = on_delete
         self.load()
 
     def load(self) -> None:
         if not self.json_path.exists():
             self.projects = []
-            self.save()
+            self._save_index()
             return
         data = json.loads(self.json_path.read_text(encoding="utf-8"))
-        self.projects = [Project.from_dict(p) for p in data.get("projects", [])]
+        if data.get("schema_version", 1) < 2:
+            # Old shape: every project's "repos" were embedded directly in
+            # the index file. Split them out once and persist the new
+            # layout immediately (mirrors the git->GCS cutover in
+            # developer/bug-history/2026-08-09-shared-data-git-pull-conflict.md)
+            # so this only ever runs once per machine/bucket.
+            self.projects = [Project.from_dict(p) for p in data.get("projects", [])]
+            for project in self.projects:
+                self._save_project(project)
+            self._save_index()
+            return
+        self.projects = []
+        for entry in data.get("projects", []):
+            project_path = self.projects_dir / f"{entry['id']}.json"
+            if project_path.exists():
+                project_data = json.loads(project_path.read_text(encoding="utf-8"))
+                self.projects.append(Project.from_dict(project_data))
+            else:
+                # Index references a project whose own blob hasn't synced to
+                # this machine (or was lost) — surface it as an empty-repos
+                # project rather than dropping it from the list entirely.
+                self.projects.append(Project(id=entry["id"], name=entry["name"], repos=[]))
 
-    def save(self) -> None:
+    def _save_index(self) -> None:
         data = {
             "schema_version": SCHEMA_VERSION,
-            "projects": [p.to_dict() for p in self.projects],
+            "projects": [{"id": p.id, "name": p.name} for p in self.projects],
         }
         _atomic_write(self.json_path, data)
         if self.on_save:
-            self.on_save()
+            self.on_save("projects.json")
+
+    def _save_project(self, project: Project) -> None:
+        _atomic_write(self.projects_dir / f"{project.id}.json", project.to_dict())
+        if self.on_save:
+            self.on_save(f"projects/{project.id}.json")
 
     def list_projects(self) -> list[Project]:
         return list(self.projects)
@@ -80,7 +148,11 @@ class MetadataStore:
             raise ValidationError(f"A project named '{name}' already exists.")
         project = Project(id=str(uuid.uuid4()), name=name, repos=[])
         self.projects.append(project)
-        self.save()
+        # Write the project's own blob before the index so a crash between
+        # the two never leaves the index pointing at a file that doesn't
+        # exist yet.
+        self._save_project(project)
+        self._save_index()
         return project
 
     def rename_project(self, project_id: str, new_name: str) -> None:
@@ -91,12 +163,19 @@ class MetadataStore:
         if any(p.id != project_id and p.name.lower() == new_name.lower() for p in self.projects):
             raise ValidationError(f"A project named '{new_name}' already exists.")
         project.name = new_name
-        self.save()
+        # Name is duplicated in both the index and the project's own blob.
+        self._save_project(project)
+        self._save_index()
 
     def delete_project(self, project_id: str) -> None:
         project = self.get_project(project_id)
         self.projects.remove(project)
-        self.save()
+        # Index is the source of truth for "what projects exist" — update it
+        # first, then clean up the now-orphaned per-project blob.
+        self._save_index()
+        (self.projects_dir / f"{project.id}.json").unlink(missing_ok=True)
+        if self.on_delete:
+            self.on_delete(f"projects/{project.id}.json")
 
     def add_repo(self, project_id: str, name: str, git_url: str, workspace_root: str) -> Repo:
         name = name.strip()
@@ -122,7 +201,7 @@ class MetadataStore:
             status="not_cloned",
         )
         project.repos.append(repo)
-        self.save()
+        self._save_project(project)
         return repo
 
     def edit_repo(self, project_id: str, repo_id: str, *, name: str | None = None, git_url: str | None = None) -> None:
@@ -140,66 +219,76 @@ class MetadataStore:
             if not git_url:
                 raise ValidationError("Repo git URL cannot be empty.")
             repo.git_url = git_url
-        self.save()
+        self._save_project(project)
 
     def delete_repo(self, project_id: str, repo_id: str) -> None:
         project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         project.repos.remove(repo)
-        self.save()
+        self._save_project(project)
 
     def mark_synced(self, project_id: str, repo_id: str, status: str) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.status = status
         repo.last_synced = _utc_now_iso()
-        self.save()
+        self._save_project(project)
 
     def mark_status(self, project_id: str, repo_id: str, status: str) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.status = status
-        self.save()
+        self._save_project(project)
 
     def set_repo_thumbnail(self, project_id: str, repo_id: str, filename: str | None) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.thumbnail_filename = filename
-        self.save()
+        self._save_project(project)
 
     def set_repo_description(self, project_id: str, repo_id: str, description: str) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.description = description
-        self.save()
+        self._save_project(project)
 
     def set_repo_requirements(self, project_id: str, repo_id: str, program_ids: list[str]) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.required_program_ids = list(program_ids)
-        self.save()
+        self._save_project(project)
 
     def set_repo_program_version_pins(self, project_id: str, repo_id: str, pins: dict[str, str]) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.program_version_pins = dict(pins)
-        self.save()
+        self._save_project(project)
 
     def set_repo_active_plugin_ids(self, project_id: str, repo_id: str, plugin_ids: list[str]) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.active_plugin_ids = list(plugin_ids)
-        self.save()
+        self._save_project(project)
 
     def set_repo_required_plugin_ids(self, project_id: str, repo_id: str, plugin_ids: list[str]) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.required_plugin_ids = list(plugin_ids)
-        self.save()
+        self._save_project(project)
 
     def set_repo_browser_links(self, project_id: str, repo_id: str, links: list[BrowserLink]) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         repo.browser_links = list(links)
-        self.save()
+        self._save_project(project)
 
     def set_browser_link_icon(self, project_id: str, repo_id: str, link_index: int, filename: str | None) -> None:
+        project = self.get_project(project_id)
         repo = self.get_repo(project_id, repo_id)
         if not (0 <= link_index < len(repo.browser_links)):
             raise NotFoundError(f"Browser link index out of range: {link_index}")
         repo.browser_links[link_index].icon_filename = filename
-        self.save()
+        self._save_project(project)
 
     @property
     def thumbnails_dir(self) -> Path:
@@ -221,11 +310,16 @@ class MetadataStore:
 
     def refresh_statuses_from_disk(self, workspace_root: str) -> None:
         for project in self.projects:
+            changed = False
             for repo in project.repos:
                 abs_path = Path(workspace_root) / repo.local_path
                 is_cloned = (abs_path / ".git").exists()
-                repo.status = "cloned" if is_cloned else "not_cloned"
-        self.save()
+                new_status = "cloned" if is_cloned else "not_cloned"
+                if new_status != repo.status:
+                    repo.status = new_status
+                    changed = True
+            if changed:
+                self._save_project(project)
 
 
 LOCAL_CONFIG_SCHEMA_VERSION = 1

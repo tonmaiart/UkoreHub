@@ -124,18 +124,21 @@ any change to a shared JSON store is safe to discard or revert.
   its own separate git clone (own remote/history, not part of this repo at
   all), fetched/updated on demand only for a repo that requires it. Never
   read or list files under `cache/` unless the task explicitly needs to
-  (e.g. names a repo plugin by folder name) — same reasoning as `projects/`
+  (e.g. names a repo plugin by folder name) — same reasoning as `storage/`
   below, this is fetched/generated/runtime content, not something to
-  explore speculatively (though unlike `projects/`, a `cache/plugins/`
+  explore speculatively (though unlike `storage/`, a `cache/plugins/`
   entry's plugin.py/manifest.json are real code worth reading when a task
   is actually about that specific plugin — see `plugins/README.md`). See
   [cache/README.md](cache/README.md) for the full breakdown.
-- `projects/` — **the actual workspace root**, pointed to by
+- `storage/` — **the actual workspace root**, pointed to by
   `cache/local_config.json`'s `workspace_root`: real cloned production repos
-  (Maya/Blender scenes, huge binaries, studio artwork), gitignored. **Never
-  read or list files under here unless the user explicitly asks** — there
-  is no code in it, it can be enormous, and its contents are production
-  data, not something to explore speculatively.
+  (Maya/Blender scenes, huge binaries, studio artwork), gitignored. Named
+  `storage/`, not `projects/`, specifically so it can't be confused with
+  `data/projects/` (the per-project metadata blobs — see
+  [data/README.md](data/README.md)). **Never read or list files under here
+  unless the user explicitly asks** — there is no code in it, it can be
+  enormous, and its contents are production data, not something to explore
+  speculatively.
 - `launcher.py` — entry point.
 - `developer/tests/` — pytest suite (`pytest.ini` at repo root points
   `testpaths` here). Not published to `main` — see `developer/README.md`.

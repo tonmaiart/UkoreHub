@@ -2,7 +2,9 @@
 
 The Studio Setting UI for cloud sync — lets an artist log in with Google
 and configure the GCS bucket/project/OAuth client that `core/cloud_sync.py`
-syncs `data/projects.json`/`programs.json`/`system_config.json`/shared
+syncs `data/projects.json` (an index — each project's own data lives in a
+separate `data/projects/<id>.json` blob, see `core/store.py`'s
+`MetadataStore`) / `programs.json` / `system_config.json` / shared
 `PluginConfigStore` files through. This plugin owns only the **UI** half;
 the sync **engine** (`core/cloud_sync.py`'s `GcsJsonSync`, `core/google_auth.py`'s
 OAuth login + `GoogleTokenStore`) deliberately stays in `core/` and is not

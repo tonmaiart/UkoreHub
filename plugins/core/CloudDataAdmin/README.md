@@ -1,10 +1,11 @@
 # plugins/core/CloudDataAdmin/
 
 Settings > Developer tab ("Cloud Data") for directly pulling/pushing one raw
-cloud-synced JSON blob (`projects.json`, `programs.json`,
-`system_config.json`, or any `plugins/core/*.json`) to/from a file the
-artist explicitly chooses — separate from `plugins/core/CloudConfig/`,
-which handles login/bucket configuration, not the blobs' actual content.
+cloud-synced JSON blob (`projects.json` — the lightweight project index —
+any `projects/<id>.json`, `programs.json`, `system_config.json`, or any
+`plugins/core/*.json`) to/from a file the artist explicitly chooses —
+separate from `plugins/core/CloudConfig/`, which handles login/bucket
+configuration, not the blobs' actual content.
 
 Exists for the "I have an old `data/` backup, how do I get it back onto the
 shared bucket" case — just restoring `data/` locally and reopening UkoreHub
@@ -25,9 +26,10 @@ engine this sits on top of.
   `api.register_settings_tab(...)`, `category=CATEGORY_DEVELOPER`.
 - `cloud_data_admin_page.py` — `CloudDataAdminPage`:
   - An editable blob-name combo box, pre-filled with the three fixed
-    top-level blobs plus every `data/plugins/core/*.json` filename found
-    locally right now (a convenience list, not a constraint — stays
-    editable for a blob that hasn't been pulled locally yet).
+    top-level blobs plus every `data/projects/*.json` and
+    `data/plugins/core/*.json` filename found locally right now (a
+    convenience list, not a constraint — stays editable for a blob that
+    hasn't been pulled locally yet).
   - **Pull from Cloud, Save As...** — `GcsJsonSync.pull(blob_name,
     <chosen save path>)`, so an artist can inspect exactly what's live on
     the bucket right now without disturbing this running session's own

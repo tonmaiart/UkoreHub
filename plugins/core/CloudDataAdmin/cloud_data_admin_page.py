@@ -88,12 +88,19 @@ class CloudDataAdminPage(QWidget):
         self._refresh_status()
 
     def _known_blob_names(self) -> list[str]:
-        """Fixed top-level blobs first, then whatever plugins/core/*.json
-        files happen to exist locally right now — a convenience list for
-        the combo box's dropdown, not a hard constraint (it stays
-        editable, since a blob for a plugin config that hasn't been
-        pulled/created locally yet still needs to be typeable)."""
+        """Fixed top-level blobs first, then whatever projects/*.json and
+        plugins/core/*.json files happen to exist locally right now — a
+        convenience list for the combo box's dropdown, not a hard constraint
+        (it stays editable, since a blob that hasn't been pulled/created
+        locally yet still needs to be typeable). projects.json itself is
+        just the lightweight index now — each project's real data lives in
+        its own projects/<id>.json blob, same split-blob shape as
+        plugins/core/*.json (see core/store.py's MetadataStore)."""
         names = list(_FIXED_BLOB_NAMES)
+        projects_dir = self._api.app_root / "data" / "projects"
+        if projects_dir.is_dir():
+            for json_path in sorted(projects_dir.glob("*.json")):
+                names.append(f"projects/{json_path.name}")
         plugins_core_dir = self._api.app_root / "data" / "plugins" / "core"
         if plugins_core_dir.is_dir():
             for json_path in sorted(plugins_core_dir.glob("*.json")):

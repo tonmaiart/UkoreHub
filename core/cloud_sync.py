@@ -46,8 +46,9 @@ from core.google_auth import GCS_SCOPE, TOKEN_URL
 # a slow first-time credential refresh, a firewall silently dropping
 # packets) would otherwise hang forever. These calls run synchronously on
 # whatever thread calls pull()/push() — today that's the Qt UI thread
-# (launcher.py's startup pull, and every store.save() afterwards) — so an
-# unbounded hang freezes the whole app, not just the sync.
+# (launcher.py's startup pull, and every store save afterwards — e.g.
+# SystemConfigStore.save(), or MetadataStore's per-index/per-project saves)
+# — so an unbounded hang freezes the whole app, not just the sync.
 _TIMEOUT_SECONDS = 20
 
 
@@ -125,3 +126,19 @@ class GcsJsonSync:
                 f"'{blob_name}' was updated elsewhere first — reloaded the latest version."
             ) from None
         self._generations[blob_name] = blob.generation
+
+    def delete(self, blob_name: str) -> None:
+        """Removes blob_name from the bucket entirely — used when a project
+        is deleted, so its per-project blob doesn't linger forever. Requires
+        the same push credentials as push(); a blob that's already gone
+        (e.g. never pushed on this machine) is not an error."""
+        if not self.can_push:
+            raise GoogleAuthError(
+                "Not logged in with Google — sign in via the Studio Setting window to save shared changes."
+            )
+        blob = self._bucket.blob(blob_name)
+        try:
+            blob.delete(timeout=_TIMEOUT_SECONDS)
+        except NotFound:
+            pass
+        self._generations.pop(blob_name, None)

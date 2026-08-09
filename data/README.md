@@ -8,15 +8,18 @@ these files; this README is just what's on disk and whether it's shared.
 **Working here:** don't open these files unless the task specifically needs
 their current contents (e.g. debugging a stale value, checking a real id).
 Never open an image file in here to "look at it" — there's nothing textual
-to read, and it wastes context for zero benefit. Never confuse this with
-`projects/` at the repo root, which is the actual gitignored workspace root
-(real cloned repos) — see root `CLAUDE.md`; that one is never read at all
-unless explicitly asked.
+to read, and it wastes context for zero benefit. Never confuse `data/projects/`
+below (per-project JSON metadata blobs) with `storage/` at the repo root,
+the actual gitignored workspace root (real cloned repos, binaries, studio
+artwork) — see root `CLAUDE.md`; that one is never read at all unless
+explicitly asked. (`storage/` was named that specifically, not `projects/`,
+to keep these two unambiguous.)
 
 ## JSON stores — cloud-synced only, nothing else belongs here
 
-Every file directly under `data/` (and `data/plugins/core/*.json`) is a
-**local cache of a Google Cloud Storage blob**, synced by
+Every file directly under `data/` (and `data/projects/*.json`,
+`data/plugins/core/*.json`) is a **local cache of a Google Cloud Storage
+blob**, synced by
 `core/cloud_sync.py`'s `GcsJsonSync`: pulled fresh on every launch, pushed
 back up on every save (see `launcher.py` and `interface/plugin_api.py`'s
 `plugin_config_store(shared=True)`). This replaced the old model (tracked
@@ -35,11 +38,20 @@ two static git-tracked files that used to live here
 (`projects.example.json`, `system_config.default.json`) were moved out to
 `appdata/` instead (2026-08-09) — see `appdata/README.md`.
 
-- `projects.json` — `MetadataStore`, the Project/Repo registry.
-  **Shared/cloud-synced.** Can grow large as repos/thumbnails accumulate —
-  prefer `programs.json`/`system_config.json` below if you just need "an
-  example of the shape" (or `appdata/projects.example.json`, which is
-  exactly that and nothing more).
+- `projects.json` — `MetadataStore`'s Project/Repo registry, split into a
+  **lightweight index** (this file — just `{"id", "name"}` per project) plus
+  one blob per project under `projects/<id>.json` (the real payload: each
+  project's `repos`, with their requirements/pins/browser links/etc.).
+  Editing one project's repos only ever rewrites and pushes that project's
+  own `projects/<id>.json`, never this index or any other project's blob —
+  keeps the blast radius (and false-conflict risk between artists editing
+  unrelated projects) down as the registry grows. **Both shared/
+  cloud-synced.** Prefer `programs.json`/`system_config.json` below, or
+  `appdata/projects.example.json`, if you just need "an example of the
+  shape".
+- `projects/<project_id>.json` — one file per project (see above), named
+  after the `Project.id` listed in `projects.json`'s index. **Shared/
+  cloud-synced**, one GCS blob per file (`projects/<id>.json`).
 - `programs.json` — `ProgramStore`, the shared software catalog. Shared/
   cloud-synced, small.
 - `system_config.json` — `SystemConfigStore`, studio-wide settings: GitHub

@@ -59,7 +59,7 @@ any that are missing automatically — no manual `pip install` step required.
 It reads whatever GitHub token `UkoreHub.exe` already cached; **it cannot
 complete a first-time login itself** — there is no login UI left in the
 plain-Python app anymore, so run `UkoreHub.exe` at least once first. The
-workspace folder (where cloned repos live) is fixed to `<this repo>/projects`.
+workspace folder (where cloned repos live) is fixed to `<this repo>/storage`.
 Managers add Projects/Repos via the Project Editor section (a node graph, 1
 node = 1 repo). Whatever's added there becomes available to pick as the
 active repo by clicking its node in Project Editor — there is no separate
@@ -198,7 +198,9 @@ crashes or blocks the app.
   `developer/README.md`. `UkoreHub.exe` and its build tooling live in a
   separate repo entirely, `UkoreHubLauncher` — not part of this tree at
   all.
-- `projects/` — workspace folder (gitignored; actual cloned repos live here).
+- `storage/` — workspace folder (gitignored; actual cloned repos live here).
+  Named `storage/` rather than `projects/` so it can't be confused with
+  `data/projects/`, the per-project metadata blobs (see `data/README.md`).
 
 ## Tests
 

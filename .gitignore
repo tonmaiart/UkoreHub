@@ -24,8 +24,10 @@ data/plugins/core/*.json
 # distributed like data/programs.json — bundled with the app, no separate
 # fetch. See core/extensibility/loader.py.
 # Forced workspace_root (see launcher.py) — actual cloned target repos live
-# here, per-machine and potentially huge; never tracked.
-/projects/
+# here, per-machine and potentially huge; never tracked. Named storage/ (not
+# projects/) specifically to avoid colliding with data/projects/ (the
+# per-project metadata blobs under data/ — see data/README.md).
+/storage/
 # Every per-machine, gitignored file UkoreHub itself owns lives under here —
 # see cache/README.md. Includes cache/plugins/, per-user clones of repo
 # plugins (each its own git clone/remote/history, fetched/updated on demand

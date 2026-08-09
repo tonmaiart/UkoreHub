@@ -21,9 +21,13 @@ beyond "core infrastructure":
   `browser_links: list[BrowserLink]`, repo-scoped bookmarks rendered as
   their own top-level tab — see `interface/about/browser_link_page.py`),
   `RepoStatus`, etc.
-- `store.py` — `MetadataStore` (reads/writes `data/projects.json`, the
-  Project/Repo registry, including `set_repo_browser_links`) and
-  `LocalConfigStore`/`SystemConfigStore` (per-machine vs. shared settings).
+- `store.py` — `MetadataStore` (the Project/Repo registry, including
+  `set_repo_browser_links`), split on disk into a lightweight index
+  (`data/projects.json`, id/name only) plus one blob per project
+  (`data/projects/<id>.json`, the real payload — repos, requirements, pins,
+  browser links) so editing one project never rewrites/pushes another's
+  data — see `data/README.md`. Also `LocalConfigStore`/`SystemConfigStore`
+  (per-machine vs. shared settings).
 - `git_service.py` — wraps `git`/`git-lfs` subprocess calls: clone, pull, push,
   fetch (remote-tracking refs only, no merge — used by Notification's
   background commit poll so it never touches the working tree), commit,

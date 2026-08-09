@@ -88,7 +88,7 @@ class CommonSettingsPage(QWidget):
         account_row_layout.addLayout(account_text)
         account_row_layout.addStretch()
 
-        # Workspace folder is fixed to this install's own projects/ folder
+        # Workspace folder is fixed to this install's own storage/ folder
         # (forced in launcher.py) — shown here read-only, no Browse option.
         self.workspace_label = QLabel(local_config_store.workspace_root or "")
 
