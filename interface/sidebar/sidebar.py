@@ -12,7 +12,7 @@ from interface.sidebar.section_tab_list import SectionTabList
 from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
 
 SIDEBAR_WIDTH = 230
-SETTING_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "icons" / "setting.png"
+SETTING_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "icons" / "setting.png"
 
 
 class Sidebar(QWidget):

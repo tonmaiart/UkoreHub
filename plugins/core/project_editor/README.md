@@ -176,7 +176,7 @@ anymore.
     `hoverLeaveEvent` — `setAcceptHoverEvents(True)` plus the existing
     `PointingHandCursor` together carry the "this is clickable" affordance).
     A clone-status badge (`_clone_status_icon`, added 2026-07-20) paints
-    top-right on every node — `data/icons/icons8-connected-30.png` if
+    top-right on every node — `assets/icons/icons8-connected-30.png` if
     `RepoNodeItem.is_cloned` (computed once at construction via
     `ProjectGraphView._is_repo_cloned`), else
     `icons8-disconnected-30.png`; both cached as pre-scaled `QPixmap`s at

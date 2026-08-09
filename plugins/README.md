@@ -155,7 +155,7 @@ another plugin" below instead.
   which *contributes* an opener rather than reading the registry.
 - `api.app_root` — `Path` to the UkoreHub install root, for referencing
   your own plugin's files without guessing nesting depth from `__file__`
-  (e.g. `api.app_root / "data" / "icons"`).
+  (e.g. `api.app_root / "assets" / "icons"`).
 - `api.plugin_config_store(plugin_id, *, shared: bool)` — namespaced JSON
   settings (see below).
 - `api.register_section(spec)` — a full top-level tab in `SectionRegistry`

@@ -98,10 +98,20 @@ any change to a shared JSON store is safe to discard or revert.
 
 - `core/` — non-UI logic: metadata store, git operations, GitHub auth, theming.
 - `interface/` — PySide6 GUI: sidebar, pages, dialogs, background workers.
-- `data/` — tracked shared config only (`projects.json`, `programs.json`,
-  thumbnails/icons). See [data/README.md](data/README.md) — don't open the
-  JSON stores unless the task needs a concrete current value, and never
-  open the image directories (`thumbnails/`, `program_icons/`) at all.
+- `data/` — cloud-synced JSON blob caches only (`projects.json`,
+  `programs.json`, `system_config.json`, `plugins/core/*.json`), no
+  exceptions — several Maya-side scripts under `plugins/repo_internal/`
+  hardcode these exact `data/` paths directly (they can't import
+  `PluginAPI`), so nothing else belongs here. See
+  [data/README.md](data/README.md) — don't open these unless the task needs
+  a concrete current value.
+- `assets/` — git-tracked binary images (`thumbnails/`, `program_icons/`,
+  `browser_link_icons/`, `icons/`), never cloud-synced. See
+  [assets/README.md](assets/README.md) — never open an image file in here.
+- `appdata/` — static git-tracked bootstrap defaults/examples
+  (`system_config.default.json`, `projects.example.json`), never
+  cloud-synced and never written by the running app. See
+  [appdata/README.md](appdata/README.md).
 - `plugins/` — UkoreHub's own sub-systems: `plugins/core/` (bundled,
   on-by-default, opt-out per repo) and `plugins/repo_internal/` (bundled,
   off-by-default, opt-in per repo). See `core/extensibility/README.md` for

@@ -64,7 +64,7 @@ class GcsJsonSync:
     of making a doomed anonymous write request against a public-read-only
     bucket. Needs client_id/client_secret too, not just refresh_token — on
     a machine where launcher.py's _build_cloud_sync fell back to
-    data/system_config.default.json (a fresh machine with no local
+    appdata/system_config.default.json (a fresh machine with no local
     system_config.json yet, but one that already has a cached refresh
     token from a previous login), that file deliberately omits the OAuth
     client fields, so refresh_token alone isn't enough to build valid

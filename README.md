@@ -86,8 +86,8 @@ Settings are split into two files with different sharing behavior:
   (GitHub OAuth Client ID, GCS Bucket Name), and `data/programs.json` (the shared
   Program Database) are synced to/from a shared Google Cloud Storage bucket
   (`core/cloud_sync.py`) — pulled fresh on every launch, pushed automatically
-  on every edit, no manual commit/push step needed. `data/thumbnails/` and
-  `data/program_icons/` (repo thumbnails / program icons) are still **tracked
+  on every edit, no manual commit/push step needed. `assets/thumbnails/` and
+  `assets/program_icons/` (repo thumbnails / program icons) are still **tracked
   in this git repo** instead, since they're binary images rather than the
   live-edited registries — a manager adding one still needs to
   `git add`/`commit`/`push`, and other artists get it via **Update and

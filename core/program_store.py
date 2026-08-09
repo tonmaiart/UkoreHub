@@ -18,8 +18,11 @@ class ProgramStore:
     via Google Cloud Storage alongside projects.json (see
     core/cloud_sync.py, same "shared studio config" category)."""
 
-    def __init__(self, json_path: Path, *, on_save: Callable[[], None] | None = None):
+    def __init__(self, json_path: Path, *, assets_dir: Path | None = None, on_save: Callable[[], None] | None = None):
         self.json_path = Path(json_path)
+        # Program icons are a git-tracked asset, not cloud-synced data — see
+        # MetadataStore.assets_dir's docstring comment for the same reasoning.
+        self.assets_dir = Path(assets_dir) if assets_dir is not None else self.json_path.parent.parent / "assets"
         self.programs: list[Program] = []
         self.on_save = on_save
         self.load()
@@ -97,7 +100,7 @@ class ProgramStore:
 
     @property
     def icons_dir(self) -> Path:
-        return self.json_path.parent / "program_icons"
+        return self.assets_dir / "program_icons"
 
     def resolve_icon_path(self, program: Program) -> Path | None:
         if not program.icon_filename:

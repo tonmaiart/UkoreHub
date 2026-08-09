@@ -47,7 +47,7 @@ consumer's own folder instead, not here.
   more than one `plugins/core/` plugin.
 - `image_asset.py` — `pick_image_file` (the `QFileDialog.getOpenFileName`
   wrapper every icon/thumbnail chooser uses) and `save_image_asset` (copy
-  the chosen file into a `data/*_icons`/`data/thumbnails`-style dir as
+  the chosen file into an `assets/*_icons`/`assets/thumbnails`-style dir as
   `f"{asset_id}{ext}"`, returning the filename or `None` + a warning on
   failure). Used by `plugins/core/project_editor/`'s node context menu
   (repo thumbnail and `RepoDialog`), `browser_links/browser_links_settings_page.py`

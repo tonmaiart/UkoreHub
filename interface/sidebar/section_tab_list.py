@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
 
 from interface.section_registry import SectionRegistry
 
-DEFAULT_BROWSER_LINK_ICON = Path(__file__).resolve().parent.parent.parent / "data" / "icons" / "icons8-browser-50.png"
+DEFAULT_BROWSER_LINK_ICON = Path(__file__).resolve().parent.parent.parent / "assets" / "icons" / "icons8-browser-50.png"
 
 
 class SectionTabList(QListWidget):

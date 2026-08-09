@@ -12,7 +12,7 @@ def register(api) -> None:
         git_service=api.git,
         file_opener_registry=api.file_opener_registry,
     )
-    icons_dir = api.app_root / "data" / "icons"
+    icons_dir = api.app_root / "assets" / "icons"
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,

@@ -57,7 +57,7 @@ def check_git_lfs_prerequisite() -> bool:
     return shutil.which("git-lfs") is not None
 
 
-def _build_cloud_sync(data_dir: Path, cache_dir: Path):
+def _build_cloud_sync(data_dir: Path, appdata_dir: Path, cache_dir: Path):
     """Best-effort: returns None (cloud sync disabled, the shared stores
     stay purely local — the pre-migration behavior) only if no bucket name
     can be found at all, from either source below. The bucket is
@@ -74,9 +74,12 @@ def _build_cloud_sync(data_dir: Path, cache_dir: Path):
     problem on a machine that has never run UkoreHub before:
     data/system_config.json is gitignored (see .gitignore's comment), so a
     fresh clone has no local copy yet, and the bucket name needed to pull
-    the real one lives inside it. data/system_config.default.json (tracked
-    in git, see data/README.md) breaks that cycle — same "not meaningfully
-    secret for a distributed desktop app" reasoning already applied to
+    the real one lives inside it. appdata/system_config.default.json
+    (tracked in git, see appdata/README.md — deliberately kept out of
+    data/, which is reserved for cloud-synced files only, including by the
+    Maya-side scripts under plugins/repo_internal/ that hardcode data/
+    paths directly) breaks that cycle — same "not meaningfully secret for
+    a distributed desktop app" reasoning already applied to
     google_oauth_client_id/secret and github_client_id. Only consulted
     when the local file is missing/incomplete; the pull() below then
     overwrites data/system_config.json with the real cloud copy, so later
@@ -87,7 +90,7 @@ def _build_cloud_sync(data_dir: Path, cache_dir: Path):
         config = json.loads(system_config_path.read_text(encoding="utf-8"))
     bucket_name = config.get("gcs_bucket_name")
     if not bucket_name:
-        default_path = data_dir / "system_config.default.json"
+        default_path = appdata_dir / "system_config.default.json"
         if not default_path.exists():
             return None
         config = json.loads(default_path.read_text(encoding="utf-8"))
@@ -169,6 +172,22 @@ def main() -> None:
 
     data_dir = REPO_ROOT / "data"
     data_dir.mkdir(exist_ok=True)
+    # assets/ holds the git-tracked binary images (thumbnails, program
+    # icons, browser link icon overrides, static app-chrome icons) — never
+    # cloud-synced, so deliberately kept out of data/ (which is now either
+    # a GCS blob cache or a git-tracked JSON default) to keep that
+    # separation obvious on disk. See assets/README.md.
+    assets_dir = REPO_ROOT / "assets"
+    assets_dir.mkdir(exist_ok=True)
+    # appdata/ holds the git-tracked static files data/ itself doesn't own —
+    # bootstrap defaults and examples that are never cloud-synced and never
+    # written by the running app. Kept out of data/ so data/ is unambiguously
+    # "cloud-synced JSON only", matching what the Maya-side scripts under
+    # plugins/repo_internal/ already assume when they hardcode data/ paths
+    # directly (they can't import PluginAPI, so they duplicate this
+    # assumption rather than reading it from anywhere). See appdata/README.md.
+    appdata_dir = REPO_ROOT / "appdata"
+    appdata_dir.mkdir(exist_ok=True)
     # cache/ is where every per-machine, gitignored file lives now (not
     # data/) — it's already excluded wholesale from UkoreHub.exe (git-
     # tracked) and from developer/commit-main.ps1's release publish, so
@@ -181,7 +200,7 @@ def main() -> None:
     # studio-wide via Google Cloud Storage (core/cloud_sync.py), not git —
     # pull whatever's newest before constructing the stores that read them,
     # and wire on_save so every local edit pushes straight back up.
-    cloud_sync = _build_cloud_sync(data_dir, cache_dir)
+    cloud_sync = _build_cloud_sync(data_dir, appdata_dir, cache_dir)
     if cloud_sync is None:
         print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
         debug_log.log("CloudSync", "not configured on this machine — shared data stays local-only")
@@ -219,11 +238,15 @@ def main() -> None:
             print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
             debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
-    store = MetadataStore(data_dir / "projects.json", on_save=lambda: _push_shared_blob("projects.json"))
+    store = MetadataStore(
+        data_dir / "projects.json", assets_dir=assets_dir, on_save=lambda: _push_shared_blob("projects.json")
+    )
     system_config_store = SystemConfigStore(
         data_dir / "system_config.json", on_save=lambda: _push_shared_blob("system_config.json")
     )
-    program_store = ProgramStore(data_dir / "programs.json", on_save=lambda: _push_shared_blob("programs.json"))
+    program_store = ProgramStore(
+        data_dir / "programs.json", assets_dir=assets_dir, on_save=lambda: _push_shared_blob("programs.json")
+    )
     # local_config.json and github_token.json are per-machine and gitignored
     # — see cache_dir comment above.
     local_config_store = LocalConfigStore(cache_dir / "local_config.json")

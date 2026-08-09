@@ -23,7 +23,7 @@ re-enabling it for every existing and future repo for no benefit.
 - `plugin.py` — `register(api)`: builds one `DebugConsolePage` and
   registers it as a section (order 900, near the bottom of the sidebar —
   this is a developer tool, not meant to be prominent), with
-  `data/icons/icons8-debug-50.png` as its sidebar icon.
+  `assets/icons/icons8-debug-50.png` as its sidebar icon.
 - `debug_console_page.py` — `DebugConsolePage`: a source filter
   (`QComboBox`, "All sources" + every name `debug_log.sources()` knows
   about, rebuilt whenever a new source appears) above a read-only,

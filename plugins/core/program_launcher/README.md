@@ -1,6 +1,6 @@
 # plugins/core/program_launcher/
 
-Adds one sidebar tab (icon `data/icons/icons8-booster-64.png`) listing
+Adds one sidebar tab (icon `assets/icons/icons8-booster-64.png`) listing
 every Program the active repo requires (`Repo.required_program_ids`) — a
 generic launcher, not tied to any one piece of software (this plugin used
 to be `unity_hub`, a single "Open Unity Hub" button; renamed and

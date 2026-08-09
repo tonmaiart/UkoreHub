@@ -35,7 +35,7 @@ _MAX_LAST_OPENED = 20
 _LAST_OPENED_PANEL_WIDTH = 220
 
 _ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
-# Both nav icons live at the repo root rather than data/icons/ — falls back
+# Both nav icons live at the repo root rather than assets/icons/ — falls back
 # to text (same convention as interface/sidebar/sidebar.py's Setting
 # button) if a file isn't there.
 BACK_ICON_PATH = _ROOT_DIR / "icons8-back-50.png"

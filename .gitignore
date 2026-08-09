@@ -8,8 +8,9 @@ __pycache__/
 # self-update git pull outright. They're now synced via Google Cloud
 # Storage instead (core/cloud_sync.py) — each is a local cache of the
 # shared bucket's blob, pulled on launch and pushed on every save, so they
-# no longer belong in git at all. data/thumbnails/ (and the other image
-# dirs) are unaffected — still git-tracked as before. Every per-machine/
+# no longer belong in git at all. assets/thumbnails/ (and the other image
+# dirs, moved out of data/ into their own assets/ tree 2026-08-09) are
+# unaffected — still git-tracked as before. Every per-machine/
 # gitignored file (local_config.json, github_token.json,
 # gcs_refresh_token.json, webengine_profile/, plugin_local_config/) lives
 # under /cache/ instead, not data/ — see that rule below and

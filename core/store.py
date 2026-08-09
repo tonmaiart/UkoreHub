@@ -27,8 +27,14 @@ def _utc_now_iso() -> str:
 
 
 class MetadataStore:
-    def __init__(self, json_path: Path, *, on_save: Callable[[], None] | None = None):
+    def __init__(self, json_path: Path, *, assets_dir: Path | None = None, on_save: Callable[[], None] | None = None):
         self.json_path = Path(json_path)
+        # Binary images (thumbnails, browser link icon overrides) are
+        # git-tracked assets, not cloud-synced data — they live in their own
+        # assets/ tree, not alongside json_path. Defaults to json_path's
+        # grandparent / "assets" (<repo_root>/assets) for callers that don't
+        # care about resolving image paths and never pass this explicitly.
+        self.assets_dir = Path(assets_dir) if assets_dir is not None else self.json_path.parent.parent / "assets"
         self.projects: list[Project] = []
         self.on_save = on_save
         self.load()
@@ -197,7 +203,7 @@ class MetadataStore:
 
     @property
     def thumbnails_dir(self) -> Path:
-        return self.json_path.parent / "thumbnails"
+        return self.assets_dir / "thumbnails"
 
     def resolve_thumbnail_path(self, repo: Repo) -> Path | None:
         if not repo.thumbnail_filename:
@@ -206,7 +212,7 @@ class MetadataStore:
 
     @property
     def browser_link_icons_dir(self) -> Path:
-        return self.json_path.parent / "browser_link_icons"
+        return self.assets_dir / "browser_link_icons"
 
     def resolve_browser_link_icon_path(self, link: BrowserLink) -> Path | None:
         if not link.icon_filename:

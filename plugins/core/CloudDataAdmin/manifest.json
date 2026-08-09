@@ -1,0 +1,8 @@
+{
+  "id": "cloud_data_admin",
+  "name": "CloudDataAdmin",
+  "version": "0.1.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Settings > Developer tab to pull any cloud-synced JSON blob (projects.json, programs.json, system_config.json, plugins/core/*.json) to a chosen file, or push a chosen local file up as a manual backup restore/seed — independent of the running app's own data/ files."
+}

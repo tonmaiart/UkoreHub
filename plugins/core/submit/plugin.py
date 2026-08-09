@@ -19,7 +19,7 @@ def _wire(page: RepoGitStatusPage, host: SectionHost) -> None:
 
 def register(api) -> None:
     page = RepoGitStatusPage(store=api.metadata, local_config_store=api.local_config, git_service=api.git)
-    icons_dir = api.app_root / "data" / "icons"
+    icons_dir = api.app_root / "assets" / "icons"
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,

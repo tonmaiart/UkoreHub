@@ -249,7 +249,7 @@ def _wire(page: ProgramLauncherPage, host: SectionHost) -> None:
 
 
 def register(api) -> None:
-    icons_dir = api.app_root / "data" / "icons"
+    icons_dir = api.app_root / "assets" / "icons"
     api.register_section(
         SectionSpec(
             key=PLUGIN_ID,

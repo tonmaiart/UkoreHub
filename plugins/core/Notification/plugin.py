@@ -12,7 +12,7 @@ def _wire(page: NotificationPage, host: SectionHost) -> None:
 
 
 def register(api) -> None:
-    icons_dir = api.app_root / "data" / "icons"
+    icons_dir = api.app_root / "assets" / "icons"
     page = NotificationPage(
         local_config_store=api.local_config,
         config_store=api.plugin_config_store(PLUGIN_ID, shared=False),

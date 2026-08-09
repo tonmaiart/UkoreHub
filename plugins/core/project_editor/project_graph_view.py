@@ -84,7 +84,7 @@ _GRID_LINE_ALPHA = 8
 # Clone-status corner icon, drawn top-right on every node — file lives at
 # plugins/core/project_editor/project_graph_view.py, three parents up is
 # the UkoreHub repo root.
-_ICONS_DIR = Path(__file__).resolve().parents[3] / "data" / "icons"
+_ICONS_DIR = Path(__file__).resolve().parents[3] / "assets" / "icons"
 _CONNECTED_ICON_PATH = _ICONS_DIR / "icons8-connected-30.png"
 _DISCONNECTED_ICON_PATH = _ICONS_DIR / "icons8-disconnected-30.png"
 _CLONE_STATUS_ICON_SIZE = 16
