@@ -231,6 +231,12 @@ class StudioSettingsDialog(QDialog):
         form.addRow("Google OAuth Client Secret:", self.google_client_secret_edit)
         self._layout.addLayout(form)
 
+        # Aliases so _on_import_from_json (shared with _build_gate) fills
+        # this form's own Client ID/Secret fields.
+        self._client_id_edit = self.google_client_id_edit
+        self._client_secret_edit = self.google_client_secret_edit
+        self._add_import_from_json_button()
+
         hint = QLabel(
             "Every artist logs in with their own Google account (added to the\n"
             "bucket's IAM group by a studio admin) — no key file involved.\n"
