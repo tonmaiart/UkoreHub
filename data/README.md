@@ -40,6 +40,21 @@ meant any machine with an uncommitted local edit broke the self-update
 - `projects.example.json` — a checked-in sample shape for `projects.json`,
   not read by the app itself. Still git-tracked (it's a static example, not
   live data).
+- `system_config.default.json` — git-tracked bootstrap copy of just the
+  two `core/cloud_sync.py` fields an anonymous pull needs
+  (`gcs_bucket_name`/`gcs_project_id`). Deliberately excludes
+  `google_oauth_client_id`/`google_oauth_client_secret` — GitHub's secret
+  scanning flags the client secret, and it's dead weight here anyway: this
+  file is only ever consulted when no `refresh_token` exists yet either
+  (a genuinely fresh machine), and `GcsJsonSync` only builds `Credentials`
+  from client id/secret when `refresh_token` is present. Unlike
+  `projects.example.json`, this one **is** read by the app: `launcher.py`'s
+  `_build_cloud_sync` falls back to it when the real (gitignored)
+  `system_config.json` doesn't exist yet on this machine or lacks
+  `gcs_bucket_name` — otherwise a fresh clone could never bootstrap the
+  bucket name needed to pull the real `system_config.json` in the first
+  place. The first successful pull overwrites `system_config.json` with
+  the live cloud copy, so this file only matters before that.
 - `plugins/core/*.json` — `PluginConfigStore` files, one per `plugin_id` a
   plugin's `register(api)` chose with `shared=True`
   (`api.plugin_config_store(plugin_id, shared=True)`). Shared/cloud-synced.

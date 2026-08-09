@@ -59,23 +59,41 @@ def check_git_lfs_prerequisite() -> bool:
 
 def _build_cloud_sync(data_dir: Path, cache_dir: Path):
     """Best-effort: returns None (cloud sync disabled, the shared stores
-    stay purely local — the pre-migration behavior) only if the bucket
-    itself isn't configured yet. The bucket is public-read, so a machine
-    with no cached Google refresh token (see core/google_auth.py's
-    GoogleTokenStore — obtained via the "Studio" button, contributed by
-    plugins/core/CloudConfig/'s plugin.py via the sidebar footer registry)
-    still gets a real GcsJsonSync that can pull() anonymously; it just
-    can't push() (see GcsJsonSync.can_push) until that artist logs in.
+    stay purely local — the pre-migration behavior) only if no bucket name
+    can be found at all, from either source below. The bucket is
+    public-read, so a machine with no cached Google refresh token (see
+    core/google_auth.py's GoogleTokenStore — obtained via the "Studio"
+    button, contributed by plugins/core/CloudConfig/'s plugin.py via the
+    sidebar footer registry) still gets a real GcsJsonSync that can pull()
+    anonymously; it just can't push() (see GcsJsonSync.can_push) until
+    that artist logs in.
+
     Reads config fields off the raw local system_config.json rather than
     through SystemConfigStore, since that store is itself one of the
-    things this function ends up syncing."""
+    things this function ends up syncing — which creates a bootstrap
+    problem on a machine that has never run UkoreHub before:
+    data/system_config.json is gitignored (see .gitignore's comment), so a
+    fresh clone has no local copy yet, and the bucket name needed to pull
+    the real one lives inside it. data/system_config.default.json (tracked
+    in git, see data/README.md) breaks that cycle — same "not meaningfully
+    secret for a distributed desktop app" reasoning already applied to
+    google_oauth_client_id/secret and github_client_id. Only consulted
+    when the local file is missing/incomplete; the pull() below then
+    overwrites data/system_config.json with the real cloud copy, so later
+    runs never need the fallback again."""
     system_config_path = data_dir / "system_config.json"
-    if not system_config_path.exists():
-        return None
-    config = json.loads(system_config_path.read_text(encoding="utf-8"))
+    config = {}
+    if system_config_path.exists():
+        config = json.loads(system_config_path.read_text(encoding="utf-8"))
     bucket_name = config.get("gcs_bucket_name")
     if not bucket_name:
-        return None
+        default_path = data_dir / "system_config.default.json"
+        if not default_path.exists():
+            return None
+        config = json.loads(default_path.read_text(encoding="utf-8"))
+        bucket_name = config.get("gcs_bucket_name")
+        if not bucket_name:
+            return None
     project_id = config.get("gcs_project_id")
     client_id = config.get("google_oauth_client_id")
     client_secret = config.get("google_oauth_client_secret")
