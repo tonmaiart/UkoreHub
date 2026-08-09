@@ -59,32 +59,30 @@ def check_git_lfs_prerequisite() -> bool:
 
 def _build_cloud_sync(data_dir: Path, cache_dir: Path):
     """Best-effort: returns None (cloud sync disabled, the shared stores
-    stay purely local — the pre-migration behavior) if this machine hasn't
-    logged in yet, i.e. no cached Google refresh token (see
-    core/google_auth.py's GoogleTokenStore — obtained via the "Studio"
-    button, now contributed by plugins/core/CloudConfig/'s plugin.py via
-    the sidebar footer registry rather than a hardcoded Sidebar button,
-    since the studio's GCP org blocks service-account key creation) or the
-    bucket/OAuth client isn't configured yet. Reads those fields off the
-    raw local system_config.json rather than through SystemConfigStore,
-    since that store is itself one
-    of the things this function ends up syncing."""
+    stay purely local — the pre-migration behavior) only if the bucket
+    itself isn't configured yet. The bucket is public-read, so a machine
+    with no cached Google refresh token (see core/google_auth.py's
+    GoogleTokenStore — obtained via the "Studio" button, contributed by
+    plugins/core/CloudConfig/'s plugin.py via the sidebar footer registry)
+    still gets a real GcsJsonSync that can pull() anonymously; it just
+    can't push() (see GcsJsonSync.can_push) until that artist logs in.
+    Reads config fields off the raw local system_config.json rather than
+    through SystemConfigStore, since that store is itself one of the
+    things this function ends up syncing."""
     system_config_path = data_dir / "system_config.json"
     if not system_config_path.exists():
         return None
     config = json.loads(system_config_path.read_text(encoding="utf-8"))
     bucket_name = config.get("gcs_bucket_name")
+    if not bucket_name:
+        return None
     project_id = config.get("gcs_project_id")
     client_id = config.get("google_oauth_client_id")
     client_secret = config.get("google_oauth_client_secret")
-    if not (bucket_name and project_id and client_id and client_secret):
-        return None
 
     from core.google_auth import GoogleTokenStore
 
     refresh_token = GoogleTokenStore(cache_dir / "gcs_refresh_token.json").load_token()
-    if not refresh_token:
-        return None
 
     from core.cloud_sync import GcsJsonSync
 

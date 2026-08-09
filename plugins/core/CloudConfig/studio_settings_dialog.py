@@ -103,8 +103,8 @@ class StudioSettingsDialog(QDialog):
         self._clear_layout()
 
         intro = QLabel(
-            "Log in with Google to sync the shared Project/Program\n"
-            "registries through Google Cloud Storage instead of git."
+            "The shared Project/Program registries already sync for reading —\n"
+            "log in with Google here only if you need to save changes to them."
         )
         intro.setWordWrap(True)
         self._layout.addWidget(intro)
