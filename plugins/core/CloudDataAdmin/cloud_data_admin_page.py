@@ -67,8 +67,11 @@ class CloudDataAdminPage(QWidget):
         pull_button = QPushButton("Pull from Cloud, Save As...")
         pull_button.clicked.connect(self._on_pull)
         button_row.addWidget(pull_button)
-        open_button = QPushButton("Open File...")
-        open_button.setToolTip("Open any local file (e.g. a pulled/backup copy) in its default app, to inspect it.")
+        open_button = QPushButton("Open Local Synced File")
+        open_button.setToolTip(
+            "Open this blob's own local cache under data/ (the file this running app actually reads/writes) "
+            "in its default app."
+        )
         open_button.clicked.connect(self._on_open_file)
         button_row.addWidget(open_button)
         push_button = QPushButton("Push File to Cloud...")
@@ -137,11 +140,24 @@ class CloudDataAdminPage(QWidget):
             )
 
     def _on_open_file(self) -> None:
-        file_path, _filter = QFileDialog.getOpenFileName(self, "Open file", "", "JSON (*.json);;All Files (*)")
-        if not file_path:
+        blob_name = self._blob_combo.currentText().strip()
+        if not blob_name:
             return
-        if not open_with_default_app(Path(file_path)):
-            QMessageBox.warning(self, "Open File", f"Could not open:\n{file_path}")
+        # blob_name is always "/"-separated (see _known_blob_names/GcsJsonSync
+        # convention) — Path() normalizes that to the OS separator, and this
+        # mirrors data_dir / blob_name exactly as launcher.py/plugin_api.py
+        # already build it, so it's always this blob's real local cache path.
+        local_path = self._api.app_root / "data" / Path(blob_name)
+        if not local_path.exists():
+            QMessageBox.information(
+                self,
+                "Open Local Synced File",
+                f"No local copy of '{blob_name}' at:\n{local_path}\n\n"
+                "It may not have synced to this machine yet — try Pull from Cloud first.",
+            )
+            return
+        if not open_with_default_app(local_path):
+            QMessageBox.warning(self, "Open Local Synced File", f"Could not open:\n{local_path}")
 
     def _on_push(self) -> None:
         blob_name = self._blob_combo.currentText().strip()

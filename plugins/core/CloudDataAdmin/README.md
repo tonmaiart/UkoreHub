@@ -32,11 +32,12 @@ engine this sits on top of.
     <chosen save path>)`, so an artist can inspect exactly what's live on
     the bucket right now without disturbing this running session's own
     `data/` files.
-  - **Open File...** — picks any local file and opens it in its OS default
-    app (`core/os_utils.py`'s `open_with_default_app`, the same helper
-    `plugins/core/explorer/browser_widget.py` uses) — for eyeballing a
-    pulled/backup copy's contents without leaving UkoreHub to hunt for it
-    in File Explorer.
+  - **Open Local Synced File** — opens the selected blob's own local cache
+    under `data/` (i.e. `data/<blob_name>` — the exact file this running
+    app itself reads/writes, not a file picker) in its OS default app
+    (`core/os_utils.py`'s `open_with_default_app`, the same helper
+    `plugins/core/explorer/browser_widget.py` uses). Warns instead of
+    opening if that blob hasn't synced to this machine yet.
   - **Push File to Cloud...** — picks a local JSON file, confirms (names
     the blob and warns every artist's next launch will pull it), then
     pulls the same blob into a throwaway temp file first (just to refresh
