@@ -42,5 +42,33 @@ def check_for_update(repo_root: Path = REPO_ROOT) -> bool:
     return local_head != upstream_head
 
 
+def _untrack_paths_deleted_upstream(repo_root: Path) -> None:
+    """Best-effort: `git rm --cached` every path tracked at HEAD but no
+    longer present at @{u} — leaves the actual file on disk untouched,
+    only drops it from git's index. Same reasoning/near-duplicate as
+    developer/packaging/updater.py's identically-named helper — see its
+    docstring. A file the running app writes to directly with no commit
+    step (e.g. data/projects.json before it moved to cloud sync, see
+    developer/bug-history/2026-08-09-shared-data-git-pull-conflict.md) is
+    always "locally modified" from git's point of view, so an incoming
+    pull that stops tracking that same file gets refused with "local
+    changes would be overwritten by merge" instead of just applying the
+    deletion."""
+    deleted = run_git(["diff", "--name-only", "--diff-filter=D", "HEAD", "@{u}"], cwd=repo_root)
+    for path in deleted.splitlines():
+        if not path:
+            continue
+        try:
+            run_git(["rm", "--cached", "--ignore-unmatch", "-r", path], cwd=repo_root)
+        except GitOperationError:
+            pass  # best-effort — the retried pull below still surfaces a real remaining conflict
+
+
 def pull_update(repo_root: Path = REPO_ROOT) -> None:
-    run_git(["pull"], cwd=repo_root)
+    try:
+        run_git(["pull"], cwd=repo_root)
+    except GitOperationError as exc:
+        if "would be overwritten by merge" not in str(exc):
+            raise
+        _untrack_paths_deleted_upstream(repo_root)
+        run_git(["pull"], cwd=repo_root)

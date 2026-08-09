@@ -48,14 +48,14 @@ class _GoogleLoginWorker(QThread):
 class StudioSettingsDialog(QDialog):
     """Separate top-level window (not a SettingsDialog tab) for the shared
     Google Cloud Storage sync config (core/cloud_sync.py) — its own gated
-    entry point, opened via Sidebar's "Studio Setting" footer button
-    (interface/sidebar/sidebar.py), deliberately outside the normal Setting
-    popup: this config needs a real login step before it makes sense to
-    edit anything, and — unlike every other Settings tab, which
-    self-persists on every field blur (see interface/settings/README.md)
-    — an explicit Save button, since an accidental edit here would
-    repoint the whole studio's shared registry sync, not just this
-    machine's own preference.
+    entry point, opened via the "Studio Setting" footer button this plugin
+    contributes through PluginAPI.register_sidebar_footer_action() (see
+    plugin.py), deliberately outside the normal Setting popup: this config
+    needs a real login step before it makes sense to edit anything, and —
+    unlike every other Settings tab, which self-persists on every field
+    blur (see interface/settings/README.md) — an explicit Save button,
+    since an accidental edit here would repoint the whole studio's shared
+    registry sync, not just this machine's own preference.
 
     Two states, decided once at construction time by whether a Google
     refresh token is already cached (core/google_auth.py's

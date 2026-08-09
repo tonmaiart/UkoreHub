@@ -164,16 +164,25 @@ Tickets..." button:
   additionally carry an `export_type` (`"playblast"` or `"unreal"`) — see
   `plugins/repo_internal/MayaPublisher/README.md`.
 
-Storage: `data/plugins/core/<tool_id>.json`, key `"tickets"`, keyed by
-`"<project_id>:<repo_id>"` (the active repo doing the publishing). This is
-the only ticket data that lives under UkoreHub's own `data/` — the
-validation scripts themselves deliberately don't, since they're pipeline
-code that belongs with the repo, not app config (see above).
+Storage: `<active repo's own local clone>/.ukorehub/<tool_id>_tickets.json`,
+key `"tickets"`, a flat list — committed to that repo's own git history,
+same as the validation scripts themselves (see above), not UkoreHub's own
+`data/`. Ticket definitions (publish target, attached scripts) are
+team-shared pipeline config every artist on the repo needs, not
+per-machine app state. Previously lived in a single shared, cloud-synced
+`data/plugins/core/<tool_id>.json` (every studio repo's tickets in one
+file, keyed `"<project_id>:<repo_id>"`) — moved out since that file needs
+Google Cloud Storage access this Maya process doesn't have (no
+`google-cloud-storage` in mayapy's site-packages); see `tickets.py`'s
+`_migrate_from_shared_store` for how an existing repo's tickets are
+carried forward into its own repo-local file on first access.
 
-**Migration**: the first time a repo's tickets are listed and it still has
-an old-style single Publish Path choice (from before 2026-08-03) but no
-tickets yet, a `"Main"` ticket is auto-created seeded from that old
-choice — nothing gets silently lost by this change.
+**Migration**: the first time a repo's tickets are listed and its own
+`.ukorehub/<tool_id>_tickets.json` doesn't exist yet, its entry from the
+old shared blob (if any) is carried forward, or — failing that — an
+old-style single Publish Path choice (from before 2026-08-03) is
+auto-created as a `"Main"` ticket. Nothing gets silently lost by this
+change.
 
 ## Why this replaces the old `share`/`publish` path-swap convention
 

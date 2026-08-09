@@ -12,7 +12,7 @@ from core.extensibility.hooks import GitHookEvent, HookHandler, HookRegistry
 from core.git_service import GitService
 from core.models import Repo
 from core.program_store import ProgramStore
-from core.store import LocalConfigStore, MetadataStore
+from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from interface.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
 from interface.section_registry import SectionRegistry, SectionSpec
 from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
@@ -38,6 +38,7 @@ class PluginAPI:
         store: MetadataStore,
         program_store: ProgramStore,
         local_config_store: LocalConfigStore,
+        system_config_store: SystemConfigStore,
         git_service: GitService,
         hooks: HookRegistry,
         section_registry: SectionRegistry,
@@ -47,12 +48,14 @@ class PluginAPI:
         sidebar_footer_action_registry: SidebarFooterActionRegistry,
         plugins_data_dir: Path,
         plugins_local_dir: Path,
+        cache_dir: Path,
         app_root: Path,
         cloud_sync: GcsJsonSync | None = None,
     ):
         self._store = store
         self._program_store = program_store
         self._local_config_store = local_config_store
+        self._system_config_store = system_config_store
         self._git_service = git_service
         self._hooks = hooks
         self._section_registry = section_registry
@@ -62,6 +65,7 @@ class PluginAPI:
         self._sidebar_footer_action_registry = sidebar_footer_action_registry
         self._plugins_data_dir = Path(plugins_data_dir)
         self._plugins_local_dir = Path(plugins_local_dir)
+        self._cache_dir = Path(cache_dir)
         self._app_root = Path(app_root)
         self._cloud_sync = cloud_sync
 
@@ -76,6 +80,34 @@ class PluginAPI:
     @property
     def local_config(self) -> LocalConfigStore:
         return self._local_config_store
+
+    @property
+    def system_config_store(self) -> SystemConfigStore:
+        """Shared, cloud-synced studio config — the same object launcher.py
+        threads into register_builtin_settings_tabs. For a plugin (e.g.
+        plugins/core/CloudConfig/) that needs direct read/write access to
+        the gcs_*/google_oauth_* fields."""
+        return self._system_config_store
+
+    @property
+    def cache_dir(self) -> Path:
+        """UkoreHub's own per-machine cache/ directory (gitignored) — for a
+        plugin building its own per-machine state alongside
+        cache/local_config.json/cache/gcs_refresh_token.json, e.g.
+        constructing core/google_auth.py's GoogleTokenStore(api.cache_dir /
+        "gcs_refresh_token.json"). Same purpose as app_root, one directory
+        over."""
+        return self._cache_dir
+
+    @property
+    def cloud_sync(self) -> GcsJsonSync | None:
+        """Read-only access to the already-built cloud-sync engine — the
+        same object plugin_config_store() already uses privately. None if
+        cloud sync isn't configured/logged-in for this run (see
+        launcher.py's _build_cloud_sync). Decided once at startup —
+        completing login mid-session won't flip this until UkoreHub
+        restarts."""
+        return self._cloud_sync
 
     @property
     def git(self) -> GitService:

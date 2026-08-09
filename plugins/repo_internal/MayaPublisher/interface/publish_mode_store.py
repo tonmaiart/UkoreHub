@@ -14,10 +14,12 @@ def _repo_key(project_id: str, repo_id: str) -> str:
 def get_publish_mode(api, project_id: str, repo_id: str) -> str | None:
     """This repo's configured Publish Mode ("rig"/"model"/"animation"), or
     None if a studio admin hasn't set one yet. Resolves to
-    data/plugins/core/maya_publisher.json — the same file
-    PublishApi/tickets.py's ticket storage for tool_id "maya_publisher"
-    also lands in (see interface/plugin_api.py's plugin_config_store,
-    shared=True -> the "core" subdir)."""
+    data/plugins/core/maya_publisher.json (see interface/plugin_api.py's
+    plugin_config_store, shared=True -> the "core" subdir) — studio-wide
+    settings-page state, unlike PublishApi/tickets.py's ticket storage for
+    tool_id "maya_publisher", which used to land in this same file but now
+    lives inside each repo's own .ukorehub/ folder instead (see that
+    module's docstring)."""
     store = api.plugin_config_store(PLUGIN_ID, shared=True)
     return store.get(_MODE_KEY, {}).get(_repo_key(project_id, repo_id))
 

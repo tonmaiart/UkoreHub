@@ -16,13 +16,21 @@ below). A script whose `validate()` returns `False` (or raises) still
 blocks the publish from being reported as successful, same as before —
 these scripts are now both the gate *and* the mechanism.
 
-Storage: data/plugins/core/<tool_id>.json, key "tickets", a dict keyed
-by "<project_id>:<repo_id>" (the *active* repo doing the publishing — same
-key shape the old "repo_publish_target" used, see _migrate_legacy_target
-below for how an existing choice under that old key is carried forward).
-Every function here follows repo_paths.py's own "construct the store
-straight off disk" convention — Maya's Python has no PluginAPI instance to
-call plugin_config_store() through.
+Storage: <active repo's own local clone>/.ukorehub/<tool_id>_tickets.json,
+key "tickets", a flat list — committed to that repo's own git history like
+any other pipeline config (PublishValidation/'s scripts, validation_scripts_dir()
+below), not gitignored, since ticket definitions (publish target, attached
+scripts) are team-shared pipeline config every artist on that repo needs,
+not personal/per-machine scratch state. Moved out of the old shared
+data/plugins/core/<tool_id>.json blob (which held every studio repo's
+tickets in one cloud-synced file, keyed by "<project_id>:<repo_id>") since
+that file requires Google Cloud Storage access this Maya process doesn't
+have (no google-cloud-storage in mayapy's site-packages) — see
+_migrate_from_shared_store below for how an existing repo's tickets saved
+under the old shared blob are carried forward into its own repo-local file
+on first access. Every function here follows repo_paths.py's own
+"construct the store straight off disk" convention — Maya's Python has no
+PluginAPI instance to call plugin_config_store() through.
 
 Validation scripts are real .py files living in a **fixed, repo-committed
 folder** — <active repo's own local clone>/PublishValidation/<tool_id>/ —
@@ -50,31 +58,41 @@ from pathlib import Path
 from PublishApi import repo_paths
 
 
-def _tool_store(tool_id: str):
+def _repo_ticket_store(tool_id: str):
+    """The active repo's own .ukorehub/<tool_id>_tickets.json — None if
+    there's no active repo. Reuses PluginConfigStore (core/extensibility/
+    config_store.py) purely for its atomic JSON load/set, not for anything
+    data/plugins/core/-specific; it works on any Path."""
+    from core.extensibility.config_store import PluginConfigStore
+
+    _project, _repo, repo_path = repo_paths.get_active_repo()
+    if repo_path is None:
+        return None
+    return PluginConfigStore(repo_path / ".ukorehub" / f"{tool_id}_tickets.json")
+
+
+def _migrate_from_shared_store(tool_id: str, project_id: str, repo_id: str) -> list[dict]:
+    """One-time carry-forward for a repo that already had tickets saved in
+    the old shared data/plugins/core/<tool_id>.json blob (pre-migration to
+    each repo's own .ukorehub/ folder) — either this repo's "tickets"[key]
+    entry, or (if that repo never had tickets yet) an old-style single
+    "repo_publish_target" choice, carried forward as a "Main" ticket
+    instead of silently losing it (this is exactly the RigTeam ->
+    PublishToUnity choice made earlier via the now-removed UkoreHub
+    Repository Setting tab). [] if neither exists."""
+    import uuid
+
     from core.extensibility.config_store import PluginConfigStore
 
     root = repo_paths.find_ukorehub_root()
-    return PluginConfigStore(root / "data" / "plugins" / "core" / f"{tool_id}.json")
+    shared_store = PluginConfigStore(root / "data" / "plugins" / "core" / f"{tool_id}.json")
+    key = f"{project_id}:{repo_id}"
 
+    tickets = shared_store.get("tickets", {}).get(key)
+    if tickets is not None:
+        return tickets
 
-def _active_key() -> tuple[str, str, str] | None:
-    """("<project_id>:<repo_id>", project_id, repo_id) for whichever repo
-    is currently active in UkoreHub, or None if there isn't one."""
-    project, repo, _ = repo_paths.get_active_repo()
-    if project is None:
-        return None
-    return f"{project.id}:{repo.id}", project.id, repo.id
-
-
-def _migrate_legacy_target(store, key: str) -> list[dict]:
-    """One-time upgrade: if this repo already had an old-style single
-    "repo_publish_target" choice and no tickets yet, carry it forward as a
-    "Main" ticket instead of silently losing it (this is exactly the
-    RigTeam -> PublishToUnity choice made earlier via the now-removed
-    UkoreHub Repository Setting tab)."""
-    import uuid
-
-    legacy = store.get("repo_publish_target", {}).get(key)
+    legacy = shared_store.get("repo_publish_target", {}).get(key)
     if legacy is None:
         return []
     return [
@@ -94,30 +112,29 @@ def _migrate_legacy_target(store, key: str) -> list[dict]:
 
 def list_tickets(tool_id: str) -> list[dict]:
     """The active repo's tickets for `tool_id`, running the one-time
-    legacy migration if this repo has none yet. [] if there's no active
-    repo."""
-    key_info = _active_key()
-    if key_info is None:
+    shared-store migration if this repo's own .ukorehub/ file has none
+    yet. [] if there's no active repo."""
+    project, repo, _repo_path = repo_paths.get_active_repo()
+    if project is None:
         return []
-    key, _project_id, _repo_id = key_info
 
-    store = _tool_store(tool_id)
-    all_tickets = store.get("tickets", {})
-    tickets = all_tickets.get(key)
+    store = _repo_ticket_store(tool_id)
+    if store is None:
+        return []
+    tickets = store.get("tickets")
 
     if tickets is None:
-        tickets = _migrate_legacy_target(store, key)
-        all_tickets[key] = tickets
-        store.set("tickets", all_tickets)
+        tickets = _migrate_from_shared_store(tool_id, project.id, repo.id)
+        store.set("tickets", tickets)
 
     return tickets
 
 
-def _save_tickets(tool_id: str, key: str, tickets: list[dict]) -> None:
-    store = _tool_store(tool_id)
-    all_tickets = store.get("tickets", {})
-    all_tickets[key] = tickets
-    store.set("tickets", all_tickets)
+def _save_tickets(tool_id: str, tickets: list[dict]) -> None:
+    store = _repo_ticket_store(tool_id)
+    if store is None:
+        return
+    store.set("tickets", tickets)
 
 
 def create_ticket(tool_id: str, name: str, folder_name: str) -> dict:
@@ -127,10 +144,9 @@ def create_ticket(tool_id: str, name: str, folder_name: str) -> dict:
     something to quietly allow."""
     import uuid
 
-    key_info = _active_key()
-    if key_info is None:
+    project, _repo, _repo_path = repo_paths.get_active_repo()
+    if project is None:
         raise RuntimeError("No active repo selected in UkoreHub.")
-    key, _project_id, _repo_id = key_info
 
     existing = list_tickets(tool_id)
     if any(t["folder_name"] == folder_name for t in existing):
@@ -144,21 +160,17 @@ def create_ticket(tool_id: str, name: str, folder_name: str) -> dict:
         "script_names": [],
     }
     existing.append(ticket)
-    _save_tickets(tool_id, key, existing)
+    _save_tickets(tool_id, existing)
     return ticket
 
 
 def _update_ticket(tool_id: str, ticket_id: str, mutate) -> None:
-    key_info = _active_key()
-    if key_info is None:
-        return
-    key, _project_id, _repo_id = key_info
     tickets = list_tickets(tool_id)
     for ticket in tickets:
         if ticket["id"] == ticket_id:
             mutate(ticket)
             break
-    _save_tickets(tool_id, key, tickets)
+    _save_tickets(tool_id, tickets)
 
 
 def rename_ticket(tool_id: str, ticket_id: str, new_name: str) -> None:
@@ -183,12 +195,8 @@ def delete_ticket(tool_id: str, ticket_id: str) -> None:
     might not realize still matters (old versions, scripts they forgot
     about) is exactly the kind of silent destructive action this codebase
     avoids elsewhere."""
-    key_info = _active_key()
-    if key_info is None:
-        return
-    key, _project_id, _repo_id = key_info
     tickets = [t for t in list_tickets(tool_id) if t["id"] != ticket_id]
-    _save_tickets(tool_id, key, tickets)
+    _save_tickets(tool_id, tickets)
 
 
 def get_publish_root_for_ticket(tool_id: str, ticket: dict) -> str:

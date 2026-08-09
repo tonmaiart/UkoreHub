@@ -1,11 +1,22 @@
 """Per-repo playblast option storage — read/written entirely from inside
 Maya (function.py's publish_playblast, options_dialog.py's "Playblast
 Options..." dialog) since this tool has no UkoreHub desktop UI of its own
-(confirmed with the user 2026-07-19 — see plugin.py). Constructs the
-PluginConfigStore straight off disk, same pattern every Maya-side module
-in this codebase uses (Maya's Python has no PluginAPI instance) —
-PublishApi.repo_paths and UkoreBrowser's core/repo_context.py are the
-established examples."""
+(confirmed with the user 2026-07-19 — see plugin.py).
+
+Storage: <active repo's own local clone>/.ukorehub/ukore_playblast.json,
+committed to that repo's own git history like PublishApi's
+PublishValidation/ scripts — these are team-shared playblast defaults
+(resolution/format/variations) every artist on the repo should see, not a
+personal/per-machine preference. Moved out of the old shared
+data/plugins/core/ukore_playblast.json blob (every studio repo's options in
+one cloud-synced file, keyed by "<project_id>:<repo_id>") since that file
+requires Google Cloud Storage access this Maya process doesn't have (no
+google-cloud-storage in mayapy's site-packages) — see
+_migrate_from_shared_store below for how an existing repo's saved options
+are carried forward on first access. Constructs the PluginConfigStore
+straight off disk, same pattern every Maya-side module in this codebase
+uses (Maya's Python has no PluginAPI instance) — PublishApi.repo_paths and
+PublishApi.tickets are the established examples."""
 
 from __future__ import annotations
 
@@ -82,35 +93,65 @@ def _sanitize_token(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "", value) or "x"
 
 
-def _store():
-    root = repo_paths.find_ukorehub_root()
+def _repo_store():
+    """The active repo's own .ukorehub/ukore_playblast.json — None if
+    there's no active repo."""
     from core.extensibility.config_store import PluginConfigStore
 
-    return PluginConfigStore(root / "data" / "plugins" / "core" / "ukore_playblast.json")
+    _project, _repo, repo_path = repo_paths.get_active_repo()
+    if repo_path is None:
+        return None
+    return PluginConfigStore(repo_path / ".ukorehub" / "ukore_playblast.json")
+
+
+def _migrate_from_shared_store(key: str, project_id, repo_id):
+    """One-time carry-forward for a repo that already had options/variations
+    saved in the old shared data/plugins/core/ukore_playblast.json blob
+    (pre-migration to each repo's own .ukorehub/ folder). Returns None (for
+    _OPTIONS_KEY) or [] (for _VARIATIONS_KEY) if nothing was saved there."""
+    from core.extensibility.config_store import PluginConfigStore
+
+    root = repo_paths.find_ukorehub_root()
+    shared_store = PluginConfigStore(root / "data" / "plugins" / "core" / "ukore_playblast.json")
+    return shared_store.get(key, {}).get(_repo_key(project_id, repo_id))
 
 
 def get_options(project_id, repo_id):
     """DEFAULT_OPTIONS merged with whatever's saved for this repo — every
     field always present, so callers never need a .get() fallback."""
-    saved = _store().get(_OPTIONS_KEY, {}).get(_repo_key(project_id, repo_id), {})
+    store = _repo_store()
+    if store is None:
+        return dict(DEFAULT_OPTIONS)
+
+    saved = store.get(_OPTIONS_KEY)
+    if saved is None:
+        saved = _migrate_from_shared_store(_OPTIONS_KEY, project_id, repo_id) or {}
+        store.set(_OPTIONS_KEY, saved)
+
     options = dict(DEFAULT_OPTIONS)
     options.update(saved)
     return options
 
 
 def set_options(project_id, repo_id, options):
-    store = _store()
-    all_options = store.get(_OPTIONS_KEY, {})
-    all_options[_repo_key(project_id, repo_id)] = options
-    store.set(_OPTIONS_KEY, all_options)
+    store = _repo_store()
+    if store is None:
+        return
+    store.set(_OPTIONS_KEY, options)
 
 
 def get_variations(project_id, repo_id):
     """BUILTIN_VARIATIONS plus this repo's own custom additions (order
     preserved, no duplicates) — safe to call with project_id/repo_id both
-    None (no active repo), returning just the builtins, since the lookup
-    key simply won't match anything saved."""
-    saved = _store().get(_VARIATIONS_KEY, {}).get(_repo_key(project_id, repo_id), [])
+    None (no active repo), returning just the builtins."""
+    saved = []
+    store = _repo_store()
+    if store is not None:
+        saved = store.get(_VARIATIONS_KEY)
+        if saved is None:
+            saved = _migrate_from_shared_store(_VARIATIONS_KEY, project_id, repo_id) or []
+            store.set(_VARIATIONS_KEY, saved)
+
     result = list(BUILTIN_VARIATIONS)
     for variation in saved:
         if variation not in result:
@@ -121,15 +162,15 @@ def get_variations(project_id, repo_id):
 def add_variation(project_id, repo_id, variation) -> str:
     """Sanitizes and persists a new custom variation for this repo,
     returning the sanitized value actually saved so the caller (the
-    options dialog) can select exactly that. A no-op (beyond sanitizing)
+    options dialog) can select exactly that. A no-op (beyond sanitizing,
+    and beyond the no-active-repo case, which just returns without saving)
     if it's already a builtin or already saved for this repo."""
     sanitized = _sanitize_token(variation)
-    store = _store()
-    all_variations = store.get(_VARIATIONS_KEY, {})
-    key = _repo_key(project_id, repo_id)
-    repo_variations = list(all_variations.get(key, []))
+    store = _repo_store()
+    if store is None:
+        return sanitized
+    repo_variations = list(store.get(_VARIATIONS_KEY) or [])
     if sanitized not in BUILTIN_VARIATIONS and sanitized not in repo_variations:
         repo_variations.append(sanitized)
-        all_variations[key] = repo_variations
-        store.set(_VARIATIONS_KEY, all_variations)
+        store.set(_VARIATIONS_KEY, repo_variations)
     return sanitized

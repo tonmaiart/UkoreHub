@@ -165,10 +165,18 @@ it.
   compression blank avoids assuming any specific codec is installed
   (applies to `output_mode == "video"` only, see below).
   `get_options`/`set_options`, constructing
-  `PluginConfigStore(.../data/plugins/core/ukore_playblast.json)`
+  `PluginConfigStore(<active repo's own local clone>/.ukorehub/ukore_playblast.json)`
   straight off disk (same pattern `PublishApi.repo_paths` and
-  `UkoreBrowser/core/repo_context.py` use — Maya's Python has no
-  `PluginAPI` instance) under `repo_options: {"<project_id>:<repo_id>": {...}}`.
+  `PublishApi.tickets` use — Maya's Python has no `PluginAPI` instance)
+  under a plain `repo_options: {...}` key — committed to the repo's own git
+  history, like `PublishApi`'s ticket storage, since these are team-shared
+  playblast defaults, not a personal preference. Previously lived in a
+  single shared, cloud-synced `data/plugins/core/ukore_playblast.json`
+  (every studio repo's options in one file, keyed
+  `"<project_id>:<repo_id>"`) — moved out since that file needs Google
+  Cloud Storage access this Maya process doesn't have; see
+  `options_store.py`'s `_migrate_from_shared_store` for how an existing
+  repo's saved options are carried forward on first access.
   Added 2026-07-20 for the flat naming convention (see above):
   `"variation"` (this repo's currently-selected variation string) and
   `"output_mode"`/`"image_format"` (`"video"` | `"current_frame_image"`,

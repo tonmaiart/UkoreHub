@@ -11,8 +11,8 @@ class GithubOAuthSettingsPage(QWidget):
     this, only whoever registered the studio's GitHub OAuth App. The
     Google Cloud Storage sync settings that used to live on this same page
     moved to their own gated window — see
-    interface/settings/studio_settings_dialog.py's StudioSettingsDialog,
-    opened via Sidebar's separate "Studio Setting" footer button — since
+    plugins/core/CloudConfig/studio_settings_dialog.py's StudioSettingsDialog,
+    opened via that plugin's "Studio Setting" footer button — since
     that config needs a real login gate and an explicit Save step, unlike
     this page's plain self-persisting field."""
 

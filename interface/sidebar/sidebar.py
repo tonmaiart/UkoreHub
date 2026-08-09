@@ -24,21 +24,20 @@ class Sidebar(QWidget):
     height; Project Editor is NOT a row here, it's an always-visible docked
     panel instead, see plugins/core/project_editor/ and
     interface/section_registry.py's SectionSpec.persistent), and a footer
-    strip for sync status, SidebarFooterActionRegistry-provided widgets,
-    a display-only account_label (the GitHub username — actual login/logout happens in
+    strip for sync status, SidebarFooterActionRegistry-provided widgets
+    (e.g. plugins/core/CloudConfig/'s "Studio" button, opening its own
+    StudioSettingsDialog — the gated Google Cloud Storage sync config,
+    deliberately its own window rather than a Setting tab), a
+    display-only account_label (the GitHub username — actual login/logout happens in
     the launcher exe, see developer/packaging/updater.py; MainWindow just
     pushes local_config_store.github_username in here, and Settings >
     Common's Logout button clears it and relaunches to the login screen —
-    see main_window.py's _on_logout_requested), the text-only "Studio"
-    button (opens StudioSettingsDialog — the gated Google Cloud Storage
-    sync config, deliberately its own window rather than a Setting tab, see
-    interface/settings/studio_settings_dialog.py), and the icon-only
-    Setting button. Double-clicking a node in Project Editor's graph is the
-    only way to change the active repo."""
+    see main_window.py's _on_logout_requested), and the icon-only Setting
+    button. Double-clicking a node in Project Editor's graph is the only
+    way to change the active repo."""
 
     navigation_changed = Signal(str)
     settings_requested = Signal()
-    studio_settings_requested = Signal()
 
     def __init__(
         self, parent=None, *, section_registry: SectionRegistry, sidebar_footer_action_registry: SidebarFooterActionRegistry
@@ -61,14 +60,6 @@ class Sidebar(QWidget):
 
         self.account_label = QLabel("")
 
-        # No dedicated icon asset for this one (data/icons/ has none fitting
-        # "cloud"/"studio") — text-only, same fallback the Setting button
-        # itself uses when its own icon file is missing.
-        self.studio_setting_button = QPushButton("Studio")
-        self.studio_setting_button.setObjectName("sidebarStudioSettingButton")
-        self.studio_setting_button.setToolTip("Studio Setting")
-        self.studio_setting_button.clicked.connect(self.studio_settings_requested.emit)
-
         self.setting_button = QPushButton()
         self.setting_button.setObjectName("sidebarSettingButton")
         self.setting_button.setToolTip("Setting")
@@ -81,7 +72,6 @@ class Sidebar(QWidget):
 
         account_row = QHBoxLayout()
         account_row.addWidget(self.account_label, stretch=1)
-        account_row.addWidget(self.studio_setting_button)
         account_row.addWidget(self.setting_button)
 
         footer = QWidget()

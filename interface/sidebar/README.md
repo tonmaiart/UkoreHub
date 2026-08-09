@@ -11,23 +11,20 @@ Qt's `QMenuBar`/dropdown-menu widget.
   sync status, one widget per `interface/sidebar_footer_action_registry.py`
   entry (built via `spec.widget_factory()`, stored in
   `self.footer_action_widgets` keyed by `spec.key`; nothing here is
-  hardcoded, Sidebar just renders whatever's registered), then an account
-  row — `account_label` (display-only GitHub username, pushed in by
+  hardcoded, Sidebar just renders whatever's registered — e.g.
+  `plugins/core/CloudConfig/`'s "Studio" button, opening
+  `StudioSettingsDialog`, the gated Google Cloud Storage sync config, see
+  that plugin's own README; each footer-action widget renders as its own
+  full-width row, above the account row), then an account row —
+  `account_label` (display-only GitHub username, pushed in by
   `MainWindow._start_app` from `local_config_store.github_username`; no
   login/logout control of its own — actual GitHub login now happens
   entirely in the launcher exe before this app ever opens, see
   `developer/packaging/updater.py`, and logout lives in
   Settings > Common, see `interface/settings/README.md`) plus the
-  text-only `studio_setting_button` ("Studio" — opens
-  `StudioSettingsDialog`, the gated Google Cloud Storage sync config, see
-  `interface/settings/README.md`; no icon asset exists for it yet, same
-  fallback the Setting button itself uses when its own icon is missing)
-  and the icon-only `setting_button` right after it. Fixed width
-  (`SIDEBAR_WIDTH`). Both are deliberately their own buttons here, not
-  rows in `SectionTabList` — they're app-level controls, not repo-scoped
-  ones — so `MainWindow` deselects `tab_list`'s current row by hand when
-  either is clicked (`_on_settings_requested`/`_on_studio_settings_requested`)
-  rather than the list having any notion of a "Setting" entry itself.
+  icon-only `setting_button`. Fixed width (`SIDEBAR_WIDTH`). `setting_button`
+  is the only hardcoded app-level control left here — not a row in
+  `SectionTabList`, since it's app-level, not repo-scoped.
 - `active_repo_widget.py` — `ActiveRepoWidget`: the thumbnail banner
   (`_ThumbnailBanner`, fill-cropped, never rounded) plus a plain
   `name_label` beneath it naming the active Project/Repo. Re-added

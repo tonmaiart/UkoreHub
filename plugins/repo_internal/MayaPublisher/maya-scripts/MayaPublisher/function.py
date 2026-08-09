@@ -11,11 +11,12 @@ dict (PublishApi.tickets, created/edited via ticket_manager_dialog.py's
 "Manage Tickets..." button in this tool's own Maya window).
 
 Ticket *storage* is unified under TOOL_ID = "maya_publisher" (one
-data/plugins/core/maya_publisher.json for every mode, since a repo only
-ever uses one mode at a time). Validation-script *folders* deliberately
-keep using the old per-mode tool ids (MODE_TOOL_IDS below) so an
-already-migrated repo's committed PublishValidation/<old_tool_id>/ scripts
-don't need to move.
+<active repo>/.ukorehub/maya_publisher_tickets.json for every mode, since a
+repo only ever uses one mode at a time — see PublishApi/tickets.py's own
+docstring for why this lives inside the repo rather than under UkoreHub's
+own data/). Validation-script *folders* deliberately keep using the old
+per-mode tool ids (MODE_TOOL_IDS below) so an already-migrated repo's
+committed PublishValidation/<old_tool_id>/ scripts don't need to move.
 
 **2026-08-05: publish() no longer exports or copies any file itself.**
 Before this, publish() called a mode-specific UkoreMaya.core.Pipeline

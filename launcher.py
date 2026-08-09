@@ -62,7 +62,8 @@ def _build_cloud_sync(data_dir: Path, cache_dir: Path):
     stay purely local — the pre-migration behavior) if this machine hasn't
     logged in yet, i.e. no cached Google refresh token (see
     core/google_auth.py's GoogleTokenStore — obtained via the "Studio"
-    button in Sidebar's footer, interface/settings/studio_settings_dialog.py,
+    button, now contributed by plugins/core/CloudConfig/'s plugin.py via
+    the sidebar footer registry rather than a hardcoded Sidebar button,
     since the studio's GCP org blocks service-account key creation) or the
     bucket/OAuth client isn't configured yet. Reads those fields off the
     raw local system_config.json rather than through SystemConfigStore,
@@ -292,6 +293,7 @@ def main() -> None:
         store=store,
         program_store=program_store,
         local_config_store=local_config_store,
+        system_config_store=system_config_store,
         git_service=git_service,
         hooks=hook_registry,
         section_registry=section_registry,
@@ -301,6 +303,7 @@ def main() -> None:
         sidebar_footer_action_registry=sidebar_footer_action_registry,
         plugins_data_dir=data_dir / "plugins",
         plugins_local_dir=cache_dir / "plugin_local_config",
+        cache_dir=cache_dir,
         app_root=REPO_ROOT,
         cloud_sync=cloud_sync,
     )
@@ -340,7 +343,6 @@ def main() -> None:
         store,
         local_config_store,
         program_store,
-        system_config_store,
         git_service,
         token_store,
         cache_dir,
