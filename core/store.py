@@ -5,6 +5,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from core.exceptions import NotFoundError, ValidationError
 from core.models import BrowserLink, Project, Repo
@@ -26,9 +27,10 @@ def _utc_now_iso() -> str:
 
 
 class MetadataStore:
-    def __init__(self, json_path: Path):
+    def __init__(self, json_path: Path, *, on_save: Callable[[], None] | None = None):
         self.json_path = Path(json_path)
         self.projects: list[Project] = []
+        self.on_save = on_save
         self.load()
 
     def load(self) -> None:
@@ -45,6 +47,8 @@ class MetadataStore:
             "projects": [p.to_dict() for p in self.projects],
         }
         _atomic_write(self.json_path, data)
+        if self.on_save:
+            self.on_save()
 
     def list_projects(self) -> list[Project]:
         return list(self.projects)
@@ -293,14 +297,20 @@ class LocalConfigStore:
 
 
 class SystemConfigStore:
-    """Studio-wide settings meant to be committed to the UkoreHub repo itself
-    and shared to everyone via git (e.g. through the self-update pull), the
-    same way the MetadataStore registry (data/projects.json) is shared.
+    """Studio-wide settings shared to everyone via Google Cloud Storage (see
+    core/cloud_sync.py), the same way the MetadataStore registry
+    (data/projects.json) is shared. `on_save`, when provided by the caller,
+    pushes the freshly-saved file up to the shared bucket.
     """
 
-    def __init__(self, json_path: Path):
+    def __init__(self, json_path: Path, *, on_save: Callable[[], None] | None = None):
         self.json_path = Path(json_path)
         self.github_client_id: str | None = None
+        self.gcs_bucket_name: str | None = None
+        self.gcs_project_id: str | None = None
+        self.google_oauth_client_id: str | None = None
+        self.google_oauth_client_secret: str | None = None
+        self.on_save = on_save
         self.load()
 
     def load(self) -> None:
@@ -308,6 +318,10 @@ class SystemConfigStore:
             return
         data = json.loads(self.json_path.read_text(encoding="utf-8"))
         self.github_client_id = data.get("github_client_id")
+        self.gcs_bucket_name = data.get("gcs_bucket_name")
+        self.gcs_project_id = data.get("gcs_project_id")
+        self.google_oauth_client_id = data.get("google_oauth_client_id")
+        self.google_oauth_client_secret = data.get("google_oauth_client_secret")
 
     def save(self) -> None:
         _atomic_write(
@@ -315,9 +329,31 @@ class SystemConfigStore:
             {
                 "schema_version": SYSTEM_CONFIG_SCHEMA_VERSION,
                 "github_client_id": self.github_client_id,
+                "gcs_bucket_name": self.gcs_bucket_name,
+                "gcs_project_id": self.gcs_project_id,
+                "google_oauth_client_id": self.google_oauth_client_id,
+                "google_oauth_client_secret": self.google_oauth_client_secret,
             },
         )
+        if self.on_save:
+            self.on_save()
 
     def set_github_client_id(self, client_id: str) -> None:
         self.github_client_id = client_id or None
+        self.save()
+
+    def set_gcs_bucket_name(self, bucket_name: str) -> None:
+        self.gcs_bucket_name = bucket_name or None
+        self.save()
+
+    def set_gcs_project_id(self, project_id: str) -> None:
+        self.gcs_project_id = project_id or None
+        self.save()
+
+    def set_google_oauth_client_id(self, client_id: str) -> None:
+        self.google_oauth_client_id = client_id or None
+        self.save()
+
+    def set_google_oauth_client_secret(self, client_secret: str) -> None:
+        self.google_oauth_client_secret = client_secret or None
         self.save()

@@ -15,19 +15,34 @@ unless explicitly asked.
 
 ## JSON stores
 
+Shared studio config (below) is no longer git-tracked — each file is now a
+**local cache of a Google Cloud Storage blob**, synced by
+`core/cloud_sync.py`'s `GcsJsonSync`: pulled fresh on every launch, pushed
+back up on every save (see `launcher.py` and `interface/plugin_api.py`'s
+`plugin_config_store(shared=True)`). This replaced the old model (tracked
+in this repo, distributed via `git pull`/Update and Restart) because that
+meant any machine with an uncommitted local edit broke the self-update
+`git pull` outright — see `developer/bug-history/` for the incident.
+
 - `projects.json` — `MetadataStore`, the Project/Repo registry.
-  **Shared/git-tracked.** Can grow large as repos/thumbnails accumulate —
+  **Shared/cloud-synced.** Can grow large as repos/thumbnails accumulate —
   prefer `programs.json`/`system_config.json` below if you just need "an
   example of the shape."
 - `programs.json` — `ProgramStore`, the shared software catalog. Shared/
-  git-tracked, small.
-- `system_config.json` — `SystemConfigStore`, studio-wide settings (GitHub
-  OAuth client id). Shared/git-tracked, tiny.
+  cloud-synced, small.
+- `system_config.json` — `SystemConfigStore`, studio-wide settings: GitHub
+  OAuth client id, plus `gcs_bucket_name`/`gcs_project_id`/
+  `google_oauth_client_id`/`google_oauth_client_secret` for
+  `core/cloud_sync.py`. All non-secret identifiers safe to keep here — the
+  Google OAuth client is a "Desktop app" type, whose
+  secret isn't meaningfully confidential for a distributed app (same
+  reasoning as the GitHub Client ID). Shared/cloud-synced, tiny.
 - `projects.example.json` — a checked-in sample shape for `projects.json`,
-  not read by the app itself.
+  not read by the app itself. Still git-tracked (it's a static example, not
+  live data).
 - `plugins/core/*.json` — `PluginConfigStore` files, one per `plugin_id` a
   plugin's `register(api)` chose with `shared=True`
-  (`api.plugin_config_store(plugin_id, shared=True)`). Shared/git-tracked.
+  (`api.plugin_config_store(plugin_id, shared=True)`). Shared/cloud-synced.
   Named after `shared=True/False`, not after which `plugins/` source root
   the calling plugin itself lives under — a `plugins/repo_internal/` or
   `cache/plugins/` plugin still writes here for `shared=True`. The
@@ -37,8 +52,14 @@ unless explicitly asked.
 Everything per-machine/gitignored that used to live here
 (`local_config.json`, `github_token.json`, `webengine_profile/`,
 `plugins/local/*.json`) now lives under `cache/` instead — see
-`cache/README.md`. This means `data/` today holds only files meant to be
-the same for everyone at the studio.
+`cache/README.md`. That's also where each artist's own GCS
+**credential** lives (`cache/gcs_refresh_token.json`, a per-machine Google
+OAuth refresh token obtained via "Login with Google" in Setting >
+Developer — a real secret, never `data/`, which is either git-tracked or,
+for the JSON stores above, a cloud-synced cache readable by anyone with
+the file). This means `data/` today holds files meant to be the same for
+everyone at the studio, whether that sameness comes from git or from the
+shared bucket.
 
 ## Binary/image directories — not code, skip unless verifying a specific file
 

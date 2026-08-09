@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from core.cloud_sync import GcsJsonSync
+from core.exceptions import ConflictError
+from core.extensibility import debug_log
 from core.extensibility.config_store import PluginConfigStore
 from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
 from core.extensibility.hooks import GitHookEvent, HookHandler, HookRegistry
@@ -45,6 +48,7 @@ class PluginAPI:
         plugins_data_dir: Path,
         plugins_local_dir: Path,
         app_root: Path,
+        cloud_sync: GcsJsonSync | None = None,
     ):
         self._store = store
         self._program_store = program_store
@@ -59,6 +63,7 @@ class PluginAPI:
         self._plugins_data_dir = Path(plugins_data_dir)
         self._plugins_local_dir = Path(plugins_local_dir)
         self._app_root = Path(app_root)
+        self._cloud_sync = cloud_sync
 
     @property
     def metadata(self) -> MetadataStore:
@@ -138,11 +143,38 @@ class PluginAPI:
         self._hooks.subscribe(event, handler)
 
     def plugin_config_store(self, plugin_id: str, *, shared: bool = False) -> PluginConfigStore:
-        # shared=True -> data/plugins/core/ (tracked, same for everyone).
+        # shared=True -> data/plugins/core/ (synced via Google Cloud Storage,
+        # core/cloud_sync.py — same for everyone, no longer git-tracked).
         # shared=False -> cache/plugin_local_config/ (gitignored, per-machine
         # — lives under cache/ rather than data/ so it's excluded the same
         # way UkoreHub.exe/developer/commit-main.ps1 already excludes cache/
         # when publishing a release).
-        if shared:
-            return PluginConfigStore(self._plugins_data_dir / "core" / f"{plugin_id}.json")
-        return PluginConfigStore(self._plugins_local_dir / f"{plugin_id}.json")
+        if not shared:
+            return PluginConfigStore(self._plugins_local_dir / f"{plugin_id}.json")
+        json_path = self._plugins_data_dir / "core" / f"{plugin_id}.json"
+        blob_name = f"plugins/core/{plugin_id}.json"
+        if self._cloud_sync is not None:
+            try:
+                self._cloud_sync.pull(blob_name, json_path)
+                debug_log.log("CloudSync", f"pulled '{blob_name}'")
+            except Exception as exc:
+                # Same "never block on a cloud problem" rule as launcher.py's
+                # startup pull — a timeout/auth failure here shouldn't stop
+                # plugin registration, which runs synchronously at startup.
+                print(f"UkoreHub: cloud pull of '{blob_name}' failed ({exc}) — using local copy.")
+                debug_log.log("CloudSync", f"pull of '{blob_name}' failed ({exc}) — using local copy")
+
+        def _push_plugin_blob() -> None:
+            if self._cloud_sync is None:
+                return
+            try:
+                self._cloud_sync.push(blob_name, json_path)
+                debug_log.log("CloudSync", f"pushed '{blob_name}'")
+            except ConflictError as exc:
+                debug_log.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
+                raise
+            except Exception as exc:
+                print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
+                debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+
+        return PluginConfigStore(json_path, on_save=_push_plugin_blob)

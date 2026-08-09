@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
+from typing import Callable
 
 from core.exceptions import NotFoundError, ValidationError
 from core.models import Program
@@ -13,12 +14,14 @@ SCHEMA_VERSION = 1
 
 class ProgramStore:
     """Shared studio-wide catalog of pipeline software (Maya, Nuke, ...) that
-    Repos can declare as requirements. Backed by data/programs.json, tracked
-    in git alongside projects.json (same "system config" category)."""
+    Repos can declare as requirements. Backed by data/programs.json, synced
+    via Google Cloud Storage alongside projects.json (see
+    core/cloud_sync.py, same "shared studio config" category)."""
 
-    def __init__(self, json_path: Path):
+    def __init__(self, json_path: Path, *, on_save: Callable[[], None] | None = None):
         self.json_path = Path(json_path)
         self.programs: list[Program] = []
+        self.on_save = on_save
         self.load()
 
     def load(self) -> None:
@@ -35,6 +38,8 @@ class ProgramStore:
             "programs": [p.to_dict() for p in self.programs],
         }
         _atomic_write(self.json_path, data)
+        if self.on_save:
+            self.on_save()
 
     def list_programs(self) -> list[Program]:
         return list(self.programs)

@@ -18,12 +18,16 @@ Qt's `QMenuBar`/dropdown-menu widget.
   entirely in the launcher exe before this app ever opens, see
   `developer/packaging/updater.py`, and logout lives in
   Settings > Common, see `interface/settings/README.md`) plus the
-  icon-only `setting_button` right after it. Fixed width (`SIDEBAR_WIDTH`).
-  Setting is deliberately its own button here, not a row in
-  `SectionTabList` — it's an app-level control, not a repo-scoped one — so
-  `MainWindow` deselects `tab_list`'s current row by hand when Setting is
-  clicked (`_on_settings_requested`) rather than the list having any
-  notion of a "Setting" entry itself.
+  text-only `studio_setting_button` ("Studio" — opens
+  `StudioSettingsDialog`, the gated Google Cloud Storage sync config, see
+  `interface/settings/README.md`; no icon asset exists for it yet, same
+  fallback the Setting button itself uses when its own icon is missing)
+  and the icon-only `setting_button` right after it. Fixed width
+  (`SIDEBAR_WIDTH`). Both are deliberately their own buttons here, not
+  rows in `SectionTabList` — they're app-level controls, not repo-scoped
+  ones — so `MainWindow` deselects `tab_list`'s current row by hand when
+  either is clicked (`_on_settings_requested`/`_on_studio_settings_requested`)
+  rather than the list having any notion of a "Setting" entry itself.
 - `active_repo_widget.py` — `ActiveRepoWidget`: the thumbnail banner
   (`_ThumbnailBanner`, fill-cropped, never rounded) plus a plain
   `name_label` beneath it naming the active Project/Repo. Re-added

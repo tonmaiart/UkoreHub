@@ -1,13 +1,23 @@
 .venv/
 __pycache__/
 *.pyc
-# data/projects.json, data/system_config.json, data/thumbnails/, and
-# data/plugins/core/*.json are intentionally NOT ignored — they're shared
-# studio-wide (registry, settings, repo thumbnail images, shared plugin
-# config), tracked in this repo so everyone gets them via git pull / Update
-# and Restart. Every per-machine/gitignored file (local_config.json,
-# github_token.json, webengine_profile/, plugin_local_config/) lives under
-# /cache/ instead, not data/ — see that rule below and cache/README.md.
+# data/projects.json, data/programs.json, data/system_config.json, and
+# data/plugins/core/*.json used to be intentionally NOT ignored (tracked in
+# this repo so everyone got them via git pull / Update and Restart), but
+# that meant any machine with an uncommitted local edit broke the
+# self-update git pull outright. They're now synced via Google Cloud
+# Storage instead (core/cloud_sync.py) — each is a local cache of the
+# shared bucket's blob, pulled on launch and pushed on every save, so they
+# no longer belong in git at all. data/thumbnails/ (and the other image
+# dirs) are unaffected — still git-tracked as before. Every per-machine/
+# gitignored file (local_config.json, github_token.json,
+# gcs_refresh_token.json, webengine_profile/, plugin_local_config/) lives
+# under /cache/ instead, not data/ — see that rule below and
+# cache/README.md.
+data/projects.json
+data/programs.json
+data/system_config.json
+data/plugins/core/*.json
 .pytest_cache/
 # plugins/core and plugins/repo_internal are both git-tracked and
 # distributed like data/programs.json — bundled with the app, no separate

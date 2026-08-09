@@ -60,7 +60,33 @@ beyond "core infrastructure":
   `cwd` (as opposed to `git_service.py`'s `GitService`, which is built
   around cloning/syncing *studio project* repos with token auth and hooks).
 - `exceptions.py` — shared exception types (`UkoreHubError`, `ValidationError`,
-  `NotFoundError`, `GitOperationError`, `GitHubAuthError`).
+  `NotFoundError`, `ConflictError`, `GitOperationError`, `GitHubAuthError`,
+  `GoogleAuthError`).
+- `google_auth.py` — `run_installed_app_login`: Google OAuth login via
+  `google-auth-oauthlib`'s `InstalledAppFlow` loopback/local-server flow
+  (opens the system browser, blocks until the artist finishes) — the
+  Google-recommended pattern for a native desktop app, as opposed to the
+  Device Authorization flow meant for TVs/limited-input hardware. Plus
+  `GoogleTokenStore` (mirrors `core/github/token_store.py`'s
+  keyring/fallback-file split, own key `cache/gcs_refresh_token.json`) —
+  each artist authenticates as their own Google identity to use
+  `cloud_sync.py`'s `GcsJsonSync`, since the studio's GCP org blocks
+  service-account key creation (`iam.disableServiceAccountKeyCreation`).
+  Kept outside `core/github/` since that folder is scoped to GitHub only.
+- `cloud_sync.py` — `GcsJsonSync`: pulls/pushes the shared JSON stores
+  (`store.py`'s `MetadataStore`/`SystemConfigStore`, `program_store.py`'s
+  `ProgramStore`, and `shared=True` `PluginConfigStore` instances) to/from
+  Google Cloud Storage, replacing the old git-tracked-`data/` model. Uses
+  GCS object-generation preconditions for optimistic-concurrency conflict
+  detection (raises `ConflictError` on a losing race) instead of a real
+  document schema, since these stores are still naive whole-file JSON
+  blobs. Deliberately isolated — only `launcher.py` and
+  `interface/plugin_api.py` import it, never `store.py`/`program_store.py`/
+  `extensibility/config_store.py` themselves, so `google-cloud-storage`
+  never ends up in `developer/packaging/updater.py`'s frozen-exe import
+  graph. Those three stores instead gain an optional `on_save` constructor
+  callback that `launcher.py`/`plugin_api.py` wire up to
+  `GcsJsonSync.push`.
 - `version.py` — app name/version constants.
 
 Note: `Repo.active_plugin_ids` (`set_repo_active_plugin_ids`) is no longer

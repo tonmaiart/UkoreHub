@@ -8,7 +8,13 @@ from core.store import SystemConfigStore
 class GithubOAuthSettingsPage(QWidget):
     """The GitHub OAuth Client ID field, split out of CommonSettingsPage
     into its own Developer-category tab — most users never need to touch
-    this, only whoever registered the studio's GitHub OAuth App."""
+    this, only whoever registered the studio's GitHub OAuth App. The
+    Google Cloud Storage sync settings that used to live on this same page
+    moved to their own gated window — see
+    interface/settings/studio_settings_dialog.py's StudioSettingsDialog,
+    opened via Sidebar's separate "Studio Setting" footer button — since
+    that config needs a real login gate and an explicit Save step, unlike
+    this page's plain self-persisting field."""
 
     def __init__(self, parent=None, *, system_config_store: SystemConfigStore):
         super().__init__(parent)

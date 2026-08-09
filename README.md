@@ -77,16 +77,18 @@ Settings are split into two files with different sharing behavior:
 
 - **System config** — `data/projects.json` (the Project/Repo registry, including
   each repo's thumbnail filename and required Program IDs), `data/system_config.json`
-  (GitHub OAuth Client ID), `data/thumbnails/` (repo thumbnail images), and
-  `data/programs.json` + `data/program_icons/` (the shared Program Database).
-  These are **tracked in this git repo**, not gitignored, because they're meant
-  to be the same for everyone at the studio — images are accepted as binary/
-  larger files here deliberately, same reasoning as the registry itself. When
-  a manager changes any of these, someone needs to `git add`/`commit`/`push`
-  for the change to reach other machines — other artists then get it the
-  normal way, e.g. by clicking **Update and Restart** (which runs `git pull`)
-  or any other `git pull` of this repo. UkoreHub itself does not auto-commit
-  or push on your behalf.
+  (GitHub OAuth Client ID, GCS Bucket Name), and `data/programs.json` (the shared
+  Program Database) are synced to/from a shared Google Cloud Storage bucket
+  (`core/cloud_sync.py`) — pulled fresh on every launch, pushed automatically
+  on every edit, no manual commit/push step needed. `data/thumbnails/` and
+  `data/program_icons/` (repo thumbnails / program icons) are still **tracked
+  in this git repo** instead, since they're binary images rather than the
+  live-edited registries — a manager adding one still needs to
+  `git add`/`commit`/`push`, and other artists get it via **Update and
+  Restart** like before. Every artist needs to click **Login with
+  Google** (the "Studio" button in the sidebar footer, next to Setting)
+  once for the cloud-synced files to work — see "Google Cloud Sync Setup"
+  below; without it, those stores just stay local-only on that machine.
 - **Local config** — `cache/local_config.json` (workspace folder, color theme,
   which repo you currently have selected, cached GitHub username) and
   `cache/github_token.json` (GitHub token, only if the OS keyring isn't
@@ -112,7 +114,8 @@ does two things:
 
 The token is stored via your OS keyring (or a gitignored local file if the
 keyring isn't available) — never in `data/system_config.json` or
-`data/projects.json`, since those are shared with the whole team via git.
+`data/projects.json`, since those are shared with the whole studio via
+Google Cloud Storage.
 
 To enable Login, register a public GitHub OAuth App (free, no approval needed):
 
@@ -126,15 +129,62 @@ To enable Login, register a public GitHub OAuth App (free, no approval needed):
 Until this is configured, clicking Login shows a message pointing you to that
 setting instead of attempting to log in.
 
+## Google Cloud Sync Setup (needed for the shared registries to sync)
+
+`data/projects.json`, `data/programs.json`, `data/system_config.json`, and
+each `shared=True` `PluginConfigStore` file sync through a shared Google
+Cloud Storage bucket instead of git (see "System config vs. local config"
+above). Each artist authenticates as their own Google identity via an
+OAuth browser login (opens automatically, same idea as GitHub Login above)
+— because the studio's GCP organization enforces
+`iam.disableServiceAccountKeyCreation`, so a shared service-account key
+file isn't an option.
+
+A studio admin sets this up once (see `data/README.md` for the exact
+fields):
+
+1. Create a GCS bucket and note its name + the GCP project ID it lives in.
+2. In Google Cloud Console, set the OAuth consent screen's User Type —
+   **Internal** if every artist is inside the same Google Workspace org
+   (skips Google's verification review entirely); **External** if login
+   needs to work for personal Google accounts outside the org too, which
+   requires extra care around Google's unverified-app refresh-token expiry
+   — see the note in `core/google_auth.py`'s module docstring before
+   choosing this.
+3. Create an OAuth client of type **"Desktop app"** and note its Client
+   ID/Secret.
+4. Create a Google Group with every artist's Google account as a member,
+   and grant it the **Storage Object Admin** role on the bucket's own
+   Permissions tab (not project-wide IAM).
+
+Each artist then opens the **"Studio" button in the sidebar footer**
+(next to the gear-icon Setting button — a separate window, not a Settings
+tab) — the first time, this shows a login gate: paste in the Client
+ID/Secret from step 3 (or use **Import from JSON...** to read them
+straight from the `client_secret_*.json` Google Cloud Console offers to
+download, which also fills in GCS Project ID) and click **Login with
+Google**. That opens a browser to approve access, same idea as GitHub
+Login above, and caches a refresh token via your OS keyring (or a
+gitignored local file if the keyring isn't available). Once logged in,
+the same window goes straight to the full form — GCS Bucket Name/Project
+ID/Client ID/Secret, with an explicit **Save** button (not self-saving
+per field, unlike every other Settings tab — a mistaken edit here would
+repoint the whole studio's shared registry sync) — every time it's
+reopened afterward, no gate shown again. Until an artist logs in, the
+shared registries just stay local-only on their machine — nothing
+crashes or blocks the app.
+
 ## Project layout
 
 - `core/` — metadata store, git operations, theming, GitHub auth; no UI code.
 - `interface/` — PySide6 GUI (sidebar, content pages, settings dialog, repo browser).
-- `data/` — `projects.json`, `system_config.json`, `thumbnails/`, `programs.json`,
-  `program_icons/` (tracked, shared).
-- `cache/` — `local_config.json`, `github_token.json`, `webengine_profile/`,
-  `plugin_local_config/` (gitignored, per-machine — see `cache/README.md`),
-  plus `plugins/`, per-repo plugin git clones.
+- `data/` — `projects.json`, `system_config.json`, `programs.json` (shared,
+  synced via Google Cloud Storage), `thumbnails/`, `program_icons/` (shared,
+  still git-tracked).
+- `cache/` — `local_config.json`, `github_token.json`,
+  `gcs_refresh_token.json`, `webengine_profile/`, `plugin_local_config/`
+  (gitignored, per-machine — see `cache/README.md`), plus `plugins/`,
+  per-repo plugin git clones.
 - `launcher.py` — entry point.
 - `developer/` — dev-only tooling (packaging, bug-history, glossary); lives
   only in this repo (UkoreHubDev), stripped when publishing to the separate

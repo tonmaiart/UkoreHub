@@ -4,7 +4,7 @@ from typing import Callable
 
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
-from core.exceptions import UkoreHubError
+from core.exceptions import ConflictError, UkoreHubError
 from core.store import MetadataStore
 from interface.shared.widget_helpers import confirm_action
 from plugins.core.project_editor.dialogs import ProjectDialog
@@ -126,6 +126,11 @@ class ProjectSettingsPage(QWidget):
         if dialog.exec():
             try:
                 project = self.store.add_project(dialog.name())
+            except ConflictError as exc:
+                self.store.load()
+                QMessageBox.warning(self, "Add Project", str(exc))
+                self.refresh()
+                return
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Add Project", str(exc))
                 self.refresh()
@@ -146,6 +151,11 @@ class ProjectSettingsPage(QWidget):
             return
         try:
             self.store.rename_project(project_id, dialog.name())
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Rename Project", str(exc))
+            self.refresh()
+            return
         except UkoreHubError as exc:
             QMessageBox.warning(self, "Rename Project", str(exc))
             return
@@ -164,6 +174,12 @@ class ProjectSettingsPage(QWidget):
             "This removes them from the shared registry immediately and cannot be undone.",
         ):
             return
-        self.store.delete_project(project_id)
+        try:
+            self.store.delete_project(project_id)
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Delete Project", str(exc))
+            self.refresh()
+            return
         self._set_current_project_id(None)
         self.refresh()

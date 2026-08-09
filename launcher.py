@@ -6,6 +6,7 @@ that needs them, so the user never sees a ModuleNotFoundError.
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,8 @@ if str(REPO_ROOT) not in sys.path:
 REQUIRED_PACKAGES = [
     ("PySide6", "PySide6>=6.7,<7.0"),
     ("keyring", "keyring>=24.0"),
+    ("google.cloud.storage", "google-cloud-storage>=2.16"),
+    ("google_auth_oauthlib", "google-auth-oauthlib>=1.2"),
 ]
 
 GIT_DOWNLOAD_URL = "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe"
@@ -26,7 +29,15 @@ GIT_DOWNLOAD_URL = "https://github.com/git-for-windows/git/releases/download/v2.
 
 def ensure_dependencies() -> None:
     for import_name, pip_spec in REQUIRED_PACKAGES:
-        if importlib.util.find_spec(import_name) is not None:
+        try:
+            # find_spec on a dotted name (e.g. "google.cloud.storage") tries
+            # to import the parent package first — if that parent isn't
+            # installed at all yet, it raises ModuleNotFoundError instead of
+            # just returning None, so that case needs its own catch too.
+            found = importlib.util.find_spec(import_name) is not None
+        except ModuleNotFoundError:
+            found = False
+        if found:
             continue
         print(f"UkoreHub: installing missing dependency '{pip_spec}'...")
         subprocess.run([sys.executable, "-m", "pip", "install", pip_spec], check=True)
@@ -44,6 +55,39 @@ def check_git_prerequisite() -> bool:
 
 def check_git_lfs_prerequisite() -> bool:
     return shutil.which("git-lfs") is not None
+
+
+def _build_cloud_sync(data_dir: Path, cache_dir: Path):
+    """Best-effort: returns None (cloud sync disabled, the shared stores
+    stay purely local — the pre-migration behavior) if this machine hasn't
+    logged in yet, i.e. no cached Google refresh token (see
+    core/google_auth.py's GoogleTokenStore — obtained via the "Studio"
+    button in Sidebar's footer, interface/settings/studio_settings_dialog.py,
+    since the studio's GCP org blocks service-account key creation) or the
+    bucket/OAuth client isn't configured yet. Reads those fields off the
+    raw local system_config.json rather than through SystemConfigStore,
+    since that store is itself one
+    of the things this function ends up syncing."""
+    system_config_path = data_dir / "system_config.json"
+    if not system_config_path.exists():
+        return None
+    config = json.loads(system_config_path.read_text(encoding="utf-8"))
+    bucket_name = config.get("gcs_bucket_name")
+    project_id = config.get("gcs_project_id")
+    client_id = config.get("google_oauth_client_id")
+    client_secret = config.get("google_oauth_client_secret")
+    if not (bucket_name and project_id and client_id and client_secret):
+        return None
+
+    from core.google_auth import GoogleTokenStore
+
+    refresh_token = GoogleTokenStore(cache_dir / "gcs_refresh_token.json").load_token()
+    if not refresh_token:
+        return None
+
+    from core.cloud_sync import GcsJsonSync
+
+    return GcsJsonSync(bucket_name, project_id, client_id, client_secret, refresh_token)
 
 
 def main() -> None:
@@ -87,6 +131,8 @@ def main() -> None:
             "may not sync correctly.",
         )
 
+    from core.exceptions import ConflictError
+    from core.extensibility import debug_log
     from core.extensibility.file_opener import FileOpenerRegistry
     from core.extensibility.hooks import HookRegistry
     from core.extensibility.loader import apply_plugins, discover_plugins, plugin_source
@@ -114,11 +160,53 @@ def main() -> None:
     cache_dir = REPO_ROOT / "cache"
     cache_dir.mkdir(exist_ok=True)
 
-    # projects.json, system_config.json, and programs.json are shared/tracked
-    # in this repo.
-    store = MetadataStore(data_dir / "projects.json")
-    system_config_store = SystemConfigStore(data_dir / "system_config.json")
-    program_store = ProgramStore(data_dir / "programs.json")
+    # projects.json, system_config.json, and programs.json are shared
+    # studio-wide via Google Cloud Storage (core/cloud_sync.py), not git —
+    # pull whatever's newest before constructing the stores that read them,
+    # and wire on_save so every local edit pushes straight back up.
+    cloud_sync = _build_cloud_sync(data_dir, cache_dir)
+    if cloud_sync is None:
+        print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
+        debug_log.log("CloudSync", "not configured on this machine — shared data stays local-only")
+    else:
+        try:
+            for blob_name in ("projects.json", "programs.json", "system_config.json"):
+                cloud_sync.pull(blob_name, data_dir / blob_name)
+                debug_log.log("CloudSync", f"pulled '{blob_name}'")
+        except Exception as exc:
+            # Revoked/expired Google login, no network, IAM not granted yet,
+            # etc. — never block the app from opening over a cloud problem;
+            # fall back to local-only for this run, same as "not configured
+            # at all". The artist can re-run "Login with Google" in Setting
+            # > Developer if this keeps happening.
+            print(f"UkoreHub: cloud sync unavailable this run ({exc}) — shared data stays local-only.")
+            debug_log.log("CloudSync", f"unavailable this run ({exc}) — shared data stays local-only")
+            cloud_sync = None
+
+    def _push_shared_blob(blob_name: str) -> None:
+        if cloud_sync is None:
+            return
+        try:
+            cloud_sync.push(blob_name, data_dir / blob_name)
+            debug_log.log("CloudSync", f"pushed '{blob_name}'")
+        except ConflictError as exc:
+            # Meaningful to the caller (a real conflicting edit elsewhere) —
+            # let it propagate so the UI can tell the artist and reload.
+            debug_log.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
+            raise
+        except Exception as exc:
+            # Timeout, no network, revoked login, etc. — the local save
+            # already succeeded (on_save fires after _atomic_write), so
+            # don't fail the whole edit over a transient cloud problem;
+            # just warn. The next successful save catches this file back up.
+            print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
+            debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+
+    store = MetadataStore(data_dir / "projects.json", on_save=lambda: _push_shared_blob("projects.json"))
+    system_config_store = SystemConfigStore(
+        data_dir / "system_config.json", on_save=lambda: _push_shared_blob("system_config.json")
+    )
+    program_store = ProgramStore(data_dir / "programs.json", on_save=lambda: _push_shared_blob("programs.json"))
     # local_config.json and github_token.json are per-machine and gitignored
     # — see cache_dir comment above.
     local_config_store = LocalConfigStore(cache_dir / "local_config.json")
@@ -214,6 +302,7 @@ def main() -> None:
         plugins_data_dir=data_dir / "plugins",
         plugins_local_dir=cache_dir / "plugin_local_config",
         app_root=REPO_ROOT,
+        cloud_sync=cloud_sync,
     )
     # Applied one plugin at a time (rather than one bulk apply_plugins(discovery.loaded, ...)
     # call) so section_registry.keys() can be diffed before/after each
@@ -251,6 +340,7 @@ def main() -> None:
         store,
         local_config_store,
         program_store,
+        system_config_store,
         git_service,
         token_store,
         cache_dir,

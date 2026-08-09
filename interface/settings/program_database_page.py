@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exceptions import UkoreHubError
+from core.exceptions import ConflictError, UkoreHubError
 from core.program_store import ProgramStore
 from interface.settings.program_dialog import ProgramDialog
 from interface.shared.image_asset import save_image_asset
@@ -68,6 +68,11 @@ class ProgramDatabasePage(QWidget):
         if dialog.exec():
             try:
                 program = self.program_store.add_program(dialog.name(), dialog.description(), dialog.versions())
+            except ConflictError as exc:
+                self.program_store.load()
+                QMessageBox.warning(self, "Add Program", str(exc))
+                self.refresh_list()
+                return
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Add Program", str(exc))
                 return
@@ -93,6 +98,11 @@ class ProgramDatabasePage(QWidget):
                 self.program_store.edit_program(
                     program_id, name=dialog.name(), description=dialog.description(), versions=dialog.versions()
                 )
+            except ConflictError as exc:
+                self.program_store.load()
+                QMessageBox.warning(self, "Edit Program", str(exc))
+                self.refresh_list()
+                return
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Edit Program", str(exc))
                 return
@@ -113,7 +123,11 @@ class ProgramDatabasePage(QWidget):
             "Repos that require it will keep referencing it by ID until re-edited. This cannot be undone.",
         )
         if confirmed:
-            self.program_store.delete_program(program_id)
+            try:
+                self.program_store.delete_program(program_id)
+            except ConflictError as exc:
+                self.program_store.load()
+                QMessageBox.warning(self, "Delete Program", str(exc))
             self.refresh_list()
 
     def _save_icon(self, program_id: str, source_path) -> None:

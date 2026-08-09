@@ -54,8 +54,13 @@ script, etc.), not just inside `register(api)`. Not persisted — cleared on
 app restart or via the "Clear" button — and capped at 1000 entries; this
 is a live troubleshooting aid, not an audit log.
 
-**Working here:** this plugin has zero UkoreShot-specific code — it only
-reads the generic `debug_log` bus. `plugins/studio/UkoreShot/draw_overlay.py`
-is the one *producer* currently wired up (see that plugin's own README),
-but reaching into it from here would violate the same "convention not
-import" boundary this plugin exists to demonstrate — don't.
+**Working here:** this plugin has zero producer-specific code — it only
+reads the generic `debug_log` bus. Current producers include
+`plugins/studio/UkoreShot/draw_overlay.py` (see that plugin's own README)
+and the `"CloudSync"` source logged by `launcher.py`'s startup pull/
+`_push_shared_blob` and `interface/plugin_api.py`'s
+`plugin_config_store(shared=True)` pull/push — every cloud pull, push,
+conflict, and failure around `core/cloud_sync.py` shows up here. Reaching
+into a specific producer's code from here would violate the same
+"convention not import" boundary this plugin exists to demonstrate —
+don't.

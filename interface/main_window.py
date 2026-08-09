@@ -25,7 +25,7 @@ from core.github.token_store import TokenStore
 from core.paths import resolve_repo_path
 from core.program_store import ProgramStore
 from core.relaunch import relaunch_ukorehub_exe
-from core.store import LocalConfigStore, MetadataStore
+from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from core.theme import DEFAULT_THEME_NAME, get_theme
 from core.version import APP_NAME, APP_VERSION
 from interface import builtin_settings_tabs
@@ -33,6 +33,7 @@ from interface.browser_links.browser_link_page import BrowserLinkPage
 from interface.browser_links.web_engine_profile import make_persistent_browser_link_profile
 from interface.section_registry import SectionHost, SectionRegistry
 from interface.settings.settings_view import SettingsDialog
+from interface.settings.studio_settings_dialog import StudioSettingsDialog
 from interface.settings_tab_registry import SettingsTabRegistry
 from interface.sidebar.sidebar import Sidebar
 from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
@@ -102,6 +103,7 @@ class MainWindow(QMainWindow):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         program_store: ProgramStore,
+        system_config_store: SystemConfigStore,
         git_service: GitService,
         token_store: TokenStore,
         cache_dir: Path,
@@ -118,6 +120,7 @@ class MainWindow(QMainWindow):
         self.store = store
         self.local_config_store = local_config_store
         self.program_store = program_store
+        self._system_config_store = system_config_store
         self.git_service = git_service
         # Only used for logout (clearing the cached token) — login itself
         # happens entirely in the launcher exe now, see
@@ -217,6 +220,7 @@ class MainWindow(QMainWindow):
         )
         self.sidebar.navigation_changed.connect(self._on_navigation_changed)
         self.sidebar.settings_requested.connect(self._on_settings_requested)
+        self.sidebar.studio_settings_requested.connect(self._on_studio_settings_requested)
 
         # Every non-persistent section is its own full-width top-level page,
         # switched to via the Sidebar's SectionTabList. A persistent section
@@ -325,6 +329,15 @@ class MainWindow(QMainWindow):
             browser_links_page.browser_links_changed.connect(self._rebuild_dynamic_tabs)
         if select_key is not None:
             dialog.select_tab(select_key)
+        dialog.exec()
+
+    def _on_studio_settings_requested(self) -> None:
+        # Deliberately its own window, not a SettingsDialog tab — see
+        # StudioSettingsDialog's own docstring for why (login gate, real
+        # Save step). Constructed fresh on every open, same "no state
+        # carried between opens" convention every other Settings entry
+        # point in this app already follows.
+        dialog = StudioSettingsDialog(self, system_config_store=self._system_config_store, cache_dir=self._cache_dir)
         dialog.exec()
 
     def _set_status_message(self, message: str) -> None:

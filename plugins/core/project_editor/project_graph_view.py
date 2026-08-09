@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exceptions import NotFoundError, UkoreHubError
+from core.exceptions import ConflictError, NotFoundError, UkoreHubError
 from core.models import Project, Repo
 from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
@@ -875,6 +875,11 @@ class ProjectGraphView(QGraphicsView):
             return
         try:
             repo = self.store.add_repo(self._project_id, dialog.name(), dialog.git_url(), workspace_root)
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Add Repo", str(exc))
+            self.load_project(self._project_id)
+            return
         except UkoreHubError as exc:
             QMessageBox.warning(self, "Add Repo", str(exc))
             return
@@ -920,6 +925,11 @@ class ProjectGraphView(QGraphicsView):
             return
         try:
             self.store.edit_repo(project_id, repo_id, name=dialog.name(), git_url=dialog.git_url())
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Rename Repo", str(exc))
+            self.load_project(self._project_id)
+            return
         except UkoreHubError as exc:
             QMessageBox.warning(self, "Rename Repo", str(exc))
             return
@@ -945,5 +955,9 @@ class ProjectGraphView(QGraphicsView):
             "This removes it from the shared registry immediately and cannot be undone.",
         ):
             return
-        self.store.delete_repo(project_id, repo_id)
+        try:
+            self.store.delete_repo(project_id, repo_id)
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Delete Repo", str(exc))
         self.load_project(self._project_id)

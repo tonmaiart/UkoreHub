@@ -1,9 +1,14 @@
 # interface/settings/
 
-The "Setting" popup — opened via the icon-only Setting button in Sidebar's
-footer (app-level, not one of the repo-scoped `SectionTabList` rows). Every
-page here **self-persists on every change** — there is no Save/Cancel step
-anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
+Mostly the "Setting" popup — opened via the icon-only Setting button in
+Sidebar's footer (app-level, not one of the repo-scoped `SectionTabList`
+rows). Every `SettingsTabSpec` page in that popup **self-persists on every
+change** — there is no Save/Cancel step; `SettingsTabSpec` has no
+`on_save`/`on_cancel` hooks. The one exception living in this folder isn't
+part of that popup at all: `studio_settings_dialog.py`'s
+`StudioSettingsDialog` is its own separate window (Sidebar's "Studio"
+button, not the gear icon), with a real login gate and an explicit Save
+button — see its own entry below for why.
 
 - `settings_view.py` — `SettingsView` (the left-tab-bar shell) +
   `SettingsDialog` (the popup wrapper around it, reverted 2026-07-19 back
@@ -67,6 +72,19 @@ anywhere; `SettingsTabSpec` has no `on_save`/`on_cancel` hooks.
   editor for one `Program`, used only by `program_database_page.py`.
 - `plugin_catalog_page.py` — read-only listing of what got discovered
   under `plugins/`. `CATEGORY_DEVELOPER`.
+- `studio_settings_dialog.py` — `StudioSettingsDialog`: the Google Cloud
+  Storage sync config (`core/cloud_sync.py` — bucket name, GCP project id,
+  Google OAuth client id/secret, "Login with Google"). **Not** a
+  `SettingsTabSpec`/part of `SettingsDialog` — it's its own top-level
+  window, opened via Sidebar's separate "Studio" footer button
+  (`interface/sidebar/sidebar.py`), not the gear-icon Setting button. Two
+  deliberate departures from every other page in this folder: (1) a login
+  gate — shown only until a Google refresh token is first cached
+  (`core/google_auth.py`'s `GoogleTokenStore`), after which the dialog
+  goes straight to the full form on every later open; (2) an explicit
+  Save button rather than self-persisting on every field blur, since an
+  accidental edit here would repoint the whole studio's shared registry
+  sync. See its own docstring for the full two-state design.
 
 **Moved out 2026-07-20** (domain-based reorg — grouped by "kind of Settings
 tab" here even though each is really its own feature domain):
