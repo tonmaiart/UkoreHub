@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.exceptions import ConflictError
+from core.os_utils import open_with_default_app
 
 # The three fixed top-level blobs launcher.py always pulls, regardless of
 # which plugins are loaded this run — see data/README.md.
@@ -66,6 +67,10 @@ class CloudDataAdminPage(QWidget):
         pull_button = QPushButton("Pull from Cloud, Save As...")
         pull_button.clicked.connect(self._on_pull)
         button_row.addWidget(pull_button)
+        open_button = QPushButton("Open File...")
+        open_button.setToolTip("Open any local file (e.g. a pulled/backup copy) in its default app, to inspect it.")
+        open_button.clicked.connect(self._on_open_file)
+        button_row.addWidget(open_button)
         push_button = QPushButton("Push File to Cloud...")
         push_button.clicked.connect(self._on_push)
         button_row.addWidget(push_button)
@@ -130,6 +135,13 @@ class CloudDataAdminPage(QWidget):
             QMessageBox.information(
                 self, "Pull from Cloud", f"Saved the current cloud copy of '{blob_name}' to:\n{save_path}"
             )
+
+    def _on_open_file(self) -> None:
+        file_path, _filter = QFileDialog.getOpenFileName(self, "Open file", "", "JSON (*.json);;All Files (*)")
+        if not file_path:
+            return
+        if not open_with_default_app(Path(file_path)):
+            QMessageBox.warning(self, "Open File", f"Could not open:\n{file_path}")
 
     def _on_push(self) -> None:
         blob_name = self._blob_combo.currentText().strip()
