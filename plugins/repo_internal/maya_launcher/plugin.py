@@ -50,12 +50,19 @@ MAYA_FILE_EXTENSIONS = [".ma", ".mb"]
 
 def _maya_programs_for_repo(api, repo):
     """Every Program the repo requires whose name contains "maya" — resolved
-    via repo.required_program_ids, same lookup used by both the settings
-    page's link-status readout and the file opener below."""
+    via repo.required_program_ids against the *active* Project's own
+    Program Database (Program is per-Project now, core/models.py's
+    Project.programs), since this is only ever called for the currently
+    active repo (via FileOpenerRegistry/ProgramLaunchRegistry callbacks,
+    which don't carry a project id of their own). Same lookup used by both
+    the settings page's link-status readout and the file opener below."""
+    project_id = api.local_config.active_project_id
+    if project_id is None:
+        return []
     programs = []
     for program_id in repo.required_program_ids:
         try:
-            program = api.programs.get_program(program_id)
+            program = api.metadata.get_program(project_id, program_id)
         except NotFoundError:
             continue
         if "maya" in program.name.lower():
@@ -181,12 +188,12 @@ def _build_maya_env(base_env: dict, contributions: dict, maya_version: str) -> d
 
 
 def _read_bridge(api) -> tuple[dict, dict]:
-    """Fresh read of the shared bridge's "contributions"/"labels" dicts —
-    api.plugin_config_store() constructs a brand-new PluginConfigStore
-    (loading from disk) on every call, so this always sees whatever every
-    contributing tool plugin has written by now (see MAYA_ENV_BRIDGE_PLUGIN_ID
-    above)."""
-    bridge = api.plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID, shared=True)
+    """Fresh read of the shared bridge's "contributions"/"labels" dicts,
+    scoped to whichever Project is currently active (see
+    MAYA_ENV_BRIDGE_PLUGIN_ID above) — empty if no project is active yet."""
+    bridge = api.project_plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID)
+    if bridge is None:
+        return {}, {}
     return bridge.get("contributions", {}), bridge.get("labels", {})
 
 

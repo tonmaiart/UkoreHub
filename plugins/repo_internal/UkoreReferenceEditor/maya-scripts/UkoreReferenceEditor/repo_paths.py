@@ -46,5 +46,5 @@ def workspace_root() -> str | None:
     root = find_ukorehub_root()
     from core.store import LocalConfigStore
 
-    local_config = LocalConfigStore(root / "data" / "local_config.json")
+    local_config = LocalConfigStore(root / "cache" / "local_config.json")
     return local_config.workspace_root

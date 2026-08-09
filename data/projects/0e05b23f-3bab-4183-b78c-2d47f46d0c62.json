@@ -7,7 +7,7 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-09T07:09:34.638981+00:00",
+      "last_synced": "2026-08-09T11:18:53.206337+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
@@ -49,7 +49,44 @@
           "url": "https://flame-fox-875.notion.site/Shot-Progress-39e6774cd29b80c6a537eb5bffd7ed27?source=copy_link",
           "icon_filename": null
         }
-      ]
+      ],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
+              "custom_path_id": "f570ab8620644ecdb0c1d20f0e928d58",
+              "direction": "output"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "15a60116-70f9-436a-9340-57567d105d19",
+              "custom_path_id": "9e1c82b5286d4bedb78f8fd12ed09f3a",
+              "direction": "input"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "aeffac36-f2c5-4411-8783-ab251f3e3456",
+              "custom_path_id": "ce20161666c248349c75aa65ccf1ed8e",
+              "direction": "input"
+            }
+          ],
+          "custom_paths": [
+            {
+              "id": "c3daa96bcd8a4c5d972b83761056d7a0",
+              "label": "Playblast",
+              "path": "/movies"
+            }
+          ]
+        },
+        "maya_publisher": {
+          "publish_mode": "animation"
+        },
+        "ukore_browser": {
+          "repo_hidden_root_tabs": []
+        }
+      }
     },
     {
       "id": "8e92493d-21e1-4833-b6fa-88708a783806",
@@ -64,7 +101,8 @@
       "program_version_pins": {},
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {}
     },
     {
       "id": "b12b523b-031e-42a3-aa3d-ac21955187e4",
@@ -89,7 +127,25 @@
         "ukore_browser",
         "ukore_reference_editor"
       ],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "aeffac36-f2c5-4411-8783-ab251f3e3456",
+              "custom_path_id": "ce20161666c248349c75aa65ccf1ed8e",
+              "direction": "output"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
+              "custom_path_id": "5af7a7bcbf9848399850c6be3809c576",
+              "direction": "output"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "152a6957-de83-4201-81ae-eab3feabee0a",
@@ -130,7 +186,47 @@
         "publish_api",
         "ukore_browser"
       ],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "dcecd901-4100-4de2-acde-444b0e39b53d",
+              "custom_path_id": "4caa9b3ba857478a8cc544e8d529653e",
+              "direction": "input"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "aeffac36-f2c5-4411-8783-ab251f3e3456",
+              "custom_path_id": "ce20161666c248349c75aa65ccf1ed8e",
+              "direction": "input"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
+              "custom_path_id": "5af7a7bcbf9848399850c6be3809c576",
+              "direction": "output"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "15a60116-70f9-436a-9340-57567d105d19",
+              "custom_path_id": "9e1c82b5286d4bedb78f8fd12ed09f3a",
+              "direction": "output"
+            }
+          ],
+          "custom_paths": [
+            {
+              "id": "c0df85730c90434ba45e670c6204bd7e",
+              "label": "PrePublishRig",
+              "path": "PrePublish"
+            }
+          ]
+        },
+        "maya_publisher": {
+          "publish_mode": "rig"
+        }
+      }
     },
     {
       "id": "162b01d1-59d0-47f5-95f8-bbc84e8cd97b",
@@ -149,7 +245,31 @@
       },
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
+              "custom_path_id": "c621f9247ec0496f819d72f8d35be412",
+              "direction": "input"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
+              "custom_path_id": "f570ab8620644ecdb0c1d20f0e928d58",
+              "direction": "input"
+            },
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
+              "custom_path_id": "5af7a7bcbf9848399850c6be3809c576",
+              "direction": "input"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "1e056930-ca54-4dc0-86b8-8381e4ad0b22",
@@ -164,7 +284,29 @@
       "program_version_pins": {},
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [],
+          "custom_paths": [
+            {
+              "id": "c621f9247ec0496f819d72f8d35be412",
+              "label": "AssetUnityPublish",
+              "path": "/asset_publish"
+            },
+            {
+              "id": "f570ab8620644ecdb0c1d20f0e928d58",
+              "label": "AnimationUnityPublish",
+              "path": "/animation_publish"
+            },
+            {
+              "id": "5af7a7bcbf9848399850c6be3809c576",
+              "label": "RigUnityPublish",
+              "path": "/rig_publish"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "4ce4bf6a-8769-4cff-bdec-58c01442f968",
@@ -179,7 +321,19 @@
       "program_version_pins": {},
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "dcecd901-4100-4de2-acde-444b0e39b53d",
+              "custom_path_id": "4caa9b3ba857478a8cc544e8d529653e",
+              "direction": "output"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "15a60116-70f9-436a-9340-57567d105d19",
@@ -196,7 +350,19 @@
       },
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [],
+          "custom_paths": [
+            {
+              "id": "9e1c82b5286d4bedb78f8fd12ed09f3a",
+              "label": "Publish",
+              "path": "/publish"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "dcecd901-4100-4de2-acde-444b0e39b53d",
@@ -219,7 +385,24 @@
       "required_plugin_ids": [
         "maya_launcher"
       ],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "pipeline_inputs": [
+            {
+              "project_id": "0e05b23f-3bab-4183-b78c-2d47f46d0c62",
+              "repo_id": "4ce4bf6a-8769-4cff-bdec-58c01442f968"
+            }
+          ],
+          "custom_paths": [
+            {
+              "id": "4caa9b3ba857478a8cc544e8d529653e",
+              "label": "Publish",
+              "path": "\\publish"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "aeffac36-f2c5-4411-8783-ab251f3e3456",
@@ -242,7 +425,110 @@
       "required_plugin_ids": [
         "maya_launcher"
       ],
-      "browser_links": []
+      "browser_links": [],
+      "plugin_data": {
+        "project_editor": {
+          "custom_paths": [
+            {
+              "id": "ce20161666c248349c75aa65ccf1ed8e",
+              "label": "Publish",
+              "path": "/publish"
+            }
+          ]
+        }
+      }
     }
-  ]
+  ],
+  "programs": [
+    {
+      "id": "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0",
+      "name": "Autodesk Maya",
+      "versions": [
+        "2024",
+        "2026"
+      ],
+      "icon_filename": "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0.png",
+      "description": "3D Rigging and Animation Programs"
+    },
+    {
+      "id": "ab07c675-48ef-4f04-8c57-876dced7ddf1",
+      "name": "Unity",
+      "versions": [
+        "2022.3.62f3"
+      ],
+      "icon_filename": "ab07c675-48ef-4f04-8c57-876dced7ddf1.png",
+      "description": "3D Game"
+    },
+    {
+      "id": "f279e7c0-e89c-404a-8dfc-dec4477d83cc",
+      "name": "Unity Hub",
+      "versions": [],
+      "icon_filename": "f279e7c0-e89c-404a-8dfc-dec4477d83cc.png",
+      "description": ""
+    }
+  ],
+  "plugin_data": {
+    "maya_launcher_env_bridge": {
+      "contributions": {
+        "maya_publisher": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaPublisher\\maya-scripts"
+            ]
+          }
+        },
+        "maya_toolkit": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaToolkit\\maya-scripts"
+            ]
+          },
+          "MAYA_PLUG_IN_PATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaToolkit\\maya-plug-ins"
+            ]
+          }
+        },
+        "publish_api": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\PublishApi\\maya-scripts",
+              "C:\\Tonmai\\UkoreHub"
+            ]
+          }
+        },
+        "ukore_browser": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\UkoreBrowser\\maya-scripts",
+              "C:\\Tonmai\\UkoreHub"
+            ]
+          }
+        },
+        "ukore_playblast": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\UkorePlayblast\\maya-scripts"
+            ]
+          }
+        },
+        "ukore_reference_editor": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\UkoreReferenceEditor\\maya-scripts",
+              "C:\\Tonmai\\UkoreHub"
+            ]
+          }
+        }
+      },
+      "labels": {
+        "maya_publisher": "MayaPublisher",
+        "maya_toolkit": "MayaToolkit",
+        "publish_api": "PublishApi",
+        "ukore_browser": "Ukore Browser",
+        "ukore_playblast": "UkorePlayblast",
+        "ukore_reference_editor": "UkoreReferenceEditor"
+      }
+    }
+  }
 }

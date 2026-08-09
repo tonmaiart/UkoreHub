@@ -21,11 +21,12 @@ Three things bundled into one plugin (originally two, before the
 2. **Pipeline connections** — which other repos a given repo has
    connected to, via Repository Setting's "Custom Paths" tab, "Connect
    Input Path" section (moved there 2026-07-19 from a node's right-click
-   menu — see `custom_paths_settings_page.py` below). Still not part of
-   `core/models.py`'s `Repo` — stored
-   in this plugin's own `PluginConfigStore` file
-   (`data/plugins/core/project_editor.json`, `shared=True`) so other
-   plugins can read it without `core/` needing to know the concept exists.
+   menu — see `custom_paths_settings_page.py` below). Stored in
+   `core/models.py`'s `Repo.plugin_data["project_editor"]` (moved there
+   from this plugin's own standalone `PluginConfigStore` file — see the
+   `manifest.json` bullet below) — other plugins read it via
+   `api.metadata.get_repo_plugin_data(project_id, repo_id, "project_editor")`
+   without `core/` needing to know the concept exists.
    As of the 2026-07-15 redesign these are no longer just an editable
    list — they're rendered as directed edges between nodes in the graph,
    which is what actually gives "Pipeline Architect" a visual meaning. As
@@ -77,13 +78,20 @@ anymore.
 - `manifest.json` — plugin id `project_editor` (renamed from
   `pipeline_architect`; the shared data file at
   `data/plugins/core/project_editor.json` was `git mv`'d in the same
-  commit as the folder, so no migration step is needed).
+  commit as the folder, so no migration step was needed then). That file
+  itself was later superseded by `Repo.plugin_data["project_editor"]`
+  (`core/models.py`, `data/projects/<project_id>.json`) — `pipeline_store.py`'s
+  `migrate_legacy_data(api)` does a one-time, self-healing cutover of any
+  data still in the old blob on `register(api)`.
 - `plugin.py` — `register(api)`: constructs `PipelineStore` and one
   `ProjectEditorPage` instance, registers it via `api.register_section(...)`
-  with `wire=_wire` — `_wire` calls `page.bind_set_active_repo(host.set_active_repo)`,
-  the `SectionHost` field added specifically for this plugin (see
+  with `wire=_wire` — `_wire` calls `page.bind_set_active_repo(host.set_active_repo)`
+  and `page.bind_switch_project(host.switch_project)`, both `SectionHost`
+  fields added specifically for this plugin (see
   `interface/section_registry.py`) so a node click can trigger a real
-  active-repo switch without the page holding a `MainWindow` reference.
+  active-repo switch, and Settings > Project's "Switch Project..." button
+  can trigger a full app restart, without the page holding a `MainWindow`
+  reference.
   Also reads `api.settings_tab_registry` (a new read-access property on
   `PluginAPI`, mirroring the existing `api.file_opener_registry` pattern)
   so the Repository Setting popup can enumerate `CATEGORY_REPO` tabs
@@ -108,22 +116,32 @@ anymore.
   then Add Repo followed once the user asked for it too) — just
   `ProjectGraphView`, full width/height, with zero chrome of its own.
   Every action that used to be a top-bar button now lives in Setting >
-  **Project** (`project_settings_page.py` below) instead.
-  `current_project_id()`/`set_current_project()`/`add_repo()` are this
-  page's own single source of truth/entry points — `plugin.py` binds these
-  to `ProjectSettingsPage`'s `get_current_project_id`/
-  `set_current_project_id`/`add_repo` callbacks (`add_repo()` itself just
+  **Project** (`project_settings_page.py` below) instead. As of the
+  single-project-per-session change, the Viewgraph is fixed at
+  construction to whichever project `local_config_store.active_project_id`
+  already names (guaranteed real by then — see `launcher.py`'s mandatory
+  Project Selector gate) rather than defaulting to the first project in
+  the registry.
+  `current_project_id()`/`add_repo()` are this page's own single source of
+  truth/entry points — `plugin.py` binds these to `ProjectSettingsPage`'s
+  `get_current_project_id`/`add_repo` callbacks (`add_repo()` itself just
   delegates to `ProjectGraphView.add_repo`), so a freshly-constructed
-  settings page always reads/writes/acts through to this persistent page
+  settings page always reads/acts through to this persistent page
   (matching every `CATEGORY_REPO` tab's own self-resolving-active-state
-  convention) rather than holding that state itself — picking a different
-  project or clicking Add Repo in Settings takes effect immediately, even
-  while that dialog is still open, since each is a plain synchronous call,
-  not deferred until the dialog closes (Add Repo's own `RepoDialog` opens
-  as a nested modal on top of the already-open Settings dialog, which Qt
-  handles fine). Implements the standard `set_repo()` page
-  protocol purely to keep the graph's active-node highlight (and which
-  project it's showing) in sync when the active repo changes elsewhere —
+  convention) rather than holding that state itself — clicking Add Repo in
+  Settings takes effect immediately, even while that dialog is still open,
+  since it's a plain synchronous call, not deferred until the dialog
+  closes (Add Repo's own `RepoDialog` opens as a nested modal on top of
+  the already-open Settings dialog, which Qt handles fine).
+  `set_current_project()` still exists as the one place that actually
+  loads a project into the graph (also used defensively by `set_repo()`,
+  see below), but nothing calls it with a project id other than the one
+  fixed at construction anymore — `bind_switch_project()`/`switch_project()`
+  is the only way to view a different project at all, and it does that via
+  a full app restart (`SectionHost.switch_project`, wrapping
+  `MainWindow._request_switch_project`), not an in-place load. Implements
+  the standard `set_repo()` page protocol purely to keep the graph's
+  active-node highlight in sync when the active repo changes elsewhere —
   this page only *reacts* to active-repo changes, it never receives a
   command to make one (that only happens via a node click, through
   `bind_set_active_repo`).
@@ -131,13 +149,21 @@ anymore.
   Settings tab ("Project", added 2026-08-03), rendered by
   `interface/settings/settings_view.py` under its own "PROJECT" header row
   (alongside General/Developer) rather than in the Repository Setting
-  popup — every action that used to be `ProjectEditorPage`'s top bar: the
-  project `QComboBox` + "Add New Project..." + Rename/Delete Project, plus
-  Add Repo (moved here in a second pass the same day). Holds no state of
-  its own; every read/write/action goes through the
-  `get_current_project_id`/`set_current_project_id`/`add_repo` callbacks
-  `plugin.py` binds to `ProjectEditorPage.current_project_id`/
-  `set_current_project`/`add_repo`.
+  popup. Originally had a project `QComboBox` here to view a different
+  project's graph in place — **removed** as of the single-project-per-
+  session change: Project is fixed for the whole run by `launcher.py`'s
+  mandatory Project Selector gate, so this tab now just shows the active
+  project's name (read-only), Rename/Delete acting on it, Add Repo, "New
+  Project..." (adds to the shared catalog without switching into it — only
+  selectable the next time the Selector gate actually runs), and "Switch
+  Project..." (the only way to view a different project at all — triggers
+  a real app restart back through that gate, `on_switch_project`, bound to
+  `ProjectEditorPage.switch_project`). Deleting the currently-active
+  project also falls through to the same restart, since there's nothing
+  left for this session to show otherwise. Holds no state of its own;
+  every read/action goes through the `get_current_project_id`/`add_repo`/
+  `on_switch_project` callbacks `plugin.py` binds to
+  `ProjectEditorPage.current_project_id`/`add_repo`/`switch_project`.
 - `project_graph_view.py` — `ProjectGraphView` (`QGraphicsView`),
   `RepoNodeItem` (`QGraphicsItem`, one per repo), and `PipelineEdgeItem`
   (`QGraphicsPathItem` with a hand-drawn arrowhead, one per directed
@@ -319,20 +345,15 @@ anymore.
   from `local_config_store`, the same convention each one already used
   inside Settings; left-click a node first (switches the active repo) if
   you want the two to match.
-- `pipeline_store.py` — `PipelineStore`/`RepoRef`/`CustomPath`. Full JSON
-  shape (as of 2026-07-19):
+- `pipeline_store.py` — `PipelineStore`/`RepoRef`/`CustomPath`. Lives in each
+  repo's own `Repo.plugin_data["project_editor"]` (`core/models.py`,
+  `data/projects/<project_id>.json` — moved off the old standalone
+  `data/plugins/core/project_editor.json` blob; `migrate_legacy_data(api)`
+  in this same file does the one-time cutover). Per-repo shape:
   ```json
   {
-    "projects": {
-      "<project_id>": {
-        "repos": {
-          "<repo_id>": {
-            "pipeline_inputs": [{"project_id": "...", "repo_id": "...", "custom_path_id": "...", "direction": "input"}],
-            "custom_paths": [{"id": "...", "label": "Character", "path": "Character"}]
-          }
-        }
-      }
-    }
+    "pipeline_inputs": [{"project_id": "...", "repo_id": "...", "custom_path_id": "...", "direction": "input"}],
+    "custom_paths": [{"id": "...", "label": "Character", "path": "Character"}]
   }
   ```
   There used to also be a `"pipeline_outputs"` key here (a separate,
@@ -390,28 +411,31 @@ anymore.
 
 ## Reading pipeline data from another plugin
 
-Don't import anything from this folder — construct your own
-`PluginConfigStore` with the same id string (the "convention, not import"
-pattern `plugins/README.md`'s "Sharing data with another plugin" section
-documents, same as `maya_launcher` reading `software_linker`'s config).
-`plugins/repo_internal/PublishApi/`'s `repo_paths.py` (Maya-side,
-constructs the store straight off disk instead — no `PluginAPI` instance
-inside Maya's Python), consumed in turn by `MayaPublisher`'s tickets, is
-the current real consumer — read it for a live example. Since a `RepoRef.custom_path_id` is only meaningful against
-the **target** repo's own `custom_paths` entry, resolving a pipeline
-connection all the way to an actual filesystem path takes two lookups,
-not one:
+As of the `Repo.plugin_data` consolidation, this data lives in each repo's
+own `plugin_data["project_editor"]` entry (`core/models.py`'s `Repo`),
+inside that repo's project blob (`data/projects/<project_id>.json`) — not
+in a separate `PluginConfigStore` file anymore. Read it via
+`api.metadata.get_repo_plugin_data(project_id, repo_id, "project_editor")`
+(same "agree on the `plugin_id` string, don't import this folder"
+convention as before, just backed by `MetadataStore` now instead of a
+standalone blob). `plugins/repo_internal/PublishApi/`'s `repo_paths.py`
+(Maya-side, reads `repo.plugin_data` straight off the `Repo` object it
+already constructs — no `PluginAPI` instance inside Maya's Python),
+consumed in turn by `MayaPublisher`'s tickets, is the current real
+consumer — read it for a live example. Since a `RepoRef.custom_path_id` is
+only meaningful against the **target** repo's own `custom_paths` entry,
+resolving a pipeline connection all the way to an actual filesystem path
+takes two lookups, not one:
 
 ```python
 def resolve_pipeline_connection(api, project_id: str, repo_id: str, connection_index: int = 0):
-    store = api.plugin_config_store("project_editor", shared=True)
-    entry = store.get("projects", {}).get(project_id, {}).get("repos", {}).get(repo_id, {})
+    entry = api.metadata.get_repo_plugin_data(project_id, repo_id, "project_editor")
     connections = entry.get("pipeline_inputs", [])
     if connection_index >= len(connections):
         return None
     ref = connections[connection_index]
 
-    target_entry = store.get("projects", {}).get(ref["project_id"], {}).get("repos", {}).get(ref["repo_id"], {})
+    target_entry = api.metadata.get_repo_plugin_data(ref["project_id"], ref["repo_id"], "project_editor")
     custom_path = next(
         (cp for cp in target_entry.get("custom_paths", []) if cp["id"] == ref.get("custom_path_id")), None
     )

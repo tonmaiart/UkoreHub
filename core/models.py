@@ -53,6 +53,17 @@ class Repo:
     # See interface/main_window.py's _apply_plugin_visibility.
     required_plugin_ids: list[str] = field(default_factory=list)
     browser_links: list[BrowserLink] = field(default_factory=list)
+    # Free-form per-plugin data genuinely scoped to this one repo, keyed by
+    # plugin_id — e.g. project_editor's pipeline_inputs/custom_paths,
+    # maya_publisher's publish_mode. core/ never interprets the value, same
+    # "core doesn't know plugin shapes" contract PluginConfigStore has (see
+    # core/extensibility/config_store.py) — this just travels with the repo
+    # instead of living in its own separate data/plugins/core/<id>.json
+    # blob, so a repo-level edit only ever pushes/conflicts this repo's own
+    # project blob. Only for data that's actually (project_id, repo_id)-scoped
+    # — studio-wide or cross-project plugin data still belongs in
+    # PluginConfigStore(shared=True), see plugins/README.md.
+    plugin_data: dict[str, dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -73,6 +84,7 @@ class Repo:
             active_plugin_ids=data.get("active_plugin_ids", []),
             required_plugin_ids=data.get("required_plugin_ids", []),
             browser_links=[BrowserLink.from_dict(bl) for bl in data.get("browser_links", [])],
+            plugin_data=data.get("plugin_data", {}),
         )
 
 
@@ -124,12 +136,30 @@ class Project:
     id: str
     name: str
     repos: list[Repo] = field(default_factory=list)
+    # This Project's own Program Database (pipeline software catalog, e.g.
+    # "Autodesk Maya") — not shared with other Projects. A Repo's
+    # required_program_ids/program_version_pins only ever resolve against
+    # its owning Project's own programs list. See core/store.py's
+    # MetadataStore.list_programs/get_program/etc.
+    programs: list[Program] = field(default_factory=list)
+    # Free-form per-plugin data genuinely scoped to this Project as a whole
+    # (not a specific Repo — see Repo.plugin_data above for that), keyed by
+    # plugin_id. Rides inside this Project's own blob, so it's already
+    # cloud-synced via MetadataStore's existing per-project push/pull — no
+    # separate data/plugins/core/<id>.json blob needed. Meant for data
+    # that's inherently session/project-scoped rather than studio-wide (e.g.
+    # maya_launcher's MAYA_ENV_BRIDGE contributions, see
+    # core/extensibility/config_store.py's ProjectPluginConfigStore) —
+    # genuinely studio-wide data still belongs in PluginConfigStore(shared=True).
+    plugin_data: dict[str, dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "name": self.name,
             "repos": [repo.to_dict() for repo in self.repos],
+            "programs": [program.to_dict() for program in self.programs],
+            "plugin_data": self.plugin_data,
         }
 
     @classmethod
@@ -138,4 +168,6 @@ class Project:
             id=data["id"],
             name=data["name"],
             repos=[Repo.from_dict(r) for r in data.get("repos", [])],
+            programs=[Program.from_dict(p) for p in data.get("programs", [])],
+            plugin_data=data.get("plugin_data", {}),
         )

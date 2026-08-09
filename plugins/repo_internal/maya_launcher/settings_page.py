@@ -61,13 +61,13 @@ class MayaLauncherSettingsPage(QWidget):
             return
 
         self._active_repo_label.setText(f"Active repo: {project.name} / {repo.name}")
-        self._refresh_link_status(repo)
+        self._refresh_link_status(project_id, repo)
 
-    def _refresh_link_status(self, repo) -> None:
+    def _refresh_link_status(self, project_id: str, repo) -> None:
         maya_programs = []
         for program_id in repo.required_program_ids:
             try:
-                program = self._api.programs.get_program(program_id)
+                program = self._api.metadata.get_program(project_id, program_id)
             except NotFoundError:
                 continue
             if "maya" in program.name.lower():

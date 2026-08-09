@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
-from core.program_store import ProgramStore
+from core.store import MetadataStore
 
 _NODE_KIND_ROLE = Qt.UserRole + 1
 
@@ -14,13 +14,16 @@ class RequirementsTreeWidget(QTreeWidget):
     a checkable child per version for a multi-version Program (pin, radio-
     style). Used by RepoDialog (repo creation) and
     interface/repo_settings/requirements_and_plugins_page.py (editing an
-    existing repo's requirements)."""
+    existing repo's requirements). Programs are scoped to one Project (see
+    core/models.py's Project.programs) — project_id picks which Project's
+    own Program Database to show."""
 
     def __init__(
         self,
         parent=None,
         *,
-        program_store: ProgramStore,
+        store: MetadataStore,
+        project_id: str,
         selected_program_ids: list[str] | None = None,
         selected_program_version_pins: dict[str, str] | None = None,
     ):
@@ -30,14 +33,14 @@ class RequirementsTreeWidget(QTreeWidget):
         selected_program_id_set = set(selected_program_ids or [])
         version_pins = selected_program_version_pins or {}
 
-        for program in program_store.list_programs():
+        for program in store.list_programs(project_id):
             version_suffix = f" (v{', '.join(program.versions)})" if program.versions else ""
             program_item = QTreeWidgetItem([f"{program.name}{version_suffix}"])
             program_item.setFlags(program_item.flags() | Qt.ItemIsUserCheckable)
             program_item.setCheckState(0, Qt.Checked if program.id in selected_program_id_set else Qt.Unchecked)
             program_item.setData(0, Qt.UserRole, program.id)
             program_item.setData(0, _NODE_KIND_ROLE, "program")
-            icon_path = program_store.resolve_icon_path(program)
+            icon_path = store.resolve_program_icon_path(program)
             if icon_path and icon_path.exists():
                 program_item.setIcon(0, QIcon(str(icon_path)))
             if len(program.versions) > 1:

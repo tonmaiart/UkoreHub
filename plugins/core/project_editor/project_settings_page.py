@@ -2,42 +2,36 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from core.exceptions import ConflictError, UkoreHubError
 from core.store import MetadataStore
 from interface.shared.widget_helpers import confirm_action
 from plugins.core.project_editor.dialogs import ProjectDialog
 
-_ADD_NEW_PROJECT = "__add_new_project__"
-
 
 class ProjectSettingsPage(QWidget):
-    """CATEGORY_PROJECT Settings tab ("Project") — moved here 2026-08-03
-    from ProjectEditorPage's always-visible top bar: first the project
-    picker + Rename/Delete Project buttons, then the Add Repo button too
-    (same day, second pass) once the user asked for it to move as well —
-    the graph view's own top bar is gone entirely now, this tab is the only
-    place all four actions live. This page holds no real state of its
-    own — `get_current_project_id`/`set_current_project_id` (bound in
-    plugin.py to ProjectEditorPage.current_project_id/set_current_project)
-    are the single source of truth, same self-resolving-active-state
-    convention every CATEGORY_REPO tab already uses; `add_repo` (bound to
-    ProjectEditorPage.add_repo, which just delegates to
-    ProjectGraphView.add_repo) always acts on whichever project
-    `get_current_project_id` currently reports, same as the old top-bar
-    button did. Calling `set_current_project_id` reloads the graph
-    immediately (ProjectEditorPage.set_current_project calls
-    graph_view.load_project), even while this Settings dialog is still
-    open, so switching the project here has an instantly visible effect
-    rather than waiting for the dialog to close — the same is true of
-    `add_repo`, which shows its own RepoDialog on top of this (already
-    modal) Settings dialog; nested QDialog.exec() calls are fine in Qt.
-    Because this page is stateless and always re-reads through those
-    callbacks, a freshly-constructed page on every Settings open (see
-    settings_view.py's "fresh page every open" convention) always starts
-    in sync with whatever project the graph is actually showing — no extra
-    wiring needed for that."""
+    """CATEGORY_PROJECT Settings tab ("Project"). As of the single-project-
+    per-session change, this tab no longer lets the Viewgraph switch to a
+    *different* project in place (the old project_combo, removed) — Project
+    is fixed for the whole run by launcher.py's mandatory Project Selector
+    gate (core/store.py's LocalConfigStore.active_project_id) before this
+    page is ever constructed. What's left, all still acting on that one
+    fixed project via get_current_project_id (bound in plugin.py to
+    ProjectEditorPage.current_project_id):
+    - Rename/Delete act on the active project itself.
+    - "New Project..." adds to the shared catalog without switching into
+      it — it only becomes selectable the next time the Project Selector
+      gate actually runs (a fresh launch, or via Switch Project below).
+    - "Switch Project..." is the only way to view a different project at
+      all, and does it honestly — on_switch_project (bound in plugin.py to
+      ProjectEditorPage.switch_project, wrapping SectionHost.switch_project)
+      triggers a full app restart back through that same gate, rather than
+      swapping state in a running window full of pages that assumed the
+      active project couldn't change under them.
+    This page holds no state of its own — every read/write/action goes
+    through the callbacks passed in, same self-resolving-active-state
+    convention every CATEGORY_REPO tab already uses."""
 
     def __init__(
         self,
@@ -45,17 +39,16 @@ class ProjectSettingsPage(QWidget):
         *,
         store: MetadataStore,
         get_current_project_id: Callable[[], str | None],
-        set_current_project_id: Callable[[str | None], None],
         add_repo: Callable[[], None],
+        on_switch_project: Callable[[], None],
     ):
         super().__init__(parent)
         self.store = store
         self._get_current_project_id = get_current_project_id
-        self._set_current_project_id = set_current_project_id
         self._add_repo = add_repo
+        self._on_switch_project = on_switch_project
 
-        self.project_combo = QComboBox()
-        self.project_combo.currentIndexChanged.connect(self._on_combo_changed)
+        self.project_label = QLabel()
 
         rename_btn = QPushButton("Rename Project...")
         rename_btn.clicked.connect(self._on_rename)
@@ -70,80 +63,57 @@ class ProjectSettingsPage(QWidget):
         button_row.addWidget(add_repo_btn)
         button_row.addStretch(1)
 
+        new_project_btn = QPushButton("New Project...")
+        new_project_btn.clicked.connect(self._on_add_new_project)
+        switch_btn = QPushButton("Switch Project...")
+        switch_btn.clicked.connect(self._on_switch_project_clicked)
+
+        catalog_row = QHBoxLayout()
+        catalog_row.addWidget(new_project_btn)
+        catalog_row.addWidget(switch_btn)
+        catalog_row.addStretch(1)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Project shown in the Graph View:"))
-        layout.addWidget(self.project_combo)
+        layout.addWidget(QLabel("Active project (fixed for this session):"))
+        layout.addWidget(self.project_label)
         layout.addLayout(button_row)
+        layout.addLayout(catalog_row)
         layout.addStretch(1)
 
         self.refresh()
 
     def refresh(self) -> None:
-        """Rebuilds the project list and re-selects whatever project the
-        graph is currently showing — called on construction and via
-        SettingsTabSpec.on_activated (this tab becoming visible), so a
-        project added/renamed/deleted elsewhere is picked up even though
-        this page isn't a persistent singleton."""
-        current_id = self._get_current_project_id()
-        blocked = self.project_combo.blockSignals(True)
-        self.project_combo.clear()
-        for project in self.store.list_projects():
-            self.project_combo.addItem(project.name, project.id)
-        self.project_combo.addItem("Add New Project...", _ADD_NEW_PROJECT)
-        index = self.project_combo.findData(current_id) if current_id else -1
-        if index >= 0:
-            self.project_combo.setCurrentIndex(index)
-        elif self.project_combo.count() > 1:
-            # Nothing valid was selected (e.g. first run, or the
-            # previously-shown project got deleted elsewhere) but real
-            # projects exist — fall back to the first one, same as the old
-            # top-bar combo's own _refresh_project_combo fallback.
-            self.project_combo.setCurrentIndex(0)
-        self.project_combo.blockSignals(blocked)
-
-        if index < 0:
-            # Push the fallback selection (a real project, or None if the
-            # registry is empty) back to the graph — signals were blocked
-            # above specifically so this is the one and only call, not a
-            # duplicate of whatever _on_combo_changed would have fired.
-            self._set_current_project_id(self._current_selected_id())
-
-    def _current_selected_id(self) -> str | None:
-        data = self.project_combo.currentData()
-        return data if data and data != _ADD_NEW_PROJECT else None
-
-    def _on_combo_changed(self, index: int) -> None:
-        if self.project_combo.itemData(index) == _ADD_NEW_PROJECT:
-            self._on_add_new_project()
-            return
-        self._set_current_project_id(self.project_combo.itemData(index))
+        """Re-reads the active project's current name — called on
+        construction and via SettingsTabSpec.on_activated (this tab
+        becoming visible), so a rename made elsewhere is picked up even
+        though this page isn't a persistent singleton."""
+        project_id = self._get_current_project_id()
+        project = self.store.get_project(project_id) if project_id else None
+        self.project_label.setText(f"<b>{project.name}</b>" if project is not None else "(no project)")
 
     def _on_add_repo(self) -> None:
         self._add_repo()
 
     def _on_add_new_project(self) -> None:
         dialog = ProjectDialog(self)
-        if dialog.exec():
-            try:
-                project = self.store.add_project(dialog.name())
-            except ConflictError as exc:
-                self.store.load()
-                QMessageBox.warning(self, "Add Project", str(exc))
-                self.refresh()
-                return
-            except UkoreHubError as exc:
-                QMessageBox.warning(self, "Add Project", str(exc))
-                self.refresh()
-                return
-            self._set_current_project_id(project.id)
-            self.refresh()
-        else:
-            self.refresh()
+        if not dialog.exec():
+            return
+        try:
+            self.store.add_project(dialog.name())
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Add Project", str(exc))
+            return
+        except UkoreHubError as exc:
+            QMessageBox.warning(self, "Add Project", str(exc))
+            return
+        QMessageBox.information(
+            self, "Add Project", f"'{dialog.name()}' was added. Use Switch Project to open it."
+        )
 
     def _on_rename(self) -> None:
-        project_id = self._current_selected_id()
+        project_id = self._get_current_project_id()
         if project_id is None:
-            QMessageBox.information(self, "Rename Project", "Select a project first.")
             return
         project = self.store.get_project(project_id)
         dialog = ProjectDialog(self, name=project.name)
@@ -162,16 +132,16 @@ class ProjectSettingsPage(QWidget):
         self.refresh()
 
     def _on_delete(self) -> None:
-        project_id = self._current_selected_id()
+        project_id = self._get_current_project_id()
         if project_id is None:
-            QMessageBox.information(self, "Delete Project", "Select a project first.")
             return
         project = self.store.get_project(project_id)
         if not confirm_action(
             self,
             "Delete Project",
-            f"Delete project '{project.name}' and ALL its repos from the registry for EVERYONE at the studio?\n\n"
-            "This removes them from the shared registry immediately and cannot be undone.",
+            f"Delete project '{project.name}' and ALL its repos from the registry for EVERYONE at the "
+            "studio?\n\nThis is the project currently open in this session — UkoreHub will restart to "
+            "the Project Selector afterward. This cannot be undone.",
         ):
             return
         try:
@@ -179,7 +149,12 @@ class ProjectSettingsPage(QWidget):
         except ConflictError as exc:
             self.store.load()
             QMessageBox.warning(self, "Delete Project", str(exc))
-            self.refresh()
             return
-        self._set_current_project_id(None)
-        self.refresh()
+        self._on_switch_project()
+
+    def _on_switch_project_clicked(self) -> None:
+        if not confirm_action(
+            self, "Switch Project", "UkoreHub will restart to let you pick a different project. Continue?"
+        ):
+            return
+        self._on_switch_project()

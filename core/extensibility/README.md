@@ -31,7 +31,12 @@ settings tabs, project-info tabs) is composed on top of these in
 - `config_store.py` — `PluginConfigStore`: namespaced, atomic-write JSON
   settings for a single plugin (mirrors `LocalConfigStore`/`SystemConfigStore`
   in `core/store.py`, but with a free-form key/value schema instead of fixed
-  fields).
+  fields). Also `ProjectPluginConfigStore`: same `get`/`set` contract, but
+  backed by the currently active `Project.plugin_data` (`core/models.py`)
+  instead of its own JSON blob — for plugin data that's inherently
+  session/project-scoped rather than studio-wide (e.g. `maya_launcher`'s
+  env-var bridge). See `interface/plugin_api.py`'s
+  `project_plugin_config_store()` and `plugins/README.md`.
 - `hooks.py` — `GitHookEvent`/`GitHookContext`/`HookRegistry`: plain-Python
   pub/sub for git lifecycle events (before/after clone/pull/push/commit),
   fired from `core/git_service.py`.

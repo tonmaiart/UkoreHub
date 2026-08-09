@@ -3,7 +3,7 @@ from __future__ import annotations
 from interface.section_registry import SectionHost, SectionSpec
 from interface.settings_tab_registry import CATEGORY_PROJECT, CATEGORY_REPO, SettingsTabSpec
 from plugins.core.project_editor.custom_paths_settings_page import CustomPathsSettingsPage
-from plugins.core.project_editor.pipeline_store import PipelineStore
+from plugins.core.project_editor.pipeline_store import PipelineStore, migrate_legacy_data
 from plugins.core.project_editor.project_editor_page import ProjectEditorPage
 from plugins.core.project_editor.project_settings_page import ProjectSettingsPage
 
@@ -15,14 +15,15 @@ CUSTOM_PATHS_SETTINGS_KEY = "project_editor_custom_paths"
 
 def _wire(page: ProjectEditorPage, host: SectionHost) -> None:
     page.bind_set_active_repo(host.set_active_repo)
+    page.bind_switch_project(host.switch_project)
 
 
 def register(api) -> None:
-    pipeline_store = PipelineStore(api.plugin_config_store(PLUGIN_ID, shared=True))
+    migrate_legacy_data(api)
+    pipeline_store = PipelineStore(api.metadata)
     page = ProjectEditorPage(
         store=api.metadata,
         local_config_store=api.local_config,
-        program_store=api.programs,
         pipeline_store=pipeline_store,
         settings_tab_registry=api.settings_tab_registry,
     )
@@ -50,8 +51,8 @@ def register(api) -> None:
             page_factory=lambda: ProjectSettingsPage(
                 store=api.metadata,
                 get_current_project_id=page.current_project_id,
-                set_current_project_id=page.set_current_project,
                 add_repo=page.add_repo,
+                on_switch_project=page.switch_project,
             ),
             on_activated=lambda widget: widget.refresh(),
             category=CATEGORY_PROJECT,

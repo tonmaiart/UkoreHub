@@ -16,8 +16,9 @@ listing, not an image viewer.
   `MetadataStore.resolve_thumbnail_path`/`thumbnails_dir`
   (`core/store.py`).
 - `program_icons/` — per-`Program` icons, filename = `Program.
-  icon_filename`. Resolved via `ProgramStore.resolve_icon_path`/`icons_dir`
-  (`core/program_store.py`).
+  icon_filename` (`core/models.py`, part of a Project's own `programs`
+  list). Resolved via `MetadataStore.resolve_program_icon_path`/
+  `program_icons_dir` (`core/store.py`).
 - `browser_link_icons/` — per-`BrowserLink` icon overrides, filename =
   `BrowserLink.icon_filename`. Falls back to `icons/icons8-browser-50.png`
   when unset. Resolved via
@@ -30,8 +31,8 @@ listing, not an image viewer.
 
 `thumbnails/`, `program_icons/`, and `browser_link_icons/` are referenced by
 filename from the JSON stores in `data/`; `icons/` is referenced directly by
-path since it has no owning store. `MetadataStore`/`ProgramStore` both take
-an `assets_dir` constructor param (defaulting to `<repo_root>/assets` when
-omitted) rather than deriving it from `json_path`'s own folder — that's what
-lets `data/`'s JSON files move to a cloud-synced cache without dragging
-these image folders along with them.
+path since it has no owning store. `MetadataStore` takes an `assets_dir`
+constructor param (defaulting to `<repo_root>/assets` when omitted) rather
+than deriving it from `json_path`'s own folder — that's what lets `data/`'s
+JSON files move to a cloud-synced cache without dragging these image
+folders along with them.

@@ -41,19 +41,28 @@ two static git-tracked files that used to live here
 - `projects.json` — `MetadataStore`'s Project/Repo registry, split into a
   **lightweight index** (this file — just `{"id", "name"}` per project) plus
   one blob per project under `projects/<id>.json` (the real payload: each
-  project's `repos`, with their requirements/pins/browser links/etc.).
-  Editing one project's repos only ever rewrites and pushes that project's
-  own `projects/<id>.json`, never this index or any other project's blob —
-  keeps the blast radius (and false-conflict risk between artists editing
-  unrelated projects) down as the registry grows. **Both shared/
-  cloud-synced.** Prefer `programs.json`/`system_config.json` below, or
-  `appdata/projects.example.json`, if you just need "an example of the
-  shape".
+  project's `repos` with their requirements/pins/browser links/etc., plus
+  that project's own `programs` — its Program Database, not shared with
+  other projects). Editing one project's repos only ever rewrites and
+  pushes that project's own `projects/<id>.json`, never this index or any
+  other project's blob — keeps the blast radius (and false-conflict risk
+  between artists editing unrelated projects) down as the registry grows.
+  **Both shared/cloud-synced.** Prefer `system_config.json` below, or
+  `appdata/projects.example.json`/`appdata/project.example.json`, if you
+  just need "an example of the shape".
 - `projects/<project_id>.json` — one file per project (see above), named
   after the `Project.id` listed in `projects.json`'s index. **Shared/
   cloud-synced**, one GCS blob per file (`projects/<id>.json`).
-- `programs.json` — `ProgramStore`, the shared software catalog. Shared/
-  cloud-synced, small.
+- `programs.json` — **retired**, no longer read/written by the running app
+  except a one-time migration (`core/store.py`'s `migrate_legacy_programs`,
+  called once from `launcher.py`). Used to be the shared, studio-wide
+  Program Database (pipeline software catalog); each Project now has its
+  own instead (`Project.programs`, part of that project's own
+  `projects/<id>.json` blob — see `core/models.py`). Still pulled at
+  launch and left in place afterward as a manual-reference fallback for
+  any Program that no repo required at migration time (nothing to
+  automatically re-home it to) — openable via Settings > Developer >
+  Cloud Data.
 - `system_config.json` — `SystemConfigStore`, studio-wide settings: GitHub
   OAuth client id, plus `gcs_bucket_name`/`gcs_project_id`/
   `google_oauth_client_id`/`google_oauth_client_secret` for
@@ -85,13 +94,12 @@ bucket — nothing git-tracked, nothing per-machine.
 
 - **Binary/image directories** (`thumbnails/`, `program_icons/`,
   `browser_link_icons/`, `icons/`) — now under the repo-root `assets/`
-  instead (`MetadataStore.assets_dir`/`ProgramStore.assets_dir`,
-  `launcher.py`'s `assets_dir`) — see `assets/README.md`. Git-tracked
-  binary files, not `core/`-owned JSON data.
+  instead (`MetadataStore.assets_dir`, `launcher.py`'s `assets_dir`) — see
+  `assets/README.md`. Git-tracked binary files, not `core/`-owned JSON data.
 - **Static git-tracked defaults** (`projects.example.json`,
-  `system_config.default.json`) — now under the repo-root `appdata/`
-  instead — see `appdata/README.md`. Never cloud-synced, never written by
-  the running app.
+  `project.example.json`, `system_config.default.json`) — now under the
+  repo-root `appdata/` instead — see `appdata/README.md`. Never
+  cloud-synced, never written by the running app.
 
 Both moves exist for the same reason: to make "everything directly under
 `data/` is a cloud-synced JSON blob cache, no exceptions" a rule a reader

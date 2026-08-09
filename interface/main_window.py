@@ -23,7 +23,6 @@ from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.git_service import GitService
 from core.github.token_store import TokenStore
 from core.paths import resolve_repo_path
-from core.program_store import ProgramStore
 from core.relaunch import relaunch_ukorehub_exe
 from core.store import LocalConfigStore, MetadataStore
 from core.theme import DEFAULT_THEME_NAME, get_theme
@@ -101,7 +100,6 @@ class MainWindow(QMainWindow):
         self,
         store: MetadataStore,
         local_config_store: LocalConfigStore,
-        program_store: ProgramStore,
         git_service: GitService,
         token_store: TokenStore,
         cache_dir: Path,
@@ -117,7 +115,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.store = store
         self.local_config_store = local_config_store
-        self.program_store = program_store
         self.git_service = git_service
         # Only used for logout (clearing the cached token) — login itself
         # happens entirely in the launcher exe now, see
@@ -207,6 +204,7 @@ class MainWindow(QMainWindow):
             navigate_and_focus=self._navigate_and_focus,
             set_active_repo=self._set_active_repo,
             open_settings_tab=lambda key: self._on_settings_requested(select_key=key),
+            switch_project=self._request_switch_project,
         )
         for spec in section_registry.ordered():
             if spec.wire is not None:
@@ -444,10 +442,19 @@ class MainWindow(QMainWindow):
         # "is this actually Settings" special case needed here.
         return self.view_stack.currentWidget()
 
+    def _apply_set_repo(self, page) -> None:
+        # set_repo is an optional per-page protocol method, same convention
+        # as _navigate_and_focus's browse_to_path above — a page that has no
+        # notion of "active repo" (e.g. DebugConsole, BananaSketch) simply
+        # doesn't implement it rather than being forced into a no-op stub.
+        set_repo = getattr(page, "set_repo", None)
+        if callable(set_repo):
+            set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
+
     def _apply_to_current_page(self) -> None:
         page = self._current_page()
         if page is not None:
-            page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
+            self._apply_set_repo(page)
 
     def _apply_to_persistent_pages(self) -> None:
         """Persistent section pages (e.g. Project Editor) aren't in
@@ -455,7 +462,7 @@ class MainWindow(QMainWindow):
         never reaches them — push the active repo to every one of them
         directly instead, alongside every _apply_to_current_page() call."""
         for page in self._persistent_pages:
-            page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
+            self._apply_set_repo(page)
 
     def _set_active_repo(self, project_id: str, repo_id: str) -> None:
         self.local_config_store.set_active_repo(project_id, repo_id)
@@ -548,6 +555,21 @@ class MainWindow(QMainWindow):
 
     def _on_restart_requested(self) -> None:
         # Settings > Common's plain "Restart" button.
+        self._restart_app()
+
+    def _request_switch_project(self) -> None:
+        # plugins/core/project_editor's Settings > Project "Switch
+        # Project..." button, via SectionHost.switch_project. Project is
+        # fixed for the whole run (LocalConfigStore.active_project_id, set
+        # once by launcher.py's mandatory Project Selector gate before this
+        # window was even built) — every page downstream assumed it
+        # couldn't change under them, so the only honest way to view a
+        # different one is the same real restart _on_logout_requested uses
+        # for a changed identity, not an in-place swap. clear_active_repo()
+        # resets both active_project_id and active_repo_id so the restarted
+        # process's launcher.py gate sees nothing remembered and shows the
+        # picker again instead of silently re-selecting this same project.
+        self.local_config_store.clear_active_repo()
         self._restart_app()
 
     @staticmethod

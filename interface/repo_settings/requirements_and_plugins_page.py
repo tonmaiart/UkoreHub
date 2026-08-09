@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
 )
 
 from core.extensibility.loader import DiscoveredPlugin, plugin_source
-from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
@@ -75,11 +74,9 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         *,
         store: MetadataStore,
         local_config_store: LocalConfigStore,
-        program_store: ProgramStore,
         plugin_catalog: list[DiscoveredPlugin],
     ):
         super().__init__(parent, store=store, local_config_store=local_config_store)
-        self._program_store = program_store
         self._plugin_catalog = plugin_catalog
         self._plugin_by_id = {plugin.manifest.id: plugin for plugin in plugin_catalog}
         self._item_by_plugin_id: dict[str, QListWidgetItem] = {}
@@ -143,10 +140,11 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
             self._requirements_layout.removeWidget(self._requirements_tree)
             self._requirements_tree.deleteLater()
             self._requirements_tree = None
-        if self._repo is None:
+        if self._repo is None or self._project is None:
             return
         self._requirements_tree = RequirementsTreeWidget(
-            program_store=self._program_store,
+            store=self.store,
+            project_id=self._project.id,
             selected_program_ids=self._repo.required_program_ids,
             selected_program_version_pins=self._repo.program_version_pins,
         )

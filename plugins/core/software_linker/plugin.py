@@ -157,13 +157,13 @@ def _linked_key(program, version: str = "") -> str:
     return f"{program.id}:{version}"
 
 
-def _link_rows(program_store):
+def _link_rows(store, project_id):
     """(key, program, version, label) for every linkable (Program, version)
-    slot — one row for a single/no-version Program, one row per version
-    for a multi-version Program (e.g. Maya 2024 and 2026 need separate
-    linked executables)."""
+    slot in the given Project's own Program Database — one row for a
+    single/no-version Program, one row per version for a multi-version
+    Program (e.g. Maya 2024 and 2026 need separate linked executables)."""
     rows = []
-    for program in program_store.list_programs():
+    for program in store.list_programs(project_id):
         versions = program.versions or [""]
         if len(versions) <= 1:
             version = versions[0]
@@ -177,7 +177,7 @@ def _link_rows(program_store):
 
 class _ProgramLinkCard(QFrame):
     """One program's link status: its own icon (Program Database's
-    icon_filename, resolved via program_store.resolve_icon_path — falls
+    icon_filename, resolved via store.resolve_program_icon_path — falls
     back to a generic icon when the program has none set), name, linked
     path, and status each on their own line, plus this row's own actions.
     Replaces the old single-selection QListWidget + page-level button row:
@@ -187,7 +187,7 @@ class _ProgramLinkCard(QFrame):
     dropdown (QToolButton menu) and both act on this card's own program
     directly, no selection state needed."""
 
-    def __init__(self, parent, *, program_store, config_store, key: str, program, label: str):
+    def __init__(self, parent, *, store, config_store, key: str, program, label: str):
         super().__init__(parent)
         self.setObjectName("softwareLinkCard")
         self._config_store = config_store
@@ -196,7 +196,7 @@ class _ProgramLinkCard(QFrame):
         icon_label = QLabel()
         icon_label.setFixedSize(_CARD_ICON_SIZE, _CARD_ICON_SIZE)
         icon_label.setScaledContents(True)
-        icon_path = program_store.resolve_icon_path(program)
+        icon_path = store.resolve_program_icon_path(program)
         if icon_path and icon_path.exists():
             icon_label.setPixmap(QPixmap(str(icon_path)))
         else:
@@ -283,44 +283,79 @@ class SoftwareLinkerPage(QWidget):
     api.plugin_config_store("software_linker", shared=False) themselves —
     no coupling API needed, just agreeing on that id string. Renders one
     _ProgramLinkCard per linkable (Program, version) slot instead of a
-    plain list row."""
+    plain list row.
 
-    def __init__(self, parent=None, *, program_store, config_store):
+    Program Database is per-Project now (core/models.py's Project.programs).
+    As of the single-project-per-session change, this always operates on
+    local_config_store.active_project_id — the one project fixed for the
+    whole run by launcher.py's mandatory Project Selector gate — rather
+    than its own independent project picker (removed; there's nothing to
+    pick anymore, every page in the app reads through the same fixed
+    project id now)."""
+
+    def __init__(self, parent=None, *, store, local_config_store, config_store):
         super().__init__(parent)
-        self._program_store = program_store
+        self._store = store
+        self._local_config_store = local_config_store
         self._config_store = config_store
 
-        self._auto_detect_missing()
+        self.project_label = QLabel()
 
-        cards_container = QWidget()
-        self._cards_layout = QVBoxLayout(cards_container)
+        self._cards_container = QWidget()
+        self._cards_layout = QVBoxLayout(self._cards_container)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
         self._cards_layout.setSpacing(6)
-        for key, program, _version, label in _link_rows(self._program_store):
-            card = _ProgramLinkCard(
-                cards_container,
-                program_store=self._program_store,
-                config_store=self._config_store,
-                key=key,
-                program=program,
-                label=label,
-            )
-            self._cards_layout.addWidget(card)
         self._cards_layout.addStretch(1)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(cards_container)
+        scroll_area.setWidget(self._cards_container)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Project:"))
+        layout.addWidget(self.project_label)
         layout.addWidget(scroll_area)
 
-    def _auto_detect_missing(self) -> None:
+        self.refresh()
+
+    def refresh(self) -> None:
+        """Re-reads the active project's current name and rebuilds the
+        link cards. Called on construction and via
+        SettingsTabSpec.on_activated."""
+        project_id = self._local_config_store.active_project_id
+        project = self._store.get_project(project_id) if project_id else None
+        self.project_label.setText(project.name if project is not None else "(no project)")
+        self._rebuild_cards()
+
+    def _rebuild_cards(self) -> None:
+        while self._cards_layout.count() > 1:  # keep the trailing addStretch
+            item = self._cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        project_id = self._local_config_store.active_project_id
+        if project_id is None:
+            return
+
+        self._auto_detect_missing(project_id)
+        for key, program, _version, label in _link_rows(self._store, project_id):
+            card = _ProgramLinkCard(
+                self._cards_container,
+                store=self._store,
+                config_store=self._config_store,
+                key=key,
+                program=program,
+                label=label,
+            )
+            self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
+
+    def _auto_detect_missing(self, project_id: str) -> None:
         # Best-effort only — checks the system PATH for an executable that
         # looks like the program's name, nothing more. Programs with no
         # match just stay unlinked until the user links one manually.
-        for key, program, _version, _label in _link_rows(self._program_store):
+        for key, program, _version, _label in _link_rows(self._store, project_id):
             if self._config_store.get(key):
                 continue
             guess = shutil.which(program.name.lower().replace(" ", ""))
@@ -335,8 +370,10 @@ def register(api) -> None:
             label="Software Linker",
             order=100,
             page_factory=lambda: SoftwareLinkerPage(
-                program_store=api.programs,
+                store=api.metadata,
+                local_config_store=api.local_config,
                 config_store=api.plugin_config_store(PLUGIN_ID, shared=False),
             ),
+            on_activated=lambda page: page.refresh(),
         )
     )

@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
 
 from core.exceptions import ConflictError, NotFoundError, UkoreHubError
 from core.models import Project, Repo
-from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore
 from interface.settings_tab_registry import SettingsTabRegistry
 from plugins.core.project_editor.dialogs import RepoDialog
@@ -420,14 +419,12 @@ class ProjectGraphView(QGraphicsView):
         *,
         store: MetadataStore,
         local_config_store: LocalConfigStore,
-        program_store: ProgramStore,
         pipeline_store: PipelineStore,
         settings_tab_registry: SettingsTabRegistry,
     ):
         super().__init__(parent)
         self.store = store
         self.local_config_store = local_config_store
-        self.program_store = program_store
         self.pipeline_store = pipeline_store
         self.settings_tab_registry = settings_tab_registry
 
@@ -870,7 +867,7 @@ class ProjectGraphView(QGraphicsView):
         if not workspace_root:
             QMessageBox.information(self, "Add Repo", "Set and save a workspace folder in Setting > Common first.")
             return
-        dialog = RepoDialog(self, program_store=self.program_store)
+        dialog = RepoDialog(self, store=self.store, project_id=self._project_id)
         if not dialog.exec():
             return
         try:

@@ -81,10 +81,12 @@ time (`RepoDialog`'s Requirements tree).
 
 Settings are split into two files with different sharing behavior:
 
-- **System config** — `data/projects.json` (the Project/Repo registry, including
-  each repo's thumbnail filename and required Program IDs), `data/system_config.json`
-  (GitHub OAuth Client ID, GCS Bucket Name), and `data/programs.json` (the shared
-  Program Database) are synced to/from a shared Google Cloud Storage bucket
+- **System config** — `data/projects.json` (the Project/Repo registry index)
+  plus one `data/projects/<id>.json` per project (each project's repos,
+  including thumbnail filenames and required Program IDs, plus that
+  project's own Program Database — not shared with other projects), and
+  `data/system_config.json` (GitHub OAuth Client ID, GCS Bucket Name) are
+  synced to/from a shared Google Cloud Storage bucket
   (`core/cloud_sync.py`) — pulled fresh on every launch, pushed automatically
   on every edit, no manual commit/push step needed. `assets/thumbnails/` and
   `assets/program_icons/` (repo thumbnails / program icons) are still **tracked
@@ -137,7 +139,7 @@ setting instead of attempting to log in.
 
 ## Google Cloud Sync Setup (needed for the shared registries to sync)
 
-`data/projects.json`, `data/programs.json`, `data/system_config.json`, and
+`data/projects.json`, every `data/projects/<id>.json`, `data/system_config.json`, and
 each `shared=True` `PluginConfigStore` file sync through a shared Google
 Cloud Storage bucket instead of git (see "System config vs. local config"
 above). Each artist authenticates as their own Google identity via an
@@ -184,7 +186,8 @@ crashes or blocks the app.
 
 - `core/` — metadata store, git operations, theming, GitHub auth; no UI code.
 - `interface/` — PySide6 GUI (sidebar, content pages, settings dialog, repo browser).
-- `data/` — `projects.json`, `system_config.json`, `programs.json` (shared,
+- `data/` — `projects.json` (index) plus `projects/<id>.json` per project
+  (each with its own Program Database), `system_config.json` (shared,
   synced via Google Cloud Storage), `thumbnails/`, `program_icons/` (shared,
   still git-tracked).
 - `cache/` — `local_config.json`, `github_token.json`,

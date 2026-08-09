@@ -31,6 +31,15 @@ class SectionHost:
     # SettingsDialog.select_tab. A key with no matching tab is a no-op —
     # the dialog still opens, just on its normal default tab.
     open_settings_tab: Callable[[str], None]
+    # Lets a section's page trigger the app's "different project" flow
+    # without holding a MainWindow reference — wraps
+    # MainWindow._request_switch_project. Project is fixed for the whole
+    # run (LocalConfigStore.active_project_id, set once by launcher.py's
+    # mandatory Project Selector gate), so this is a real restart back
+    # through that gate, not an in-place state change. Added specifically
+    # for plugins/core/project_editor's Settings > Project "Switch
+    # Project..." button.
+    switch_project: Callable[[], None]
 
 
 @dataclass(frozen=True)

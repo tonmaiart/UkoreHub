@@ -7,7 +7,7 @@ stays hidden for every repo until that repo explicitly requires it
 (`Repo.required_plugin_ids`, set from Settings > Repo > Requirements &
 Plugins, `interface/repo_settings/requirements_and_plugins_page.py`'s
 "Internal Plugin" list), the same "off until required" shape as a
-`core/program_store.py` Program requirement. See `plugins/README.md` for
+Program requirement (`core/models.py`'s `Project.programs`). See `plugins/README.md` for
 how this compares to `plugins/core/` and `cache/plugins/`, and
 `core/extensibility/README.md` for the discovery mechanics
 (`core/extensibility/loader.py`'s `plugin_source()` returns

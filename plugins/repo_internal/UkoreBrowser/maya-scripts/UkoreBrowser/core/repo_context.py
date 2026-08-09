@@ -111,18 +111,30 @@ def _ref_key(ref: dict) -> str:
     return "{}:{}:{}".format(ref.get("project_id"), ref.get("repo_id"), ref.get("custom_path_id"))
 
 
+def _get_repo(project_id: str, repo_id: str):
+    """Constructs MetadataStore straight off disk (Maya's Python has no
+    PluginAPI instance to go through) and looks up one specific repo by id
+    — shared by the two lookups below, which both just want a field off
+    that repo's own plugin_data (core/models.py's Repo)."""
+    root = publish_api_repo_paths.find_ukorehub_root()
+    from core.exceptions import NotFoundError
+    from core.store import MetadataStore
+
+    store = MetadataStore(root / "data" / "projects.json")
+    try:
+        return store.get_repo(project_id, repo_id)
+    except NotFoundError:
+        return None
+
+
 def _get_hidden_root_tab_keys(project_id: str, repo_id: str) -> set[str]:
     """The set of ref keys a studio admin has hidden from the root-tab row
     for this repo, via UkoreBrowser's own Repo Studio Setting tab — read
-    directly off this plugin's own PluginConfigStore file
-    (data/plugins/core/ukore_browser.json), same "construct the store
-    straight off disk" approach every function in this module family
-    uses (Maya's Python has no PluginAPI instance to go through)."""
-    root = publish_api_repo_paths.find_ukorehub_root()
-    from core.extensibility.config_store import PluginConfigStore
-
-    tool_store = PluginConfigStore(root / "data" / "plugins" / "core" / "ukore_browser.json")
-    hidden = tool_store.get("repo_hidden_root_tabs", {}).get(f"{project_id}:{repo_id}", [])
+    off this repo's own plugin_data["ukore_browser"] (core/models.py's Repo)."""
+    repo = _get_repo(project_id, repo_id)
+    if repo is None:
+        return set()
+    hidden = repo.plugin_data.get("ukore_browser", {}).get("repo_hidden_root_tabs", [])
     return set(hidden)
 
 
@@ -133,16 +145,12 @@ def _get_pipeline_refs_for(project_id: str, repo_id: str) -> list[dict]:
     takes no repo argument, so calling it as-is here would fetch pipeline
     connections for the *currently* active repo even after this module has
     locked onto an earlier one (see module docstring), showing the locked
-    repo's own tab alongside a different repo's connections. Reads
-    project_editor's shared PluginConfigStore file directly instead, same
-    "construct the store straight off disk" approach
-    _get_hidden_root_tab_keys() above and get_pipeline_refs() itself use."""
-    root = publish_api_repo_paths.find_ukorehub_root()
-    from core.extensibility.config_store import PluginConfigStore
-
-    pipeline_store = PluginConfigStore(root / "data" / "plugins" / "core" / "project_editor.json")
-    entry = pipeline_store.get("projects", {}).get(project_id, {}).get("repos", {}).get(repo_id, {})
-    return entry.get("pipeline_inputs", [])
+    repo's own tab alongside a different repo's connections. Reads off that
+    repo's own plugin_data["project_editor"] directly instead."""
+    repo = _get_repo(project_id, repo_id)
+    if repo is None:
+        return []
+    return repo.plugin_data.get("project_editor", {}).get("pipeline_inputs", [])
 
 
 def get_pipeline_root_tabs() -> list[dict]:

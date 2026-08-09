@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from core.exceptions import NotFoundError
 from core.models import Program, Project, Repo
-from core.program_store import ProgramStore
+from core.store import MetadataStore
 from core.theme import DEFAULT_THEME_NAME, get_theme
 from interface.program_launch_registry import ProgramLaunchRegistry
 from interface.section_registry import SectionHost, SectionSpec
@@ -124,14 +124,15 @@ class ProgramLauncherPage(QWidget):
         self,
         parent=None,
         *,
-        program_store: ProgramStore,
+        store: MetadataStore,
         config_store,
         program_launch_registry: ProgramLaunchRegistry,
     ):
         super().__init__(parent)
-        self._program_store = program_store
+        self._store = store
         self._config_store = config_store
         self._program_launch_registry = program_launch_registry
+        self._project: Project | None = None
         self._repo: Repo | None = None
         self._open_settings_tab = None
 
@@ -163,13 +164,14 @@ class ProgramLauncherPage(QWidget):
         self._open_settings_tab = open_settings_tab
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
+        self._project = project
         self._repo = repo
         self._refresh()
 
     def _refresh(self) -> None:
         self._grid.clear()
 
-        if self._repo is None:
+        if self._repo is None or self._project is None:
             self._status_label.setText("No active repo selected.")
             self._status_label.show()
             self._grid.hide()
@@ -178,7 +180,7 @@ class ProgramLauncherPage(QWidget):
         programs = []
         for program_id in self._repo.required_program_ids:
             try:
-                programs.append(self._program_store.get_program(program_id))
+                programs.append(self._store.get_program(self._project.id, program_id))
             except NotFoundError:
                 continue
 
@@ -213,7 +215,7 @@ class ProgramLauncherPage(QWidget):
         self._grid.setItemWidget(item, card)
 
     def _resolve_icon_pixmap(self, program: Program) -> QPixmap:
-        icon_path = self._program_store.resolve_icon_path(program)
+        icon_path = self._store.resolve_program_icon_path(program)
         if icon_path and icon_path.exists():
             pixmap = QPixmap(str(icon_path))
             if not pixmap.isNull():
@@ -257,7 +259,7 @@ def register(api) -> None:
             order=40,
             icon_path=icons_dir / "icons8-booster-64.png",
             page_factory=lambda: ProgramLauncherPage(
-                program_store=api.programs,
+                store=api.metadata,
                 config_store=api.plugin_config_store(SOFTWARE_LINKER_PLUGIN_ID, shared=False),
                 program_launch_registry=api.program_launch_registry,
             ),

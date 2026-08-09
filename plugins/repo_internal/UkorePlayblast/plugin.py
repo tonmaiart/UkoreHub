@@ -5,8 +5,8 @@ from pathlib import Path
 TOOL_ID = "ukore_playblast"
 TOOL_LABEL = "UkorePlayblast"
 # Convention-only string match with plugins/repo_internal/maya_launcher/plugin.py
-# — both resolve to the same data/plugins/repo_internal/maya_launcher_env_bridge.json
-# via PluginConfigStore, no coupling API needed. See that plugin's README
+# — both resolve to the same active Project's plugin_data via
+# ProjectPluginConfigStore, no coupling API needed. See that plugin's README
 # for the full "contributions"/"labels" shape this writes into — same
 # pattern plugins/repo_internal/MayaPublisher/plugin.py uses for its own Maya
 # package.
@@ -29,7 +29,9 @@ def register(api) -> None:
     # adds api.app_root to PYTHONPATH), not from this plugin's.
     tool_root = Path(__file__).resolve().parent
 
-    bridge = api.plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID, shared=True)
+    bridge = api.project_plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID)
+    if bridge is None:
+        return
     contributions = bridge.get("contributions", {})
     contributions[TOOL_ID] = {"PYTHONPATH": {ANY_VERSION: [str(tool_root / "maya-scripts")]}}
     bridge.set("contributions", contributions)

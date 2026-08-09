@@ -6,12 +6,11 @@ from typing import Callable
 from core.cloud_sync import GcsJsonSync
 from core.exceptions import ConflictError
 from core.extensibility import debug_log
-from core.extensibility.config_store import PluginConfigStore
+from core.extensibility.config_store import PluginConfigStore, ProjectPluginConfigStore
 from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
 from core.extensibility.hooks import GitHookEvent, HookHandler, HookRegistry
 from core.git_service import GitService
 from core.models import Repo
-from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from interface.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
 from interface.section_registry import SectionRegistry, SectionSpec
@@ -36,7 +35,6 @@ class PluginAPI:
         self,
         *,
         store: MetadataStore,
-        program_store: ProgramStore,
         local_config_store: LocalConfigStore,
         system_config_store: SystemConfigStore,
         git_service: GitService,
@@ -53,7 +51,6 @@ class PluginAPI:
         cloud_sync: GcsJsonSync | None = None,
     ):
         self._store = store
-        self._program_store = program_store
         self._local_config_store = local_config_store
         self._system_config_store = system_config_store
         self._git_service = git_service
@@ -72,10 +69,6 @@ class PluginAPI:
     @property
     def metadata(self) -> MetadataStore:
         return self._store
-
-    @property
-    def programs(self) -> ProgramStore:
-        return self._program_store
 
     @property
     def local_config(self) -> LocalConfigStore:
@@ -210,3 +203,19 @@ class PluginAPI:
                 debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
         return PluginConfigStore(json_path, on_save=_push_plugin_blob)
+
+    def project_plugin_config_store(self, plugin_id: str) -> ProjectPluginConfigStore | None:
+        """Same get/set contract as plugin_config_store(shared=True), but
+        scoped to the currently active Project (core/models.py's
+        Project.plugin_data) instead of one studio-wide blob — for data
+        that's inherently session/project-scoped rather than studio-wide
+        (e.g. maya_launcher's MAYA_ENV_BRIDGE contributions). Returns None
+        when no project is active yet (e.g. very first launch, before any
+        project has ever been selected) — callers must handle this rather
+        than assume a store is always available, same "never crash on a
+        missing-context problem at startup" convention as the cloud-pull
+        failure handling above."""
+        project_id = self._local_config_store.active_project_id
+        if project_id is None:
+            return None
+        return ProjectPluginConfigStore(self._store, project_id, plugin_id)

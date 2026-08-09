@@ -2,15 +2,17 @@
 
 The Studio Setting UI for cloud sync — lets an artist log in with Google
 and configure the GCS bucket/project/OAuth client that `core/cloud_sync.py`
-syncs `data/projects.json` (an index — each project's own data lives in a
-separate `data/projects/<id>.json` blob, see `core/store.py`'s
-`MetadataStore`) / `programs.json` / `system_config.json` / shared
-`PluginConfigStore` files through. This plugin owns only the **UI** half;
+syncs `data/projects.json` (an index — each project's own data, including
+that project's own Program Database, lives in a separate
+`data/projects/<id>.json` blob, see `core/store.py`'s `MetadataStore`) /
+`system_config.json` / shared `PluginConfigStore` files through (plus a
+retired `programs.json`, still pulled for a one-time migration — see
+`data/README.md`). This plugin owns only the **UI** half;
 the sync **engine** (`core/cloud_sync.py`'s `GcsJsonSync`, `core/google_auth.py`'s
 OAuth login + `GoogleTokenStore`) deliberately stays in `core/` and is not
 part of this plugin — `launcher.py` has to build it and pull the shared
-blobs *before* constructing `MetadataStore`/`ProgramStore`/
-`SystemConfigStore`, which itself happens before plugin discovery runs.
+blobs *before* constructing `MetadataStore`/`SystemConfigStore`, which
+itself happens before plugin discovery runs.
 A plugin's `register(api)` can never execute early enough to supply that
 engine at boot, so there was no way to move it here without inverting the
 documented `core -> plugin` dependency direction. See the

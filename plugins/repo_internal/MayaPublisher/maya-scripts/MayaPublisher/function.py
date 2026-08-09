@@ -50,23 +50,16 @@ MODE_LABELS = {"rig": "Rig", "model": "Model", "animation": "Animation"}
 
 
 def get_publish_mode() -> str | None:
-    """This repo's configured Publish Mode, read straight off
-    data/plugins/core/maya_publisher.json (Maya's Python has no PluginAPI
-    instance to call plugin_config_store() through — same "construct the
-    store off disk" convention PublishApi.repo_paths.get_active_repo()
-    uses). None if there's no active repo, or a studio admin hasn't set a
-    mode for it yet under Repository Setting > MayaPublisher."""
+    """This repo's configured Publish Mode, read off the active Repo's own
+    plugin_data["maya_publisher"] (core/models.py's Repo). None if there's
+    no active repo, or a studio admin hasn't set a mode for it yet under
+    Repository Setting > MayaPublisher."""
     from PublishApi import repo_paths
 
-    project, repo, _ = repo_paths.get_active_repo()
-    if project is None:
+    _, repo, _ = repo_paths.get_active_repo()
+    if repo is None:
         return None
-
-    from core.extensibility.config_store import PluginConfigStore
-
-    root = repo_paths.find_ukorehub_root()
-    store = PluginConfigStore(root / "data" / "plugins" / "core" / f"{TOOL_ID}.json")
-    return store.get("publish_mode", {}).get(f"{project.id}:{repo.id}")
+    return repo.plugin_data.get(TOOL_ID, {}).get("publish_mode")
 
 
 def publish(ticket: dict):

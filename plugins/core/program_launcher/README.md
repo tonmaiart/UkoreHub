@@ -21,14 +21,16 @@ different setup).
     protocol every `SectionSpec` page implements) rebuilds the card grid
     whenever the active repo changes.
   - One square `_ProgramCard` per Program in `repo.required_program_ids`
-    (resolved via `api.programs.get_program`, skipping any id that no
-    longer exists in the catalog), laid out in a wrapping grid
+    (resolved via `api.metadata.get_program(project_id, id)` against the
+    active repo's own Project — Program Database is per-Project now, see
+    `core/models.py`'s `Project.programs` — skipping any id that no
+    longer exists in that project's catalog), laid out in a wrapping grid
     (`QListWidget` in `IconMode`, one card per `QListWidgetItem` via
     `setItemWidget` — native Qt grid reflow on resize, no hand-rolled flow
-    layout). Each card shows the Program's own icon (`ProgramStore.
-    resolve_icon_path`, same icon Settings > Program Database manages —
-    falls back to a generic icon if none is set) with name + version
-    below it.
+    layout). Each card shows the Program's own icon
+    (`MetadataStore.resolve_program_icon_path`, same icon Settings >
+    Program Database manages — falls back to a generic icon if none is
+    set) with name + version below it.
   - Resolves the pinned version (`repo.program_version_pins`, same lookup
     `plugins/repo_internal/maya_launcher/link_resolution.py`'s `pinned_version()`
     does) and the linked executable path the same way

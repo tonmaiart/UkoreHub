@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.program_store import ProgramStore
+from core.store import MetadataStore
 from interface.shared.image_asset import pick_image_file
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 
@@ -51,10 +51,10 @@ class RepoDialog(QDialog):
     """Full Name/URL/Thumbnail/Requirements editor, used as-is for **Add**
     Repo (one-step bootstrap of a new repo record). For **editing** an
     existing repo, Project Editor's node context menu now only asks for
-    Name/Git URL here (show_thumbnail=False, no program_store) — Thumbnail
-    has its own "Change Thumbnail..." context menu action; editing
-    Requirements on an existing repo has no UI entry point since Repo About
-    was removed."""
+    Name/Git URL here (show_thumbnail=False, no store/project_id) —
+    Thumbnail has its own "Change Thumbnail..." context menu action;
+    editing Requirements on an existing repo has no UI entry point since
+    Repo About was removed."""
 
     def __init__(
         self,
@@ -64,7 +64,8 @@ class RepoDialog(QDialog):
         git_url: str = "",
         show_thumbnail: bool = True,
         thumbnail_path: Path | None = None,
-        program_store: ProgramStore | None = None,
+        store: MetadataStore | None = None,
+        project_id: str | None = None,
         selected_program_ids: list[str] | None = None,
         selected_program_version_pins: dict[str, str] | None = None,
     ):
@@ -97,9 +98,10 @@ class RepoDialog(QDialog):
         # See RequirementsTreeWidget for the tree shape (checkable Program
         # nodes with checkable per-version children).
         self.requirements_tree: RequirementsTreeWidget | None = None
-        if program_store is not None:
+        if store is not None and project_id is not None:
             self.requirements_tree = RequirementsTreeWidget(
-                program_store=program_store,
+                store=store,
+                project_id=project_id,
                 selected_program_ids=selected_program_ids,
                 selected_program_version_pins=selected_program_version_pins,
             )

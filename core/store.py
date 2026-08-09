@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from core.exceptions import NotFoundError, ValidationError
-from core.models import BrowserLink, Project, Repo
+from core.models import BrowserLink, Program, Project, Repo
 from core.paths import resolve_repo_path
 from core.theme import DEFAULT_THEME_NAME
 
@@ -69,8 +69,8 @@ class MetadataStore:
         # index, e.g. data/projects.json (index) + data/projects/<id>.json.
         self.projects_dir = self.json_path.parent / "projects"
         self.projects: list[Project] = []
-        # Unlike SystemConfigStore/ProgramStore's on_save (no-arg — one fixed
-        # blob), this store's on_save takes the blob name that just changed
+        # Unlike SystemConfigStore's on_save (no-arg — one fixed blob), this
+        # store's on_save takes the blob name that just changed
         # ("projects.json" for the index, "projects/<id>.json" for a single
         # project) so a repo-level edit only ever pushes that one project's
         # blob, not the whole registry.
@@ -290,6 +290,23 @@ class MetadataStore:
         repo.browser_links[link_index].icon_filename = filename
         self._save_project(project)
 
+    def get_repo_plugin_data(self, project_id: str, repo_id: str, plugin_id: str) -> dict:
+        return self.get_repo(project_id, repo_id).plugin_data.get(plugin_id, {})
+
+    def set_repo_plugin_data(self, project_id: str, repo_id: str, plugin_id: str, data: dict) -> None:
+        project = self.get_project(project_id)
+        repo = self.get_repo(project_id, repo_id)
+        repo.plugin_data[plugin_id] = data
+        self._save_project(project)
+
+    def get_project_plugin_data(self, project_id: str, plugin_id: str) -> dict:
+        return self.get_project(project_id).plugin_data.get(plugin_id, {})
+
+    def set_project_plugin_data(self, project_id: str, plugin_id: str, data: dict) -> None:
+        project = self.get_project(project_id)
+        project.plugin_data[plugin_id] = data
+        self._save_project(project)
+
     @property
     def thumbnails_dir(self) -> Path:
         return self.assets_dir / "thumbnails"
@@ -320,6 +337,109 @@ class MetadataStore:
                     changed = True
             if changed:
                 self._save_project(project)
+
+    def list_programs(self, project_id: str) -> list[Program]:
+        return list(self.get_project(project_id).programs)
+
+    def get_program(self, project_id: str, program_id: str) -> Program:
+        for program in self.get_project(project_id).programs:
+            if program.id == program_id:
+                return program
+        raise NotFoundError(f"Program not found: {program_id}")
+
+    def add_program(
+        self, project_id: str, name: str, description: str = "", versions: list[str] | None = None
+    ) -> Program:
+        project = self.get_project(project_id)
+        name = name.strip()
+        if not name:
+            raise ValidationError("Program name cannot be empty.")
+        if any(p.name.lower() == name.lower() for p in project.programs):
+            raise ValidationError(f"A program named '{name}' already exists.")
+        program = Program(
+            id=str(uuid.uuid4()), name=name, versions=list(versions or []), description=description.strip()
+        )
+        project.programs.append(program)
+        self._save_project(project)
+        return program
+
+    def edit_program(
+        self,
+        project_id: str,
+        program_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        versions: list[str] | None = None,
+    ) -> None:
+        project = self.get_project(project_id)
+        program = self.get_program(project_id, program_id)
+        if name is not None:
+            name = name.strip()
+            if not name:
+                raise ValidationError("Program name cannot be empty.")
+            if any(p.id != program_id and p.name.lower() == name.lower() for p in project.programs):
+                raise ValidationError(f"A program named '{name}' already exists.")
+            program.name = name
+        if description is not None:
+            program.description = description.strip()
+        if versions is not None:
+            program.versions = list(versions)
+        self._save_project(project)
+
+    def delete_program(self, project_id: str, program_id: str) -> None:
+        project = self.get_project(project_id)
+        program = self.get_program(project_id, program_id)
+        project.programs.remove(program)
+        self._save_project(project)
+
+    def set_program_icon(self, project_id: str, program_id: str, filename: str | None) -> None:
+        project = self.get_project(project_id)
+        program = self.get_program(project_id, program_id)
+        program.icon_filename = filename
+        self._save_project(project)
+
+    @property
+    def program_icons_dir(self) -> Path:
+        return self.assets_dir / "program_icons"
+
+    def resolve_program_icon_path(self, program: Program) -> Path | None:
+        if not program.icon_filename:
+            return None
+        return self.program_icons_dir / program.icon_filename
+
+
+def migrate_legacy_programs(store: MetadataStore, legacy_path: Path) -> None:
+    """One-time cutover from the old studio-wide data/programs.json catalog
+    into each Project's own Project.programs — Program Database used to be
+    one list shared by the whole studio, now each Project has its own. Only
+    migrates Programs a repo somewhere actually requires (so existing
+    required_program_ids/program_version_pins keep resolving); a Program
+    nobody requires has no signal for which Project it belongs to, so it's
+    deliberately left behind in the old file rather than guessed at —
+    still readable via Settings > Developer > Cloud Data if a studio admin
+    needs to recreate it by hand. Idempotent via a presence check (copies
+    only if not already there) rather than clearing legacy_path, since that
+    file is being kept in place on purpose. Safe to call on every launch."""
+    legacy_path = Path(legacy_path)
+    if not legacy_path.exists():
+        return
+    data = json.loads(legacy_path.read_text(encoding="utf-8"))
+    legacy_programs = {p["id"]: p for p in data.get("programs", [])}
+    if not legacy_programs:
+        return
+    for project in store.projects:
+        existing_ids = {p.id for p in project.programs}
+        changed = False
+        for repo in project.repos:
+            for program_id in list(repo.required_program_ids) + list(repo.program_version_pins.keys()):
+                if program_id in existing_ids or program_id not in legacy_programs:
+                    continue
+                project.programs.append(Program.from_dict(legacy_programs[program_id]))
+                existing_ids.add(program_id)
+                changed = True
+        if changed:
+            store._save_project(project)
 
 
 LOCAL_CONFIG_SCHEMA_VERSION = 1
@@ -380,6 +500,20 @@ class LocalConfigStore:
     def set_active_repo(self, project_id: str, repo_id: str) -> None:
         self.active_project_id = project_id
         self.active_repo_id = repo_id
+        self.save()
+
+    def set_active_project(self, project_id: str | None) -> None:
+        """Fixes which Project this run is scoped to — called once by
+        launcher.py's mandatory Project Selector gate before MainWindow/
+        plugins are constructed, never mid-session (see
+        plugins/core/project_editor's Settings > Project tab, which only
+        offers "Switch Project" — a full app restart back through that same
+        gate, interface/main_window.py's _request_switch_project — rather
+        than an in-place change). Clears active_repo_id too: a repo id left
+        over from a previously active project would otherwise resolve
+        against the wrong project's registry."""
+        self.active_project_id = project_id
+        self.active_repo_id = None
         self.save()
 
     def clear_active_repo(self) -> None:

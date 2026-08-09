@@ -20,7 +20,14 @@ files" — see `data/README.md`.
   the bucket name needed to pull the real `system_config.json` in the first
   place. The first successful pull overwrites `data/system_config.json` with
   the live cloud copy, so this file only matters before that.
-- `projects.example.json` — a checked-in sample shape for
-  `data/projects.json`, **not** read by the app itself — purely a reference
-  for a human (or an agent) who needs "an example of the shape" without
-  pulling the real, possibly-large `data/projects.json`.
+- `projects.example.json` — a checked-in sample shape for `data/projects.json`
+  — the lightweight index only (`{"id", "name"}` per project, `schema_version`
+  2), **not** read by the app itself.
+- `project.example.json` — a checked-in sample shape for one project's own
+  blob, `data/projects/<project_id>.json` (repos, requirements, pins,
+  browser links, plugin_data, and that project's own Program Database) —
+  also **not** read by the app itself. Split from `projects.example.json`
+  on 2026-08-09 when `MetadataStore` itself split the same way (see
+  `data/README.md`) — purely a reference for a human (or an agent) who
+  needs "an example of the shape" without pulling the real, possibly-large
+  `data/projects/<id>.json`.

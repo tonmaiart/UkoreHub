@@ -158,9 +158,8 @@ def main() -> None:
     from core.extensibility.loader import apply_plugins, discover_plugins, plugin_source
     from core.git_service import GitService
     from core.github.token_store import TokenStore
-    from core.program_store import ProgramStore
     from core.relaunch import relaunch_ukorehub_exe
-    from core.store import LocalConfigStore, MetadataStore, SystemConfigStore, read_project_ids
+    from core.store import LocalConfigStore, MetadataStore, SystemConfigStore, migrate_legacy_programs, read_project_ids
     from interface.builtin_settings_tabs import register_builtin_settings_tabs
     from interface.main_window import MainWindow
     from interface.plugin_api import PLUGIN_API_VERSION, PluginAPI
@@ -277,9 +276,13 @@ def main() -> None:
     system_config_store = SystemConfigStore(
         data_dir / "system_config.json", on_save=lambda: _push_shared_blob("system_config.json")
     )
-    program_store = ProgramStore(
-        data_dir / "programs.json", assets_dir=assets_dir, on_save=lambda: _push_shared_blob("programs.json")
-    )
+    # programs.json is a retired studio-wide Program Database — Program is
+    # now owned per-Project (Project.programs, core/models.py) instead.
+    # Still pulled above (fixed 3-blob loop) so this migration reads the
+    # latest cloud copy; nothing writes it back afterward, and it's
+    # deliberately left in place rather than deleted — see
+    # migrate_legacy_programs's own docstring.
+    migrate_legacy_programs(store, data_dir / "programs.json")
     # local_config.json and github_token.json are per-machine and gitignored
     # — see cache_dir comment above.
     local_config_store = LocalConfigStore(cache_dir / "local_config.json")
@@ -322,6 +325,31 @@ def main() -> None:
 
     apply_theme(app, local_config_store.theme)
 
+    # Project must be fixed for the whole session before plugins/MainWindow
+    # are constructed — every page downstream (Program Database, Software
+    # Linker, Project Editor's Viewgraph, ...) now assumes
+    # local_config_store.active_project_id already points at a real
+    # project, with no in-app way to change it to a *different* one (see
+    # plugins/core/project_editor/project_settings_page.py's "Switch
+    # Project...", which just restarts back through this same gate via
+    # interface/main_window.py's _request_switch_project). Skipped
+    # entirely — no dialog shown — when the remembered active_project_id
+    # already resolves, or when there's at most one project to begin with
+    # (nothing to actually choose), so an ordinary day-to-day launch stays
+    # a single click through the GitHub gate above, same as before this
+    # existed.
+    existing_project_ids = {project.id for project in store.list_projects()}
+    if local_config_store.active_project_id not in existing_project_ids:
+        if len(existing_project_ids) <= 1:
+            local_config_store.set_active_project(next(iter(existing_project_ids), None))
+        else:
+            from interface.project_selector_dialog import ProjectSelectorDialog
+
+            selector = ProjectSelectorDialog(store.list_projects())
+            if not selector.exec():
+                sys.exit(0)
+            local_config_store.set_active_project(selector.selected_project_id())
+
     # plugins/core and plugins/repo_internal are both git-tracked and
     # distributed to everyone via self_update.py's whole-tree `git pull`,
     # mirroring how data/programs.json is shared today — both ship bundled
@@ -356,14 +384,12 @@ def main() -> None:
         store=store,
         local_config_store=local_config_store,
         system_config_store=system_config_store,
-        program_store=program_store,
         plugin_catalog=discovery.loaded,
         plugin_load_failures=discovery.failures,
     )
 
     plugin_api = PluginAPI(
         store=store,
-        program_store=program_store,
         local_config_store=local_config_store,
         system_config_store=system_config_store,
         git_service=git_service,
@@ -414,7 +440,6 @@ def main() -> None:
     window = MainWindow(
         store,
         local_config_store,
-        program_store,
         git_service,
         token_store,
         cache_dir,

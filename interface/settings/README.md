@@ -67,9 +67,14 @@ that plugin's own README for why.
   even though login moved out of this app, since the launcher's own login
   step reads this same `data/system_config.json` value.
   `CATEGORY_DEVELOPER`.
-- `program_database_page.py` — CRUD for the shared Program Database
-  (`core/program_store.py`), using `program_dialog.py`'s `ProgramDialog`
-  for add/edit. `CATEGORY_DEVELOPER`.
+- `program_database_page.py` — `ProgramDatabasePage`: CRUD for the active
+  Project's own Program Database (`core/models.py`'s `Project.programs`,
+  via `core/store.py`'s `MetadataStore` — each Project has its own, not
+  shared). Reads `local_config_store.active_project_id` directly (no
+  Project selector of its own anymore — removed as of the single-project-
+  per-session change, since that id is now fixed for the whole run by
+  `launcher.py`'s mandatory Project Selector gate); uses
+  `program_dialog.py`'s `ProgramDialog` for add/edit. `CATEGORY_PROJECT`.
 - `program_dialog.py` — `ProgramDialog`: name/version/description/icon
   editor for one `Program`, used only by `program_database_page.py`.
 - `plugin_catalog_page.py` — read-only listing of what got discovered

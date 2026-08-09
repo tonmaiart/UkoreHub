@@ -4,12 +4,13 @@ from pathlib import Path
 
 from interface.settings_tab_registry import CATEGORY_REPO, SettingsTabSpec
 from plugins.repo_internal.MayaPublisher.interface.publish_mode_settings_page import PublishModeSettingsPage
+from plugins.repo_internal.MayaPublisher.interface.publish_mode_store import migrate_legacy_data
 
 TOOL_ID = "maya_publisher"
 TOOL_LABEL = "MayaPublisher"
 # Convention-only string match with plugins/repo_internal/maya_launcher/plugin.py
-# — both resolve to the same data/plugins/core/maya_launcher_env_bridge.json
-# via PluginConfigStore, no coupling API needed. See that plugin's README
+# — both resolve to the same active Project's plugin_data via
+# ProjectPluginConfigStore, no coupling API needed. See that plugin's README
 # for the full "contributions"/"labels" shape this writes into. Relies on
 # plugins/repo_internal/MayaToolkit (UkoreMaya.core.Pipeline) and
 # plugins/repo_internal/PublishApi also being enabled — not imported directly,
@@ -19,9 +20,12 @@ ANY_VERSION = "*"
 
 
 def register(api) -> None:
+    migrate_legacy_data(api)
     tool_root = Path(__file__).resolve().parent
 
-    bridge = api.plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID, shared=True)
+    bridge = api.project_plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID)
+    if bridge is None:
+        return
     contributions = bridge.get("contributions", {})
     contributions[TOOL_ID] = {
         "PYTHONPATH": {ANY_VERSION: [str(tool_root / "maya-scripts")]},

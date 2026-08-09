@@ -5,8 +5,8 @@ the app code" model, which broke whenever a machine had an uncommitted
 local edit (see developer/bug-history/README.md).
 
 Deliberately isolated in its own module: never import this from
-core/store.py, core/program_store.py, or core/extensibility/config_store.py
-— those are reachable from updater.py (UkoreHubLauncher repo)'s import graph
+core/store.py or core/extensibility/config_store.py — those are reachable
+from updater.py (UkoreHubLauncher repo)'s import graph
 (the frozen UkoreHub.exe), and google-cloud-storage has no business being
 bundled into that pre-launch exe. Only launcher.py and
 interface/plugin_api.py (the unfrozen app, run via plain python(w).exe)

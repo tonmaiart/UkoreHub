@@ -69,9 +69,7 @@ class UkoreBrowserSettingsPage(QWidget):
             self.hint_label.setText("Select a repo to see this information.")
             return
 
-        pipeline_store = self._api.plugin_config_store("project_editor", shared=True)
-        pipeline_store.load()  # separate PluginConfigStore instance from project_editor's own — reload live
-        entry = pipeline_store.get("projects", {}).get(project_id, {}).get("repos", {}).get(repo_id, {})
+        entry = self._api.metadata.get_repo_plugin_data(project_id, repo_id, "project_editor")
         self._refs = entry.get("pipeline_inputs", [])
 
         if not self._refs:
@@ -87,7 +85,7 @@ class UkoreBrowserSettingsPage(QWidget):
         )
         hidden = set(self._get_hidden())
         for ref in self._refs:
-            checkbox = QCheckBox(self._describe_ref(pipeline_store, ref))
+            checkbox = QCheckBox(self._describe_ref(ref))
             checkbox.setChecked(_ref_key(ref) not in hidden)
             checkbox.toggled.connect(lambda _checked, r=ref: self._on_toggled(r))
             self._rows_layout.addWidget(checkbox)
@@ -101,14 +99,12 @@ class UkoreBrowserSettingsPage(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-    def _describe_ref(self, pipeline_store, ref: dict) -> str:
+    def _describe_ref(self, ref: dict) -> str:
         try:
             target_name = self._api.metadata.get_repo(ref["project_id"], ref["repo_id"]).name
         except NotFoundError:
             return "(deleted repo)"
-        target_entry = (
-            pipeline_store.get("projects", {}).get(ref["project_id"], {}).get("repos", {}).get(ref["repo_id"], {})
-        )
+        target_entry = self._api.metadata.get_repo_plugin_data(ref["project_id"], ref["repo_id"], "project_editor")
         custom_path = next(
             (cp for cp in target_entry.get("custom_paths", []) if cp["id"] == ref.get("custom_path_id")), None
         )
@@ -116,20 +112,40 @@ class UkoreBrowserSettingsPage(QWidget):
         return f"{target_name} — {label}"
 
     def _get_hidden(self) -> list[str]:
-        store = self._api.plugin_config_store(TOOL_ID, shared=True)
-        return store.get("repo_hidden_root_tabs", {}).get(f"{self._project_id}:{self._repo_id}", [])
+        return self._api.metadata.get_repo_plugin_data(self._project_id, self._repo_id, TOOL_ID).get(
+            "repo_hidden_root_tabs", []
+        )
 
     def _on_toggled(self, ref: dict) -> None:
         if self._project_id is None or self._repo_id is None:
             return
-        store = self._api.plugin_config_store(TOOL_ID, shared=True)
-        hidden_map = store.get("repo_hidden_root_tabs", {})
-        key = f"{self._project_id}:{self._repo_id}"
-        hidden = set(hidden_map.get(key, []))
+        hidden = set(self._get_hidden())
         ref_key = _ref_key(ref)
         if self._checkboxes[ref_key].isChecked():
             hidden.discard(ref_key)
         else:
             hidden.add(ref_key)
-        hidden_map[key] = sorted(hidden)
-        store.set("repo_hidden_root_tabs", hidden_map)
+        data = dict(self._api.metadata.get_repo_plugin_data(self._project_id, self._repo_id, TOOL_ID))
+        data["repo_hidden_root_tabs"] = sorted(hidden)
+        self._api.metadata.set_repo_plugin_data(self._project_id, self._repo_id, TOOL_ID, data)
+
+
+def migrate_legacy_data(api) -> None:
+    """One-time cutover from the old data/plugins/core/ukore_browser.json
+    PluginConfigStore blob's "repo_hidden_root_tabs" key into each repo's
+    own Repo.plugin_data. Safe to call on every register(), not just once
+    — a previous successful run leaves this key empty, so there's nothing
+    left to migrate."""
+    legacy_store = api.plugin_config_store(TOOL_ID, shared=True)
+    hidden_map = legacy_store.get("repo_hidden_root_tabs", {})
+    if not hidden_map:
+        return
+    for repo_key, hidden in hidden_map.items():
+        project_id, _, repo_id = repo_key.partition(":")
+        try:
+            data = dict(api.metadata.get_repo_plugin_data(project_id, repo_id, TOOL_ID))
+            data["repo_hidden_root_tabs"] = hidden
+            api.metadata.set_repo_plugin_data(project_id, repo_id, TOOL_ID, data)
+        except NotFoundError:
+            pass  # project/repo no longer exists — drop the stale entry
+    legacy_store.set("repo_hidden_root_tabs", {})

@@ -78,6 +78,14 @@ a new top-level section that needs `section_registry.py`).
   section/settings-tab/sidebar-footer-action registries.
 - `theme_apply.py` — applies a `core.theme` stylesheet to the
   `QApplication`; used only by `launcher.py`.
+- `project_selector_dialog.py` — `ProjectSelectorDialog`: the mandatory
+  pre-`MainWindow` gate for which Project this run is scoped to, shown by
+  `launcher.py` (only when `LocalConfigStore.active_project_id` doesn't
+  already resolve and there's more than one project to choose from — see
+  that module's own comment). Once chosen, Project is fixed for the whole
+  run — no page anywhere else can change it again; only a real restart back
+  through this same gate can (`plugins/core/project_editor`'s Settings >
+  Project "Switch Project...", `MainWindow._request_switch_project`).
 
 ## Domain folders
 

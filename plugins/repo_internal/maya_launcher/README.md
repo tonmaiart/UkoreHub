@@ -67,7 +67,10 @@ setting choosing which of Rig/Model/Animation that repo publishes as — see
 `MAYA_ENV_BRIDGE_PLUGIN_ID = "maya_launcher_env_bridge"` — a convention-only
 string both this plugin and every contributing tool plugin agree on as a
 `PluginConfigStore` id (`api.plugin_config_store(MAYA_ENV_BRIDGE_PLUGIN_ID,
-shared=True)` → `data/plugins/repo_internal/maya_launcher_env_bridge.json`), no
+shared=True)` → `data/plugins/core/maya_launcher_env_bridge.json` — `shared=True`
+always resolves under the literal `"core"` subdir regardless of which root
+the calling plugin itself lives under, see `interface/plugin_api.py`'s
+`plugin_config_store`), no
 import between them at all. Each tool plugin's own `register(api)` writes
 its entry unconditionally, every app start:
 
@@ -130,7 +133,7 @@ unlike the old mechanism below.
 **Before 2026-08-05** this was a separate opt-out toggle owned entirely by
 this plugin: `RepoToolsStore` (`repo_tools_store.py`, deleted), backed by
 `api.plugin_config_store("maya_launcher", shared=True)` →
-`data/plugins/repo_internal/maya_launcher.json`, with its own
+`data/plugins/core/maya_launcher.json`, with its own
 `MayaLauncherSettingsPage` checkbox list ("Enabled Tools for Active Repo").
 Removed because every tool it gated is now its own independent
 `plugins/repo_internal/<Name>/` plugin (since the 2026-07-19
@@ -142,9 +145,10 @@ that duplication; the tradeoff is the opt-in-by-default-off behavior noted
 above, a deliberate change (previously: opt-out, "no entry = everything
 on") — an existing repo that relied on the old all-enabled-by-default
 behavior needs its tools re-checked once under Repository Setting > Enable
-Plugin. `data/plugins/repo_internal/maya_launcher.json`'s old
-`repo_disabled_tools`/`repo_enabled_tools` data is simply abandoned, not
-migrated — nothing reads that file anymore.
+Plugin. `data/plugins/core/maya_launcher.json`'s old
+`repo_disabled_tools`/`repo_enabled_tools` data was simply abandoned, never
+migrated — nothing read that file anymore, so the local copy was deleted
+2026-08-09 (its cloud blob is meant to follow).
 
 **`plugins/repo_internal/PublishApi` is never gated by this at all** — it's
 pure infrastructure (no artist-facing behavior or UI of its own, only
@@ -210,8 +214,10 @@ machine has is inherently per-machine, not team data (contrast with
 plugin id or config key ever changes, this constant has to change in
 lockstep — there's no compiler/test to catch drift, so grep both files if
 you touch either. `_maya_programs_for_repo(api, repo)` is the shared lookup
-used by both `open_maya_file` and `MayaLauncherSettingsPage`: walks
-`repo.required_program_ids`, resolves each through `api.programs.get_program(id)`
+used by both `open_maya_file` and `MayaLauncherSettingsPage`: resolves
+`api.local_config.active_project_id` (Program is per-Project now, see
+`core/models.py`'s `Project.programs`), walks `repo.required_program_ids`,
+resolves each through `api.metadata.get_program(project_id, id)`
 (catching `core.exceptions.NotFoundError` for stale ids), keeps ones whose
 `name` contains `"maya"` case-insensitively. If a repo requires multiple
 Maya versions, `open_maya_file` picks the **first one with a linked path**

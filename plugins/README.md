@@ -143,10 +143,11 @@ another plugin" below instead.
 ## `api` — what `register(api)` receives
 
 `api` is a `PluginAPI` instance (`interface/plugin_api.py`):
-- `api.metadata` — `MetadataStore` (the Project/Repo registry).
-- `api.programs` — the shared Program catalog (`ProgramStore`);
-  `.get_program(id)` raises `core.exceptions.NotFoundError`, not
-  `None`/`KeyError`.
+- `api.metadata` — `MetadataStore` (the Project/Repo registry). Also owns
+  Program CRUD now — each Project has its own Program Database, not
+  studio-wide (`list_programs(project_id)`/`get_program(project_id, id)`/
+  etc.); `.get_program(...)` raises `core.exceptions.NotFoundError`, not
+  `None`/`KeyError`. There is no separate `api.programs` anymore.
 - `api.local_config` — per-machine `LocalConfigStore`.
 - `api.git` — `GitService`.
 - `api.file_opener_registry` — read access to the `FileOpenerRegistry`
@@ -158,6 +159,9 @@ another plugin" below instead.
   (e.g. `api.app_root / "assets" / "icons"`).
 - `api.plugin_config_store(plugin_id, *, shared: bool)` — namespaced JSON
   settings (see below).
+- `api.project_plugin_config_store(plugin_id)` — same namespaced get/set
+  contract, scoped to the currently active Project instead of the whole
+  studio (see below). Returns `None` if no project is active yet.
 - `api.register_section(spec)` — a full top-level tab in `SectionRegistry`
   (Explorer/Submit/About today — see `interface/section_registry.py`'s
   `SectionSpec`, including the optional `background_threads` and `wire`
@@ -187,6 +191,37 @@ per-machine dir. `plugins/repo_internal/maya_launcher/plugin.py` reading
 `plugins/core/software_linker`'s per-machine `maya.exe` path via
 `api.plugin_config_store("software_linker", shared=False)` is the real
 worked example, without importing SoftwareLinker's code at all.
+
+**Project/repo-scoped data belongs on the Repo itself, not here.** If what
+you're storing is always keyed by exactly one `(project_id, repo_id)` pair
+(a per-repo setting, a per-repo connection list, ...), use
+`api.metadata.get_repo_plugin_data(project_id, repo_id, plugin_id)`/
+`set_repo_plugin_data(...)` instead — it lives in `Repo.plugin_data`
+(`core/models.py`), inside that repo's own project blob
+(`data/projects/<project_id>.json`, see `data/README.md`), so a repo-level
+edit only ever pushes/conflicts that one project, not a separate
+studio-wide file every repo in every project shares.
+
+**Data scoped to the whole active Project (not a specific repo) but that
+shouldn't be studio-wide either** — e.g. it's inherently per-session, like
+`maya_launcher`'s `MAYA_ENV_BRIDGE_PLUGIN_ID` contributions (7 plugins each
+write their own env-var contribution during `register(api)`,
+`maya_launcher` merges them at Maya-launch time; none of it needs to
+outlive the running project) — use `api.project_plugin_config_store(plugin_id)`
+instead. Same `.get`/`.set` contract as `PluginConfigStore`, but backed by
+`Project.plugin_data` (`core/models.py`) via
+`core/extensibility/config_store.py`'s `ProjectPluginConfigStore`, riding on
+that project's own already-cloud-synced blob — no separate
+`data/plugins/core/<id>.json` file. Returns `None` when no project is
+active yet; callers should skip their own write/read rather than assume a
+store always exists.
+
+Reserve `plugin_config_store(shared=True)` for data that's genuinely
+studio-wide or spans projects (a global catalog, ...) —
+`plugins/core/project_editor/pipeline_store.py`,
+`plugins/repo_internal/MayaPublisher/interface/publish_mode_store.py`, and
+`plugins/repo_internal/UkoreBrowser/settings_page.py` are the worked
+examples of the former.
 
 ## `SectionSpec.wire`/`SectionHost`: cross-plugin UI coordination, not imports
 

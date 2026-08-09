@@ -43,7 +43,7 @@ def get_active_repo():
     root = find_ukorehub_root()
     from core.store import LocalConfigStore, MetadataStore
 
-    local_config = LocalConfigStore(root / "data" / "local_config.json")
+    local_config = LocalConfigStore(root / "cache" / "local_config.json")
     project_id = local_config.active_project_id
     repo_id = local_config.active_repo_id
     if not (local_config.workspace_root and project_id and repo_id):
@@ -65,23 +65,16 @@ def get_active_repo():
 def get_pipeline_refs() -> list[dict]:
     """Every {"project_id", "repo_id", "custom_path_id"} pipeline
     connection the active repo has made via "Connect Pipeline Input
-    Path..." in Project Editor, read directly off
-    plugins/core/project_editor's shared PluginConfigStore file — same
-    "construct the store straight off disk" approach get_active_repo()
-    uses above, and the same one
+    Path..." in Project Editor, read off the active Repo's own
+    plugin_data["project_editor"] (core/models.py's Repo, populated by
+    get_active_repo() above) — same field
     plugins/repo_internal/UkoreBrowser/.../core/repo_context.py's
     get_pipeline_root_tabs() already relies on. Returns [] if there's no
     active repo."""
-    root = find_ukorehub_root()
-    from core.extensibility.config_store import PluginConfigStore
-
-    project, repo, _ = get_active_repo()
-    if project is None:
+    _, repo, _ = get_active_repo()
+    if repo is None:
         return []
-
-    pipeline_store = PluginConfigStore(root / "data" / "plugins" / "core" / "project_editor.json")
-    entry = pipeline_store.get("projects", {}).get(project.id, {}).get("repos", {}).get(repo.id, {})
-    return entry.get("pipeline_inputs", [])
+    return repo.plugin_data.get("project_editor", {}).get("pipeline_inputs", [])
 
 
 def resolve_ref(ref: dict):
@@ -94,7 +87,7 @@ def resolve_ref(ref: dict):
     from core.exceptions import NotFoundError
     from core.store import LocalConfigStore, MetadataStore
 
-    local_config = LocalConfigStore(root / "data" / "local_config.json")
+    local_config = LocalConfigStore(root / "cache" / "local_config.json")
     store = MetadataStore(root / "data" / "projects.json")
     try:
         project = store.get_project(ref["project_id"])
@@ -108,14 +101,19 @@ def resolve_ref(ref: dict):
 def get_custom_paths(project_id: str, repo_id: str) -> list[dict]:
     """Every CustomPath dict ({"id", "label", "path"}) the given repo has
     declared for itself (see plugins/core/project_editor's
-    custom_paths_settings_page.py) — read directly off project_editor's
-    shared PluginConfigStore file, same approach get_pipeline_refs() uses."""
+    custom_paths_settings_page.py) — read off that repo's own
+    plugin_data["project_editor"] (core/models.py's Repo), same field
+    get_pipeline_refs() uses."""
     root = find_ukorehub_root()
-    from core.extensibility.config_store import PluginConfigStore
+    from core.exceptions import NotFoundError
+    from core.store import MetadataStore
 
-    pipeline_store = PluginConfigStore(root / "data" / "plugins" / "core" / "project_editor.json")
-    entry = pipeline_store.get("projects", {}).get(project_id, {}).get("repos", {}).get(repo_id, {})
-    return entry.get("custom_paths", [])
+    store = MetadataStore(root / "data" / "projects.json")
+    try:
+        repo = store.get_repo(project_id, repo_id)
+    except NotFoundError:
+        return []
+    return repo.plugin_data.get("project_editor", {}).get("custom_paths", [])
 
 
 def get_custom_path(project_id: str, repo_id: str, custom_path_id: str | None) -> dict | None:

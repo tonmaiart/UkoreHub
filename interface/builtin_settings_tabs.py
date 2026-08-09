@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
-from core.program_store import ProgramStore
 from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
 from interface.browser_links.browser_links_settings_page import BrowserLinksSettingsPage
 from interface.repo_settings.local_repository_page import LocalRepositoryPage
@@ -13,6 +12,7 @@ from interface.settings.program_database_page import ProgramDatabasePage
 from interface.settings_tab_registry import (
     CATEGORY_DEVELOPER,
     CATEGORY_GENERAL,
+    CATEGORY_PROJECT,
     CATEGORY_REPO,
     SettingsTabRegistry,
     SettingsTabSpec,
@@ -39,7 +39,6 @@ def register_builtin_settings_tabs(
     store: MetadataStore,
     local_config_store: LocalConfigStore,
     system_config_store: SystemConfigStore,
-    program_store: ProgramStore,
     plugin_catalog: list[DiscoveredPlugin],
     plugin_load_failures: list[PluginLoadFailure],
 ) -> None:
@@ -96,7 +95,6 @@ def register_builtin_settings_tabs(
             page_factory=lambda: RequirementsAndPluginsPage(
                 store=store,
                 local_config_store=local_config_store,
-                program_store=program_store,
                 plugin_catalog=plugin_catalog,
             ),
             on_activated=_trigger_refresh,
@@ -117,8 +115,9 @@ def register_builtin_settings_tabs(
             key=PROGRAM_DATABASE,
             label="Program Database",
             order=20,
-            page_factory=lambda: ProgramDatabasePage(program_store=program_store),
-            category=CATEGORY_DEVELOPER,
+            page_factory=lambda: ProgramDatabasePage(store=store, local_config_store=local_config_store),
+            on_activated=_trigger_refresh,
+            category=CATEGORY_PROJECT,
         )
     )
     registry.register(

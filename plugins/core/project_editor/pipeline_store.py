@@ -3,19 +3,24 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from core.extensibility.config_store import PluginConfigStore
+from core.exceptions import NotFoundError
+from core.store import MetadataStore
 
-# Top-level key inside project_editor's PluginConfigStore JSON file
-# (data/plugins/core/project_editor.json) holding the whole nested
-# project_id -> repo_id -> {pipeline_inputs, custom_paths} tree — see
-# README.md for the exact shape and how another plugin should read it.
+# This plugin's id, also its Repo.plugin_data key (core/models.py's Repo) —
+# each repo's own pipeline_inputs/custom_paths live at
+# repo.plugin_data["project_editor"], not in a separate PluginConfigStore
+# file, since the data is always scoped to exactly one (project_id, repo_id)
+# pair. See README.md for the exact shape and how another plugin should
+# read it, and _migrate_legacy_data below for the one-time cutover from the
+# old data/plugins/core/project_editor.json blob.
 # There used to also be a "pipeline_outputs" key (a separate, independently
 # curated list) — removed 2026-07-19 when "Set as Pipeline Output..." was
 # removed from ProjectGraphView's node context menu in favor of a single
 # unified "Connect Pipeline Input Path..." action; every connection a repo
 # makes is a "pipeline_inputs" entry now, regardless of whether the real
 # data flow is "I publish into this" or "I read from this".
-_PROJECTS_KEY = "projects"
+PLUGIN_ID = "project_editor"
+_LEGACY_PROJECTS_KEY = "projects"
 
 
 @dataclass
@@ -101,7 +106,7 @@ class RepoRef:
 
 
 class PipelineStore:
-    """Wraps project_editor's PluginConfigStore "projects" key — one
+    """Wraps each repo's own Repo.plugin_data["project_editor"] entry — one
     repo's declared pipeline connections ("Connect Pipeline Input Path...",
     each a RepoRef pointing at another repo's declared CustomPath), plus
     the repo's own declared CustomPath catalog (see that class). Rendered
@@ -112,25 +117,18 @@ class PipelineStore:
     — see RepoRef's docstring and this plugin's README for why the
     separate "outputs" concept was removed 2026-07-19."""
 
-    def __init__(self, config_store: PluginConfigStore):
-        self._config_store = config_store
-
-    def _tree(self) -> dict:
-        return self._config_store.get(_PROJECTS_KEY, {})
-
-    @staticmethod
-    def _repo_entry(tree: dict, project_id: str, repo_id: str) -> dict:
-        return tree.get(project_id, {}).get("repos", {}).get(repo_id, {})
+    def __init__(self, metadata_store: MetadataStore):
+        self._metadata_store = metadata_store
 
     def get_inputs(self, project_id: str, repo_id: str) -> list[RepoRef]:
-        entry = self._repo_entry(self._tree(), project_id, repo_id)
+        entry = self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID)
         return [RepoRef.from_dict(d) for d in entry.get("pipeline_inputs", [])]
 
     def set_inputs(self, project_id: str, repo_id: str, refs: list[RepoRef]) -> None:
         self._set_field(project_id, repo_id, "pipeline_inputs", [ref.to_dict() for ref in refs])
 
     def get_custom_paths(self, project_id: str, repo_id: str) -> list[CustomPath]:
-        entry = self._repo_entry(self._tree(), project_id, repo_id)
+        entry = self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID)
         return [CustomPath.from_dict(d) for d in entry.get("custom_paths", [])]
 
     def get_custom_path(self, project_id: str, repo_id: str, custom_path_id: str | None) -> CustomPath | None:
@@ -150,8 +148,34 @@ class PipelineStore:
         self._set_field(project_id, repo_id, "custom_paths", [cp.to_dict() for cp in custom_paths])
 
     def _set_field(self, project_id: str, repo_id: str, field_name: str, value: list[dict]) -> None:
-        tree = self._tree()
-        repos = tree.setdefault(project_id, {}).setdefault("repos", {})
-        repo_entry = repos.setdefault(repo_id, {})
-        repo_entry[field_name] = value
-        self._config_store.set(_PROJECTS_KEY, tree)
+        entry = dict(self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID))
+        entry[field_name] = value
+        self._metadata_store.set_repo_plugin_data(project_id, repo_id, PLUGIN_ID, entry)
+
+
+def migrate_legacy_data(api) -> None:
+    """One-time cutover from the old data/plugins/core/project_editor.json
+    PluginConfigStore blob into each repo's own Repo.plugin_data. Reading
+    api.plugin_config_store pulls that blob fresh from the cloud; if its
+    "projects" key is already empty, either nothing was ever stored there
+    or a previous launch already migrated it (this clears the key once
+    done) — either way there's nothing to do, making this safe to call on
+    every register(), not just once."""
+    legacy_store = api.plugin_config_store(PLUGIN_ID, shared=True)
+    tree = legacy_store.get(_LEGACY_PROJECTS_KEY, {})
+    if not tree:
+        return
+    for project_id, project_entry in tree.items():
+        for repo_id, repo_entry in project_entry.get("repos", {}).items():
+            data = {}
+            if "pipeline_inputs" in repo_entry:
+                data["pipeline_inputs"] = repo_entry["pipeline_inputs"]
+            if "custom_paths" in repo_entry:
+                data["custom_paths"] = repo_entry["custom_paths"]
+            if not data:
+                continue
+            try:
+                api.metadata.set_repo_plugin_data(project_id, repo_id, PLUGIN_ID, data)
+            except NotFoundError:
+                pass  # project/repo no longer exists — drop the stale entry
+    legacy_store.set(_LEGACY_PROJECTS_KEY, {})

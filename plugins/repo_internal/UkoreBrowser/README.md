@@ -32,13 +32,16 @@ it to keep working.
   from the root-tab row without removing the pipeline connection itself —
   UkoreBrowser genuinely wants to show several root tabs at once, unlike
   MayaPublisher which needs exactly one destination per ticket. Stores the
-  *hidden* set (opt-out), not the shown set, in this plugin's own
-  `PluginConfigStore` — **`data/plugins/core/ukore_browser.json`, key
-  `"repo_hidden_root_tabs"`. Not to be confused with**
+  *hidden* set (opt-out), not the shown set, in this repo's own
+  `core/models.py` `Repo.plugin_data["ukore_browser"]`, key
+  `"repo_hidden_root_tabs"` (`data/projects/<project_id>.json` — moved off
+  the old standalone `data/plugins/core/ukore_browser.json` blob;
+  `migrate_legacy_data(api)` in this same file does the one-time cutover).
+  **Not to be confused with**
   `<browsed repo root>/.ukorehub/ukore_browser.json` (`browser_config.py`'s
   recent-files cache, below) — same base filename, completely different
-  location and purpose: this one lives inside UkoreHub's own install,
-  that one lives inside whichever production repo is being browsed.
+  location and purpose: that one lives inside whichever production repo is
+  being browsed, unrelated to this repo-hidden-tabs setting.
   Read back on the Maya side by `core/repo_context.py`'s
   `get_pipeline_root_tabs()`.
 - `maya-scripts/UkoreBrowser/` — the Maya-side Python package, contributed
@@ -54,10 +57,13 @@ it to keep working.
     - `repo_context.py` — auto-detects the browse root from UkoreHub's own
       active repo, delegating to `plugins/repo_internal/PublishApi`'s
       `repo_paths` module (`get_active_repo()`, `get_pipeline_refs()`,
-      `resolve_ref()`) rather than constructing its own
-      `core.store`/`core.paths` calls — same source of truth
-      `MayaPublisher` builds its publish-root resolution on. Falls back to
-      Maya's current workspace dir if there's no active repo.
+      `resolve_ref()`) for the *active* repo — same source of truth
+      `MayaPublisher` builds its publish-root resolution on. Its own
+      `_get_repo(project_id, repo_id)` still constructs `core.store.MetadataStore`
+      directly (same off-disk convention, Maya's Python has no `PluginAPI`)
+      for `_get_hidden_root_tab_keys()`/`_get_pipeline_refs_for()`, since
+      those need an *explicit* repo — see their own docstrings for why.
+      Falls back to Maya's current workspace dir if there's no active repo.
     - `browser_config.py` — recent-files persistence, stored **relative to
       the repo root** under `<repo_root>/.ukorehub/ukore_browser.json` (one
       file per repo, not a single global file mixing every repo/project).

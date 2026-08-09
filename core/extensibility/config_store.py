@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from core.store import _atomic_write
+from core.store import MetadataStore, _atomic_write
 
 
 class PluginConfigStore:
@@ -36,3 +36,26 @@ class PluginConfigStore:
         _atomic_write(self.json_path, self._data)
         if self.on_save:
             self.on_save()
+
+
+class ProjectPluginConfigStore:
+    """Same get/set interface as PluginConfigStore, but backed by the
+    active Project's own plugin_data (core/models.py's Project) instead of
+    a separate studio-wide JSON blob — for plugin data that's inherently
+    session/project-scoped rather than studio-wide (e.g. maya_launcher's
+    MAYA_ENV_BRIDGE contributions). Rides on MetadataStore's existing
+    per-project cloud sync (pushed via _save_project) — no separate
+    pull/push here, unlike PluginConfigStore(shared=True)."""
+
+    def __init__(self, store: MetadataStore, project_id: str, plugin_id: str):
+        self._store = store
+        self._project_id = project_id
+        self._plugin_id = plugin_id
+
+    def get(self, key: str, default=None):
+        return self._store.get_project_plugin_data(self._project_id, self._plugin_id).get(key, default)
+
+    def set(self, key: str, value) -> None:
+        data = self._store.get_project_plugin_data(self._project_id, self._plugin_id)
+        data[key] = value
+        self._store.set_project_plugin_data(self._project_id, self._plugin_id, data)

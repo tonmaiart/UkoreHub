@@ -35,20 +35,25 @@ there is no default export.
   merged PYTHONPATH once Maya launches.
 - `interface/publish_mode_store.py` — UkoreHub-side (non-Maya) store:
   `get_publish_mode`/`set_publish_mode` via
-  `api.plugin_config_store("maya_publisher", shared=True)`, key
-  `"publish_mode"`, a dict keyed by `"<project_id>:<repo_id>"`. Resolves to
-  `data/plugins/core/maya_publisher.json` — the same file
-  `PublishApi/tickets.py`'s ticket storage for this tool_id also lands in.
+  `api.metadata.get_repo_plugin_data`/`set_repo_plugin_data(project_id,
+  repo_id, "maya_publisher")`, key `"publish_mode"` — lives in
+  `core/models.py`'s `Repo.plugin_data["maya_publisher"]`
+  (`data/projects/<project_id>.json`) now, not a standalone blob.
+  `migrate_legacy_data(api)` in this same file does a one-time cutover from
+  the old `data/plugins/core/maya_publisher.json`'s `"publish_mode"` key,
+  leaving the rest of that file alone — it's still the same file
+  `PublishApi/tickets.py`'s ticket storage for this tool_id lands its own
+  unrelated `"tickets"`/`"repo_publish_target"` keys in.
 - `interface/publish_mode_settings_page.py` — `PublishModeSettingsPage`:
   Repository Setting > MayaPublisher, three radio buttons (Rig / Model /
   Animation), self-persisting on click — same self-resolving-active-repo
   `refresh()` pattern every CATEGORY_REPO tab in this app uses (e.g.
   `UkoreShot/interface/repo_video_settings_page.py`).
 - `maya-scripts/MayaPublisher/function.py` — `TOOL_ID = "maya_publisher"`,
-  `get_publish_mode()`: reads the active repo's configured mode straight
-  off `data/plugins/core/maya_publisher.json` (Maya's Python has no
-  `PluginAPI` instance, same "construct the store off disk" convention
-  `PublishApi/repo_paths.py` uses). `publish(ticket: dict)`: resolves the
+  `get_publish_mode()`: reads the active repo's configured mode off its own
+  `plugin_data["maya_publisher"]` (`core/models.py`'s `Repo`, fetched via
+  `PublishApi.repo_paths.get_active_repo()` — Maya's Python has no
+  `PluginAPI` instance to go through). `publish(ticket: dict)`: resolves the
   publish root/next version via `PublishApi`, builds a `context` dict
   (`version_dir`, `version`, `ticket`, `mode`, `tool_id`), then runs the
   ticket's attached scripts with that context

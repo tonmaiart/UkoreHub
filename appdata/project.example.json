@@ -1,0 +1,23 @@
+{
+  "id": "b3f1c2a4-0000-0000-0000-000000000001",
+  "name": "Kafka",
+  "repos": [
+    {
+      "id": "9e21f0aa-0000-0000-0000-000000000001",
+      "name": "repo1",
+      "git_url": "git@github.com:ukore-studio/repo1.git",
+      "local_path": "Kafka/repo1",
+      "last_synced": null,
+      "status": "not_cloned",
+      "thumbnail_filename": null,
+      "description": "",
+      "required_program_ids": [],
+      "program_version_pins": {},
+      "active_plugin_ids": [],
+      "required_plugin_ids": [],
+      "browser_links": [],
+      "plugin_data": {}
+    }
+  ],
+  "programs": []
+}
