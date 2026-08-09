@@ -43,10 +43,10 @@ def ensure_dependencies() -> None:
         subprocess.run([sys.executable, "-m", "pip", "install", pip_spec], check=True)
 
 
-# Presence checks only — no auto-install. UkoreHub.exe (developer/packaging/
-# updater.py) already checks/updates before this file is ever spawned; these
-# only matter for the `python launcher.py` direct-invocation dev path, which
-# bypasses that exe entirely.
+# Presence checks only — no auto-install. UkoreHub.exe (updater.py in the
+# UkoreHubLauncher repo) already checks/updates before this file is ever
+# spawned; these only matter for the `python launcher.py` direct-invocation
+# dev path, which bypasses that exe entirely.
 
 
 def check_git_prerequisite() -> bool:
@@ -99,9 +99,9 @@ def main() -> None:
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     app = QApplication(sys.argv)
-    # developer/packaging/icon.ico is only baked into UkoreHub.exe itself (via
+    # icon.ico (UkoreHubLauncher repo) is only baked into UkoreHub.exe itself (via
     # PyInstaller's --icon) — that thin exe just spawns `pythonw
-    # launcher.py` detached and exits (see developer/packaging/exe_entry.py), so the
+    # launcher.py` detached and exits (see exe_entry.py (UkoreHubLauncher repo)), so the
     # actual GUI process is plain python(w).exe and would otherwise show
     # Windows' generic Python icon in the taskbar/title bar unless the Qt
     # app sets its own window icon here.
@@ -221,7 +221,7 @@ def main() -> None:
     git_service = GitService(hooks=hook_registry)
     token_store = TokenStore(cache_dir / "github_token.json")
     # GitHub login now happens in the launcher exe before this process is
-    # even spawned (developer/packaging/updater.py owns the token cache) —
+    # even spawned (updater.py (UkoreHubLauncher repo) owns the token cache) —
     # just load whatever it already cached, same "presence, not validity"
     # semantics updater.py's own _check_login uses (never calls GitHub to
     # confirm the token still works, only that a login happened at some

@@ -46,7 +46,7 @@ def _untrack_paths_deleted_upstream(repo_root: Path) -> None:
     """Best-effort: `git rm --cached` every path tracked at HEAD but no
     longer present at @{u} — leaves the actual file on disk untouched,
     only drops it from git's index. Same reasoning/near-duplicate as
-    developer/packaging/updater.py's identically-named helper — see its
+    updater.py (UkoreHubLauncher repo)'s identically-named helper — see its
     docstring. A file the running app writes to directly with no commit
     step (e.g. data/projects.json before it moved to cloud sync, see
     developer/bug-history/2026-08-09-shared-data-git-pull-conflict.md) is

@@ -29,7 +29,7 @@ class Sidebar(QWidget):
     StudioSettingsDialog — the gated Google Cloud Storage sync config,
     deliberately its own window rather than a Setting tab), a
     display-only account_label (the GitHub username — actual login/logout happens in
-    the launcher exe, see developer/packaging/updater.py; MainWindow just
+    the launcher exe, see updater.py (UkoreHubLauncher repo); MainWindow just
     pushes local_config_store.github_username in here, and Settings >
     Common's Logout button clears it and relaunches to the login screen —
     see main_window.py's _on_logout_requested), and the icon-only Setting

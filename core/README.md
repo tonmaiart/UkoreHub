@@ -83,7 +83,7 @@ beyond "core infrastructure":
   blobs. Deliberately isolated — only `launcher.py` and
   `interface/plugin_api.py` import it, never `store.py`/`program_store.py`/
   `extensibility/config_store.py` themselves, so `google-cloud-storage`
-  never ends up in `developer/packaging/updater.py`'s frozen-exe import
+  never ends up in `updater.py (UkoreHubLauncher repo)`'s frozen-exe import
   graph. Those three stores instead gain an optional `on_save` constructor
   callback that `launcher.py`/`plugin_api.py` wire up to
   `GcsJsonSync.push`.

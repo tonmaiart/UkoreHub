@@ -30,14 +30,3 @@ data/plugins/core/*.json
 # plugins (each its own git clone/remote/history, fetched/updated on demand
 # for a repo that declares it as a requirement — see plugins/README.md).
 /cache/
-# PyInstaller intermediates from developer/packaging/build_exe.py —
-# regenerate every build, never committed. The resulting UkoreHub.exe at
-# the repo root IS committed — a shared studio-wide binary, same pattern as
-# data/thumbnails/ and data/programs.json above.
-/developer/build/
-*.spec
-# Old UkoreHub.exe renamed aside by updater.py's _relocate_self_exe during a
-# self-update (Windows won't let git overwrite the exe while it's running,
-# but it will let it be renamed) — cleaned up automatically on the next
-# launch, never committed.
-/UkoreHub.exe.old-*

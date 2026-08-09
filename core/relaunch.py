@@ -16,9 +16,15 @@ from pathlib import Path
 
 def relaunch_ukorehub_exe(repo_root: Path) -> bool:
     """Spawns UkoreHub.exe detached and returns True, or returns False if no
-    built exe exists next to repo_root (e.g. a dev environment running via
-    `python launcher.py` directly) — the caller is responsible for telling
-    the user what to do in that case.
+    built exe exists one directory above repo_root (e.g. a dev environment
+    running via `python launcher.py` directly) — the caller is responsible
+    for telling the user what to do in that case.
+
+    `UkoreHub.exe` lives in its own repo (UkoreHubLauncher) now, one
+    directory above this app repo's own root: artists get a
+    `UkoreHub.exe` next to an `app/` folder that's this repo's clone (see
+    UkoreHubLauncher's README.md) — repo_root here is that `app/` folder,
+    so the exe is at repo_root.parent, not repo_root itself.
 
     Strips every _PYI_-prefixed env var before spawning: the calling
     process's own environment still carries PyInstaller onefile bootloader
@@ -33,9 +39,9 @@ def relaunch_ukorehub_exe(repo_root: Path) -> bool:
     process must go through this helper rather than a bare
     subprocess.Popen, or it will reintroduce that exact bug.
     """
-    exe_path = repo_root / "UkoreHub.exe"
+    exe_path = repo_root.parent / "UkoreHub.exe"
     if not exe_path.is_file():
         return False
     clean_env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
-    subprocess.Popen([str(exe_path)], cwd=str(repo_root), env=clean_env)
+    subprocess.Popen([str(exe_path)], cwd=str(exe_path.parent), env=clean_env)
     return True

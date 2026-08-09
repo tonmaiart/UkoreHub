@@ -39,7 +39,7 @@ from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
 
 # interface/main_window.py -> interface/ -> repo root — used only to find
 # UkoreHub.exe for _relaunch_to_login (the launcher exe built at the repo
-# root by developer/packaging/build_exe.py).
+# root by build_exe.py (UkoreHubLauncher repo)).
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Explicit floor rather than a computed one (minimumSizeHint() right after
@@ -121,7 +121,7 @@ class MainWindow(QMainWindow):
         self.git_service = git_service
         # Only used for logout (clearing the cached token) — login itself
         # happens entirely in the launcher exe now, see
-        # developer/packaging/updater.py and _on_logout_requested below.
+        # updater.py (UkoreHubLauncher repo) and _on_logout_requested below.
         self._token_store = token_store
         self._cache_dir = Path(cache_dir)
         self.hook_registry = hook_registry
@@ -180,7 +180,7 @@ class MainWindow(QMainWindow):
         # the user to glimpse.
         #
         # GitHub login now happens in the launcher exe before this process
-        # is even spawned (see developer/packaging/updater.py) — by the time
+        # is even spawned (see updater.py (UkoreHubLauncher repo)) — by the time
         # MainWindow is constructed, GitService already has whatever token
         # was cached (see launcher.py's main()), so there's no in-app login
         # gate to show first.
@@ -514,7 +514,7 @@ class MainWindow(QMainWindow):
 
     def _on_logout_requested(self) -> None:
         # Login/token-caching moved entirely to the launcher exe (see
-        # developer/packaging/updater.py) — there's no in-app login gate to
+        # updater.py (UkoreHubLauncher repo)) — there's no in-app login gate to
         # send the user back to, so "logout" here means: clear the cached
         # token + username, then close this app and reopen the launcher
         # exe, whose own login step will show the GitHub login screen again

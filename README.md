@@ -29,19 +29,26 @@ only warned about, never blocking).
 
 ## Running
 
-Double-click `UkoreHub.exe` at the repo root (or pin it to the taskbar) —
-this is the normal way to run UkoreHub, and the only way to complete a
-first-time GitHub login (see below). In order: it checks `git` is present
-(showing a Download button and stopping if not), brings this folder up to
-date with `origin/main` (even converting a plain GitHub "Download ZIP"
-extract into a real git clone in place, if that's how you got this
-folder) — before anything else, so a pending update is never skipped —
-then checks Python is present (same Download-button treatment) and
-`git-lfs` (optional), handles GitHub login and caches the token, then
-launches the real app — see `developer/packaging/README.md` for the full
+`UkoreHub.exe` lives in its own repo,
+[`UkoreHubLauncher`](https://github.com/tonmaiart/UkoreHubLauncher) — split
+out so an ordinary app-code release can never try to overwrite the exe
+file that's busy running it (see `developer/bug-history/2026-08-08-self-update-locked-own-exe.md`).
+Double-click `UkoreHub.exe` (or pin it to the taskbar) — this is the
+normal way to run UkoreHub, and the only way to complete a first-time
+GitHub login (see below). In order: it checks `git` is present (showing a
+Download button and stopping if not), brings its own folder up to date
+with its own repo (rare — only on a launcher release), then bootstraps or
+updates a nested `app/` folder from *this* repo (`UkoreHub`, a.k.a.
+"UkoreHubRelease") the same way — even converting a plain GitHub "Download
+ZIP" extract into a real git clone in place if that's how `app/` started —
+before anything else, so a pending app update is never skipped, then
+checks Python is present (same Download-button treatment) and `git-lfs`
+(optional), handles GitHub login and caches the token, then launches the
+real app from `app/` — see `UkoreHubLauncher`'s own README.md for the full
 breakdown (`exe_entry.py`/`updater.py`).
 
-Once logged in, you can also run the app directly:
+Once logged in, you can also run the app directly from inside that `app/`
+folder:
 
 ```bash
 python launcher.py
@@ -58,14 +65,13 @@ node = 1 repo). Whatever's added there becomes available to pick as the
 active repo by clicking its node in Project Editor — there is no separate
 sidebar repo-picker button.
 
-Admins rebuild and recommit `UkoreHub.exe` via
-`python developer/packaging/build_exe.py` on this repo's (UkoreHubDev)
-`main` branch when rebranding the icon, or when changing
-`developer/packaging/exe_entry.py`/
-`updater.py` themselves (see `developer/packaging/README.md`) — routine
-code updates elsewhere still flow through **Update and Restart** / `git
-pull` as plain `.py` changes, exactly as before; the exe itself rarely
-needs to change.
+Admins rebuild and recommit `UkoreHub.exe` via `python build_exe.py` on
+the separate `UkoreHubLauncher` repo's own `main` branch when rebranding
+the icon, or when changing `exe_entry.py`/`updater.py` themselves (see
+that repo's README.md) — routine code updates to this repo still flow
+through **Update and Restart** / `git pull` as plain `.py` changes, exactly
+as before; the exe itself rarely needs to change, and this repo no longer
+carries it at all.
 
 Setting > Program Database keeps a shared catalog of pipeline software (name,
 icon, description) that repos can list as requirements at repo-creation
@@ -186,10 +192,12 @@ crashes or blocks the app.
   (gitignored, per-machine — see `cache/README.md`), plus `plugins/`,
   per-repo plugin git clones.
 - `launcher.py` — entry point.
-- `developer/` — dev-only tooling (packaging, bug-history, glossary); lives
-  only in this repo (UkoreHubDev), stripped when publishing to the separate
+- `developer/` — dev-only tooling (bug-history, glossary); lives only in
+  this repo (UkoreHubDev), stripped when publishing to the separate
   UkoreHubRelease repo's `main` by `developer/commit-main.ps1` — see
-  `developer/README.md`.
+  `developer/README.md`. `UkoreHub.exe` and its build tooling live in a
+  separate repo entirely, `UkoreHubLauncher` — not part of this tree at
+  all.
 - `projects/` — workspace folder (gitignored; actual cloned repos live here).
 
 ## Tests

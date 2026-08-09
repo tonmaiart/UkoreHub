@@ -110,7 +110,7 @@ a new top-level section that needs `section_registry.py`).
 There is no login domain in `interface/` anymore — the old mandatory
 in-app gate (`login/`: `LoginOverlay`, `GitHubLoginDialog`,
 `GitHubAuthWidget`, `LoginGate`) was deleted entirely. GitHub login (OAuth
-device flow) and the token cache now live in `developer/packaging/updater.py`,
+device flow) and the token cache now live in `updater.py (UkoreHubLauncher repo)`,
 run by the launcher exe (`UkoreHub.exe`) *before* this process is even
 spawned — by the time `launcher.py` constructs `GitService`, it just loads
 whatever token the launcher already cached (`core/github/token_store.py`)

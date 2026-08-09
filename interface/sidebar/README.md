@@ -20,7 +20,7 @@ Qt's `QMenuBar`/dropdown-menu widget.
   `MainWindow._start_app` from `local_config_store.github_username`; no
   login/logout control of its own — actual GitHub login now happens
   entirely in the launcher exe before this app ever opens, see
-  `developer/packaging/updater.py`, and logout lives in
+  `updater.py (UkoreHubLauncher repo)`, and logout lives in
   Settings > Common, see `interface/settings/README.md`) plus the
   icon-only `setting_button`. Fixed width (`SIDEBAR_WIDTH`). `setting_button`
   is the only hardcoded app-level control left here — not a row in
