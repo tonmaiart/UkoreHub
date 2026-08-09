@@ -29,11 +29,11 @@ class SectionTabList(QListWidget):
     it uses SectionSpec.trailing_widget_factory (e.g.
     plugins/core/Notification/'s unread badge). Qt still paints the
     item's own selection/hover background underneath a transparent
-    itemWidget, so core/theme.py's ::item/::item:hover/::item:selected rules
+    itemWidget, so interface/theme.py's ::item/::item:hover/::item:selected rules
     keep working unchanged; only the *text* color/weight on selection can't
     come from ::item anymore (there's no native text to color once
     setItemWidget is used) — QLabel#sectionTabLabel[current="true"] in
-    core/theme.py covers that instead, toggled by _update_current_label."""
+    interface/theme.py covers that instead, toggled by _update_current_label."""
 
     navigation_changed = Signal(str)
 

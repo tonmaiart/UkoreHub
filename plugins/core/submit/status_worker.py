@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from core.exceptions import GitOperationError
-from core.git_service import GitService
+from core.vcs.git_service import GitService
 from core.models import RepoStatus
 
 

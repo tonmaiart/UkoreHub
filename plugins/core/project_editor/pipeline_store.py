@@ -4,7 +4,8 @@ import uuid
 from dataclasses import dataclass
 
 from core.exceptions import NotFoundError
-from core.store import MetadataStore
+from core.models import Repo
+from core.storage.metadata_store import MetadataStore
 
 # This plugin's id, also its Repo.plugin_data key (core/models.py's Repo) —
 # each repo's own pipeline_inputs/custom_paths live at
@@ -146,6 +147,34 @@ class PipelineStore:
 
     def set_custom_paths(self, project_id: str, repo_id: str, custom_paths: list[CustomPath]) -> None:
         self._set_field(project_id, repo_id, "custom_paths", [cp.to_dict() for cp in custom_paths])
+
+    def get_required_repos(self, project_id: str, repo_id: str) -> list[tuple[str, Repo]]:
+        """Resolves this repo's own direct pipeline_inputs RepoRefs into the
+        actual target Repo objects they point at — the set of repos that
+        must exist on disk for this repo's pipeline connections to work.
+        Deliberately direct-only: does NOT recurse into each target's own
+        get_inputs, so a repo's requirements never cascade into its
+        requirements' requirements — see ProjectGraphView.request_active_repo,
+        the only caller, for why that matters (avoiding "clone the whole
+        graph" from a single node click). Returns (project_id, Repo) pairs,
+        not bare Repo, since a required target can live in a different
+        Project than (project_id, repo_id) and Repo itself has no project_id
+        field. Skips a ref pointing back at (project_id, repo_id) itself
+        (malformed self-reference) and dedupes by (project_id, repo_id) —
+        multiple CustomPath connections can target the same repo."""
+        seen: set[tuple[str, str]] = set()
+        required: list[tuple[str, Repo]] = []
+        for ref in self.get_inputs(project_id, repo_id):
+            key = (ref.project_id, ref.repo_id)
+            if key == (project_id, repo_id) or key in seen:
+                continue
+            seen.add(key)
+            try:
+                target_repo = self._metadata_store.get_repo(ref.project_id, ref.repo_id)
+            except NotFoundError:
+                continue
+            required.append((ref.project_id, target_repo))
+        return required
 
     def _set_field(self, project_id: str, repo_id: str, field_name: str, value: list[dict]) -> None:
         entry = dict(self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID))

@@ -76,7 +76,14 @@ a new top-level section that needs `section_registry.py`).
 - `plugin_api.py` — `PluginAPI`, the object passed to every plugin's
   `register(api)` entry point; composes `core/` services with the
   section/settings-tab/sidebar-footer-action registries.
-- `theme_apply.py` — applies a `core.theme` stylesheet to the
+- `theme.py` — color theme definitions (`ThemeColors`, `THEMES`,
+  `DEFAULT_THEME_NAME`) and Qt stylesheet generation (`build_stylesheet`).
+  Moved here from `core/` since it's a pure UI/presentation concern with no
+  data or git logic of its own — `core/storage/config_store.py`'s
+  `LocalConfigStore` still needs a default theme name to persist, so it
+  keeps its own duplicated `DEFAULT_THEME_NAME` literal rather than
+  importing this module (`core/` never depends on `interface/`).
+- `theme_apply.py` — applies a `theme.py` stylesheet to the
   `QApplication`; used only by `launcher.py`.
 - `project_selector_dialog.py` — `ProjectSelectorDialog`: the mandatory
   pre-`MainWindow` gate for which Project this run is scoped to, shown by

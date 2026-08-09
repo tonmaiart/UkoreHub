@@ -34,7 +34,7 @@ def list_all_projects() -> list:
     a broken reference path's segments against every project's name, not
     just the active one."""
     root = find_ukorehub_root()
-    from core.store import MetadataStore
+    from core.storage.metadata_store import MetadataStore
 
     store = MetadataStore(root / "data" / "projects.json")
     return store.list_projects()
@@ -44,7 +44,7 @@ def workspace_root() -> str | None:
     """The configured workspace root a cloned repo's Repo.local_path is
     relative to, or None if it hasn't been set up on this machine."""
     root = find_ukorehub_root()
-    from core.store import LocalConfigStore
+    from core.storage.config_store import LocalConfigStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
     return local_config.workspace_root

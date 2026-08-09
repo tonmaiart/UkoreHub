@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.exceptions import GitOperationError, UkoreHubError
-from core.git_service import GitService
+from core.vcs.git_service import GitService
 from core.os_utils import open_in_file_explorer
 from interface.shared.widget_helpers import confirm_action
 from plugins.core.ExternalPlugins.catalog_entry_dialog import CatalogEntryDialog

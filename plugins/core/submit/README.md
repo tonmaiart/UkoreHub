@@ -82,9 +82,9 @@ or network calls added for this):
   one is more than 10 minutes stale. `refresh_status()` sets this
   immediately on every call, before the new `RepoStatusWorker` reports back,
   so the dot never shows a stale/wrong-repo color mid-check.
-- **dirty** (yellow, `core.theme`'s `warning`) — `_on_status_ready` saw a
+- **dirty** (yellow, `interface.theme`'s `warning`) — `_on_status_ready` saw a
   non-clean `RepoStatus` (untracked/modified/staged present).
-- **fresh** (blue, `core.theme`'s `accent`) — `_on_status_ready` saw a clean
+- **fresh** (blue, `interface.theme`'s `accent`) — `_on_status_ready` saw a clean
   `RepoStatus`. Only valid for `FRESHNESS_WINDOW_MS` (10 minutes) —
   `_freshness_timer` (restarted on every `refresh_status()` call) flips it
   back to **loading** once that verification goes stale, rather than

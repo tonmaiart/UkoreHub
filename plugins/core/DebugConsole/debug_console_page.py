@@ -3,22 +3,23 @@ from __future__ import annotations
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
-from core.extensibility import debug_log
+from core.events.debug_log import DebugLogBus, DebugLogEntry
 
 _ALL_SOURCES = "All sources"
 
 
 class DebugConsolePage(QWidget):
     """DebugConsole's section page — a filterable, live-updating view of
-    core.extensibility.debug_log's in-memory entries. Subscribes once via
-    debug_log.add_listener and never unsubscribes: this page is built once
-    in plugin.py's register(api) and lives for the app's whole lifetime,
-    same as every other plugin's page_factory-returned instance, so there's
-    no teardown point to unsubscribe at (consistent with how this app's
-    other permanent pages don't bother either)."""
+    core/app_core.py's UkoreCore.debug_bus's in-memory entries. Subscribes
+    once via debug_bus.add_listener and never unsubscribes: this page is
+    built once in plugin.py's register(api) and lives for the app's whole
+    lifetime, same as every other plugin's page_factory-returned instance,
+    so there's no teardown point to unsubscribe at (consistent with how
+    this app's other permanent pages don't bother either)."""
 
-    def __init__(self, parent=None):
+    def __init__(self, debug_bus: DebugLogBus, parent=None):
         super().__init__(parent)
+        self._debug_bus = debug_bus
 
         self.source_combo = QComboBox()
         self.source_combo.currentTextChanged.connect(self._refresh)
@@ -40,7 +41,7 @@ class DebugConsolePage(QWidget):
 
         self._populate_source_combo()
         self._refresh(self.source_combo.currentText())
-        debug_log.add_listener(self._on_entry)
+        self._debug_bus.add_listener(self._on_entry)
 
     # -- source filter ------------------------------------------------------
 
@@ -49,12 +50,12 @@ class DebugConsolePage(QWidget):
         self.source_combo.blockSignals(True)
         self.source_combo.clear()
         self.source_combo.addItem(_ALL_SOURCES)
-        self.source_combo.addItems(debug_log.sources())
+        self.source_combo.addItems(self._debug_bus.sources())
         index = self.source_combo.findText(current)
         self.source_combo.setCurrentIndex(index if index >= 0 else 0)
         self.source_combo.blockSignals(False)
 
-    def _matches_filter(self, entry: debug_log.DebugLogEntry) -> bool:
+    def _matches_filter(self, entry: DebugLogEntry) -> bool:
         selected = self.source_combo.currentText()
         return not selected or selected == _ALL_SOURCES or entry.source == selected
 
@@ -62,11 +63,11 @@ class DebugConsolePage(QWidget):
 
     def _refresh(self, _selected_source: str) -> None:
         self._populate_source_combo()
-        lines = [self._format(entry) for entry in debug_log.entries() if self._matches_filter(entry)]
+        lines = [self._format(entry) for entry in self._debug_bus.entries() if self._matches_filter(entry)]
         self.log_view.setPlainText("\n".join(lines))
         self._scroll_to_bottom()
 
-    def _on_entry(self, entry: debug_log.DebugLogEntry) -> None:
+    def _on_entry(self, entry: DebugLogEntry) -> None:
         if self.source_combo.findText(entry.source) < 0:
             self._populate_source_combo()
         if not self._matches_filter(entry):
@@ -75,7 +76,7 @@ class DebugConsolePage(QWidget):
         self._scroll_to_bottom()
 
     def _on_clear_clicked(self) -> None:
-        debug_log.clear()
+        self._debug_bus.clear()
         self.log_view.clear()
 
     def _scroll_to_bottom(self) -> None:
@@ -83,5 +84,5 @@ class DebugConsolePage(QWidget):
         scrollbar.setValue(scrollbar.maximum())
 
     @staticmethod
-    def _format(entry: debug_log.DebugLogEntry) -> str:
+    def _format(entry: DebugLogEntry) -> str:
         return f"[{entry.timestamp}] [{entry.source}] {entry.message}"

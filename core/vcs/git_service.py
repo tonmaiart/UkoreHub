@@ -8,8 +8,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable
 
+from core.events.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.exceptions import GitOperationError
-from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.models import CommitInfo, RepoStatus
 
 OutputCallback = Callable[[str], None] | None

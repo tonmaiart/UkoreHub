@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
-from core.store import MetadataStore
+from core.storage.metadata_store import MetadataStore
 
 _NODE_KIND_ROLE = Qt.UserRole + 1
 

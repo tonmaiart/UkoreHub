@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.git_service import GitService
+from core.vcs.git_service import GitService
 from core.os_utils import open_in_file_explorer, open_with_default_app
 from plugins.core.explorer.file_table_proxy import FileTableFilterProxy
 from plugins.core.explorer.last_opened_store import LastOpenedStore

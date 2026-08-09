@@ -229,6 +229,23 @@ anymore.
     been cloned yet, clone and switch now?" confirmation before the very
     first clone — an already-cloned repo switches immediately with no
     prompt.
+    `request_active_repo` also resolves this repo's own **direct**
+    `pipeline_store.get_required_repos` — repos it connects an Input Path
+    to — and folds any not-yet-cloned ones into that same confirmation
+    dialog ("... will also be cloned: RepoB, RepoC"). Deliberately
+    direct-only: it never looks at what those required repos themselves
+    require, so a single node click can't cascade into cloning the whole
+    graph. On confirm, the required repos clone first, sequentially, on a
+    background `RequiredRepoCloneWorker` (`required_repo_clone_worker.py`
+    — a local duplicate of `submit/git_stream_worker.py`'s
+    QThread-wraps-a-callable shape, not an import of it, per this plugin's
+    own boundary rules further down) behind a `QProgressDialog`, then
+    `load_project()` runs again immediately so their corner badges flip
+    right away instead of waiting for some later reload (same precedent as
+    `open_repo_settings`, below) — only then does the primary repo's own
+    switch/clone proceed through the unchanged Submit pathway. A repo with
+    no pipeline connections (or whose connections are all already cloned)
+    still sees the exact same one-line prompt as before this existed.
   - **Right-click context menu**: "Repository Setting..." (opens
     `open_repo_settings`, see `repo_settings_panel.py` below — this one
     doesn't touch the scene, so it's called directly, no `QTimer` deferral
@@ -315,6 +332,16 @@ anymore.
     a different project's repo (allowed by `RepoRef`'s shape) is simply
     not drawn, matching the old tree panel's own one-project-at-a-time
     scope.
+- `required_repo_clone_worker.py` — `RequiredRepoCloneWorker` (`QThread`):
+  clones/pulls a fixed list of `(project_id, Repo)` targets sequentially,
+  stopping at the first failure (repos already cloned earlier in the same
+  batch are left on disk, never rolled back). Used only by
+  `ProjectGraphView.request_active_repo` (see above) to clone a repo's
+  direct pipeline requirements before switching to it. A deliberate local
+  duplicate of `plugins/core/submit/git_stream_worker.py`'s
+  QThread-wraps-a-callable/`finished_ok`/`failed` shape rather than an
+  import of it — this plugin doesn't reach into a sibling plugin's source
+  (see "Working here" at the bottom of this file).
 - `repo_settings_panel.py` — `RepoSettingsPanel`: every `CATEGORY_REPO`
   `SettingsTabSpec`, read off `SettingsTabRegistry.ordered()` and rendered
   with the **exact same tab-list + `QStackedWidget` template**
@@ -374,6 +401,11 @@ anymore.
   `"input"` for any ref saved before the field existed, matching this
   app's arrow behavior prior to that date — see `RepoRef`'s own docstring
   and `project_graph_view.py`'s `ProjectGraphView.load_project`.
+  `get_required_repos(project_id, repo_id)` resolves a repo's own direct
+  `pipeline_inputs` refs into the actual target `Repo` objects
+  (deduped, direct-only — no recursion into each target's own inputs), used
+  by `ProjectGraphView.request_active_repo` to auto-clone a repo's pipeline
+  dependencies (see that bullet above).
 - `custom_paths_settings_page.py` — `CustomPathsSettingsPage`: a
   `CATEGORY_REPO` Settings tab ("Custom Paths"), split into two
   `QGroupBox` sections. "Create Input Path" — add/rename/edit-path/remove

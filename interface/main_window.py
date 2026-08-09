@@ -17,15 +17,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.app_core import UkoreCore
 from core.exceptions import NotFoundError
 from core.extensibility.file_opener import FileOpenerRegistry
-from core.extensibility.hooks import GitHookContext, GitHookEvent, HookRegistry
-from core.git_service import GitService
-from core.github.token_store import TokenStore
-from core.paths import resolve_repo_path
+from core.events.hooks import GitHookContext, GitHookEvent
+from core.vcs.paths import resolve_repo_path
 from core.relaunch import relaunch_ukorehub_exe
-from core.store import LocalConfigStore, MetadataStore
-from core.theme import DEFAULT_THEME_NAME, get_theme
+from interface.theme import DEFAULT_THEME_NAME, get_theme
 from core.version import APP_NAME, APP_VERSION
 from interface import builtin_settings_tabs
 from interface.browser_links.browser_link_page import BrowserLinkPage
@@ -98,12 +96,8 @@ class _ContentSplitter(QSplitter):
 class MainWindow(QMainWindow):
     def __init__(
         self,
-        store: MetadataStore,
-        local_config_store: LocalConfigStore,
-        git_service: GitService,
-        token_store: TokenStore,
+        core: UkoreCore,
         cache_dir: Path,
-        hook_registry: HookRegistry,
         section_registry: SectionRegistry,
         settings_tab_registry: SettingsTabRegistry,
         file_opener_registry: FileOpenerRegistry,
@@ -113,15 +107,16 @@ class MainWindow(QMainWindow):
         opt_in_plugin_ids: set[str] | None = None,
     ):
         super().__init__()
-        self.store = store
-        self.local_config_store = local_config_store
-        self.git_service = git_service
+        self._core = core
+        self.store = core.metadata
+        self.local_config_store = core.local_config
+        self.git_service = core.git
         # Only used for logout (clearing the cached token) — login itself
         # happens entirely in the launcher exe now, see
         # updater.py (UkoreHubLauncher repo) and _on_logout_requested below.
-        self._token_store = token_store
+        self._token_store = core.github_tokens
         self._cache_dir = Path(cache_dir)
-        self.hook_registry = hook_registry
+        self.hook_registry = core.hooks
         self.section_registry = section_registry
         self.settings_tab_registry = settings_tab_registry
         self.file_opener_registry = file_opener_registry

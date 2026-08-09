@@ -8,7 +8,7 @@ SECTION_KEY = "debug_console"
 
 def register(api) -> None:
     icons_dir = api.app_root / "assets" / "icons"
-    page = DebugConsolePage()
+    page = DebugConsolePage(debug_bus=api.debug_bus)
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,

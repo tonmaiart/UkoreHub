@@ -139,7 +139,7 @@ plugin's unread badge but not Notification-specific.
 
 Notification's own usage: `plugin.py` passes `lambda: page.badge_label`,
 and `NotificationPage._recompute_badge` sets that label's text/visibility
-directly (red background/white text via `core/theme.py`'s
+directly (red background/white text via `interface/theme.py`'s
 `QLabel#sectionTabBadge` rule) whenever a notification arrives, the active
 repo changes, or the tab is marked seen. No `SectionHost` round-trip —
 the page just owns the widget.

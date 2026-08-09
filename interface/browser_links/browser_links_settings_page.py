@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.models import BrowserLink
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.image_asset import pick_image_file, save_image_asset
 from interface.shared.widget_helpers import wrap_scrollable

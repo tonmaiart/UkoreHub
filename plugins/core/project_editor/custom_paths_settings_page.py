@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.exceptions import NotFoundError
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.shared.widget_helpers import show_exclusive, wrap_scrollable
 from plugins.core.project_editor.pipeline_store import CustomPath, PipelineStore, RepoRef
 

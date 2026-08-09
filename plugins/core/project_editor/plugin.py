@@ -26,6 +26,7 @@ def register(api) -> None:
         local_config_store=api.local_config,
         pipeline_store=pipeline_store,
         settings_tab_registry=api.settings_tab_registry,
+        git_service=api.git,
     )
     api.register_section(
         SectionSpec(

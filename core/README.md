@@ -2,17 +2,33 @@
 
 Non-UI logic layer for UkoreHub — no PySide6/Qt imports here. Everything the
 `interface/` layer depends on for data and git operations lives in this
-folder.
+folder, organized into five domain sub-packages plus a flat handful of
+app-wide primitives.
 
 **Working here:** stay inside `core/` unless the change requires updating
-an `interface/` call site — don't open `interface/` files otherwise. Two
-subfolders group related files by function — check their own README first
-if you're working in either:
+an `interface/` call site — don't open `interface/` files otherwise. Each
+sub-package below has its own README — check it first if you're working in
+one:
 
-- **`github/`** — everything that talks to GitHub (OAuth device flow, REST
-  API, token storage). See `core/github/README.md`.
-- **`extensibility/`** — the plugin discovery and hook system. See
-  `core/extensibility/README.md`.
+- **`storage/`** — the JSON-file stores (`MetadataStore`, `LocalConfigStore`,
+  `SystemConfigStore`) and their shared atomic-write helper. See
+  `core/storage/README.md`.
+- **`auth/`** — token storage and login helpers (GitHub, Google). See
+  `core/auth/README.md`.
+- **`vcs/`** — git subprocess wrapper, GCS cloud sync, GitHub REST helpers,
+  repo path resolution. See `core/vcs/README.md`.
+- **`events/`** — the hook registry and the two in-memory event buses
+  (debug log, notifications). See `core/events/README.md`.
+- **`extensibility/`** — plugin discovery, per-plugin config storage, file
+  opener registration. See `core/extensibility/README.md`.
+
+`app_core.py`'s `UkoreCore` is the composition facade that ties the
+sub-packages' stateful services together into one object — `launcher.py`
+constructs one `UkoreCore` instance and threads it into `MainWindow`/
+`PluginAPI` instead of wiring each service individually. It deliberately
+never imports `core.vcs.cloud_sync` (see that module's own docstring and
+`core/vcs/README.md` for why) — cloud pull/push orchestration and the
+mandatory GitHub-login gate stay in `launcher.py`.
 
 Everything else stays flat here since it doesn't form a natural cluster
 beyond "core infrastructure":
@@ -23,41 +39,6 @@ beyond "core infrastructure":
   with other Projects), `Repo` (including `browser_links:
   list[BrowserLink]`, repo-scoped bookmarks rendered as their own top-level
   tab — see `interface/about/browser_link_page.py`), `RepoStatus`, etc.
-- `store.py` — `MetadataStore` (the Project/Repo registry, including
-  `set_repo_browser_links`; `get_repo_plugin_data`/`set_repo_plugin_data`
-  for a plugin's own per-repo data, `Repo.plugin_data` — see
-  `plugins/README.md`'s "Sharing data with another plugin" section for when
-  to use this over `PluginConfigStore`; and `list_programs`/`get_program`/
-  `add_program`/`edit_program`/`delete_program`/`set_program_icon` for a
-  Project's own Program Database — retired the old studio-wide
-  `program_store.py`/`data/programs.json`, see `migrate_legacy_programs`
-  below for the one-time cutover), split on disk into a lightweight
-  index (`data/projects.json`, id/name only) plus one blob per project
-  (`data/projects/<id>.json`, the real payload — repos, requirements, pins,
-  browser links, plugin_data, programs) so editing one project never
-  rewrites/pushes another's data — see `data/README.md`. Also
-  `migrate_legacy_programs(store, legacy_path)` — a module-level, one-time,
-  self-healing migration from the old global catalog into each Project's
-  own `programs` list, called once from `launcher.py`. Also
-  `LocalConfigStore`/`SystemConfigStore` (per-machine vs. shared settings).
-- `git_service.py` — wraps `git`/`git-lfs` subprocess calls: clone, pull, push,
-  fetch (remote-tracking refs only, no merge — used by Notification's
-  background commit poll so it never touches the working tree), commit,
-  stage/unstage, revert, status, conflict resolution, commit log (optional
-  `ref=` to log `origin/<branch>` instead of local HEAD), per-commit
-  changed-files (`get_commit_files`), ahead/behind counts vs. upstream
-  (`get_ahead_behind`, `None` if no upstream), a raw `origin` URL lookup
-  (`get_remote_url`), and a stricter clone check (`is_repo_root` —
-  confirms `local_path` is really a repo's own root, not just that a
-  `.git` entry exists there; see bug-history 2026-08-08 for why
-  `is_cloned()` alone isn't safe to gate a mutating git call on) — all
-  used by `plugins/core/ExternalPlugins/`. Fires hooks from
-  `extensibility/hooks.py` around each operation. Every subprocess call
-  passes `CREATE_NO_WINDOW` (Windows-only) so git never flashes a console
-  behind the GUI.
-- `paths.py` — resolves a repo's on-disk clone path from workspace root +
-  project/repo name.
-- `theme.py` — color theme definitions and stylesheet generation.
 - `os_utils.py` — OS-level helpers (open in file explorer, open with default
   app).
 - `relaunch.py` — `relaunch_ukorehub_exe(repo_root)`: spawns `UkoreHub.exe`
@@ -71,32 +52,8 @@ beyond "core infrastructure":
 - `exceptions.py` — shared exception types (`UkoreHubError`, `ValidationError`,
   `NotFoundError`, `ConflictError`, `GitOperationError`, `GitHubAuthError`,
   `GoogleAuthError`).
-- `google_auth.py` — `run_installed_app_login`: Google OAuth login via
-  `google-auth-oauthlib`'s `InstalledAppFlow` loopback/local-server flow
-  (opens the system browser, blocks until the artist finishes) — the
-  Google-recommended pattern for a native desktop app, as opposed to the
-  Device Authorization flow meant for TVs/limited-input hardware. Plus
-  `GoogleTokenStore` (mirrors `core/github/token_store.py`'s
-  keyring/fallback-file split, own key `cache/gcs_refresh_token.json`) —
-  each artist authenticates as their own Google identity to use
-  `cloud_sync.py`'s `GcsJsonSync`, since the studio's GCP org blocks
-  service-account key creation (`iam.disableServiceAccountKeyCreation`).
-  Kept outside `core/github/` since that folder is scoped to GitHub only.
-- `cloud_sync.py` — `GcsJsonSync`: pulls/pushes the shared JSON stores
-  (`store.py`'s `MetadataStore`/`SystemConfigStore`, and `shared=True`
-  `PluginConfigStore` instances) to/from
-  Google Cloud Storage, replacing the old git-tracked-`data/` model. Uses
-  GCS object-generation preconditions for optimistic-concurrency conflict
-  detection (raises `ConflictError` on a losing race) instead of a real
-  document schema, since these stores are still naive whole-file JSON
-  blobs. Deliberately isolated — only `launcher.py` and
-  `interface/plugin_api.py` import it, never `store.py`/
-  `extensibility/config_store.py` themselves, so `google-cloud-storage`
-  never ends up in `updater.py (UkoreHubLauncher repo)`'s frozen-exe import
-  graph. Those three stores instead gain an optional `on_save` constructor
-  callback that `launcher.py`/`plugin_api.py` wire up to
-  `GcsJsonSync.push`.
 - `version.py` — app name/version constants.
+- `app_core.py` — see above.
 
 Note: `Repo.active_plugin_ids` (`set_repo_active_plugin_ids`) is no longer
 read anywhere (2026-08-04 — every `plugins/core/` plugin is

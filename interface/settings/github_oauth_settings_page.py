@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QWidget
 
-from core.store import SystemConfigStore
+from core.storage.config_store import SystemConfigStore
 
 
 class GithubOAuthSettingsPage(QWidget):

@@ -20,9 +20,9 @@ def register(api) -> None:
         return
     contributions = bridge.get("contributions", {})
     contributions[TOOL_ID] = {
-        # api.app_root is contributed too so `import core.store` / `core.paths`
-        # / `core.extensibility.config_store` resolve inside Maya's Python —
-        # repo_paths.py needs the real Project/Repo registry, same reason
+        # api.app_root is contributed too so `import core.storage.metadata_store` /
+        # `core.vcs.paths` / `core.extensibility.config_store` resolve inside
+        # Maya's Python — repo_paths.py needs the real Project/Repo registry, same reason
         # plugins/repo_internal/PublishApi/plugin.py and
         # plugins/repo_internal/UkoreBrowser/plugin.py contribute api.app_root too.
         "PYTHONPATH": {ANY_VERSION: [str(tool_root / "maya-scripts"), str(api.app_root)]},

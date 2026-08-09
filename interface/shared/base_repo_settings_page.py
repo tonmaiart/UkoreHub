@@ -4,7 +4,8 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from core.exceptions import NotFoundError
 from core.models import Project, Repo
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.shared.widget_helpers import show_exclusive
 
 

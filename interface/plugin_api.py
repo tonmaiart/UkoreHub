@@ -3,15 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from core.cloud_sync import GcsJsonSync
+from core.app_core import UkoreCore
+from core.events.hooks import GitHookEvent, HookHandler
 from core.exceptions import ConflictError
-from core.extensibility import debug_log
 from core.extensibility.config_store import PluginConfigStore, ProjectPluginConfigStore
 from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
-from core.extensibility.hooks import GitHookEvent, HookHandler, HookRegistry
-from core.git_service import GitService
 from core.models import Repo
-from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
+from core.storage.config_store import LocalConfigStore, SystemConfigStore
+from core.storage.metadata_store import MetadataStore
+from core.vcs.cloud_sync import GcsJsonSync
+from core.vcs.git_service import GitService
 from interface.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
 from interface.section_registry import SectionRegistry, SectionSpec
 from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
@@ -34,11 +35,7 @@ class PluginAPI:
     def __init__(
         self,
         *,
-        store: MetadataStore,
-        local_config_store: LocalConfigStore,
-        system_config_store: SystemConfigStore,
-        git_service: GitService,
-        hooks: HookRegistry,
+        core: UkoreCore,
         section_registry: SectionRegistry,
         settings_tab_registry: SettingsTabRegistry,
         file_opener_registry: FileOpenerRegistry,
@@ -50,11 +47,7 @@ class PluginAPI:
         app_root: Path,
         cloud_sync: GcsJsonSync | None = None,
     ):
-        self._store = store
-        self._local_config_store = local_config_store
-        self._system_config_store = system_config_store
-        self._git_service = git_service
-        self._hooks = hooks
+        self._core = core
         self._section_registry = section_registry
         self._settings_tab_registry = settings_tab_registry
         self._file_opener_registry = file_opener_registry
@@ -68,11 +61,11 @@ class PluginAPI:
 
     @property
     def metadata(self) -> MetadataStore:
-        return self._store
+        return self._core.metadata
 
     @property
     def local_config(self) -> LocalConfigStore:
-        return self._local_config_store
+        return self._core.local_config
 
     @property
     def system_config_store(self) -> SystemConfigStore:
@@ -80,7 +73,7 @@ class PluginAPI:
         threads into register_builtin_settings_tabs. For a plugin (e.g.
         plugins/core/CloudConfig/) that needs direct read/write access to
         the gcs_*/google_oauth_* fields."""
-        return self._system_config_store
+        return self._core.system_config
 
     @property
     def cache_dir(self) -> Path:
@@ -104,7 +97,29 @@ class PluginAPI:
 
     @property
     def git(self) -> GitService:
-        return self._git_service
+        return self._core.git
+
+    @property
+    def debug_bus(self):
+        """The shared debug-log bus (core/events/debug_log.py's DebugLogBus)
+        — call .log(source, message) to publish an entry, consumed live by
+        plugins/core/DebugConsole/'s viewer page."""
+        return self._core.debug_bus
+
+    @property
+    def notification_bus(self):
+        """The shared notification bus (core/events/notification_bus.py's
+        NotificationBus) — call .push(source, project_id, repo_id, label, ...)
+        to publish a card, consumed live by plugins/core/Notification/'s tab."""
+        return self._core.notification_bus
+
+    @property
+    def google_tokens(self):
+        """The shared Google refresh-token store (core/auth/token_store.py's
+        SecureTokenStore) — the same instance launcher.py used to build the
+        cloud-sync engine, for a plugin (plugins/core/CloudConfig/) that
+        needs to save/clear the cached Google login itself."""
+        return self._core.google_tokens
 
     @property
     def file_opener_registry(self) -> FileOpenerRegistry:
@@ -165,7 +180,7 @@ class PluginAPI:
         self._sidebar_footer_action_registry.register(spec)
 
     def register_git_hook(self, event: GitHookEvent, handler: HookHandler) -> None:
-        self._hooks.subscribe(event, handler)
+        self._core.hooks.subscribe(event, handler)
 
     def plugin_config_store(self, plugin_id: str, *, shared: bool = False) -> PluginConfigStore:
         # shared=True -> data/plugins/core/ (synced via Google Cloud Storage,
@@ -181,26 +196,26 @@ class PluginAPI:
         if self._cloud_sync is not None:
             try:
                 self._cloud_sync.pull(blob_name, json_path)
-                debug_log.log("CloudSync", f"pulled '{blob_name}'")
+                self._core.debug_bus.log("CloudSync", f"pulled '{blob_name}'")
             except Exception as exc:
                 # Same "never block on a cloud problem" rule as launcher.py's
                 # startup pull — a timeout/auth failure here shouldn't stop
                 # plugin registration, which runs synchronously at startup.
                 print(f"UkoreHub: cloud pull of '{blob_name}' failed ({exc}) — using local copy.")
-                debug_log.log("CloudSync", f"pull of '{blob_name}' failed ({exc}) — using local copy")
+                self._core.debug_bus.log("CloudSync", f"pull of '{blob_name}' failed ({exc}) — using local copy")
 
         def _push_plugin_blob() -> None:
             if self._cloud_sync is None:
                 return
             try:
                 self._cloud_sync.push(blob_name, json_path)
-                debug_log.log("CloudSync", f"pushed '{blob_name}'")
+                self._core.debug_bus.log("CloudSync", f"pushed '{blob_name}'")
             except ConflictError as exc:
-                debug_log.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
+                self._core.debug_bus.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
                 raise
             except Exception as exc:
                 print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
-                debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+                self._core.debug_bus.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
         return PluginConfigStore(json_path, on_save=_push_plugin_blob)
 
@@ -215,7 +230,7 @@ class PluginAPI:
         than assume a store is always available, same "never crash on a
         missing-context problem at startup" convention as the cloud-pull
         failure handling above."""
-        project_id = self._local_config_store.active_project_id
+        project_id = self._core.local_config.active_project_id
         if project_id is None:
             return None
-        return ProjectPluginConfigStore(self._store, project_id, plugin_id)
+        return ProjectPluginConfigStore(self._core.metadata, project_id, plugin_id)

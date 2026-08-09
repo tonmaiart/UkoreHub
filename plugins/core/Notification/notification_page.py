@@ -5,12 +5,11 @@ from datetime import datetime
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
-from core.extensibility import notification_bus
+from core.events.notification_bus import NotificationBus, NotificationEntry
 from core.extensibility.config_store import PluginConfigStore
-from core.extensibility.notification_bus import NotificationEntry
-from core.git_service import GitService
-from core.paths import resolve_repo_path
-from core.store import LocalConfigStore
+from core.storage.config_store import LocalConfigStore
+from core.vcs.git_service import GitService
+from core.vcs.paths import resolve_repo_path
 from interface.shared.commit_history import CommitHistoryEntry
 from plugins.core.Notification.commit_feed_worker import CommitFeedWorker
 from plugins.core.Notification.notification_card import NotificationCard
@@ -45,12 +44,14 @@ class NotificationPage(QWidget):
         local_config_store: LocalConfigStore,
         config_store: PluginConfigStore,
         git_service: GitService,
+        notification_bus: NotificationBus,
         parent=None,
     ):
         super().__init__(parent)
         self._local_config = local_config_store
         self._config_store = config_store
         self._git_service = git_service
+        self._notification_bus = notification_bus
         self._project = None
         self._repo = None
         self._workspace_root = None
@@ -138,7 +139,7 @@ class NotificationPage(QWidget):
         self._config_store.set(key, entries[0].hash)
         for entry in reversed(new_entries):
             message = entry.message.splitlines()[0] if entry.message else ""
-            notification_bus.push(
+            self._notification_bus.push(
                 source="git",
                 project_id=project.id,
                 repo_id=repo.id,
@@ -152,7 +153,7 @@ class NotificationPage(QWidget):
         project_id = self._local_config.active_project_id
         if not project_id:
             return []
-        return notification_bus.entries_for(project_id, self._local_config.active_repo_id)
+        return self._notification_bus.entries_for(project_id, self._local_config.active_repo_id)
 
     def _refresh(self) -> None:
         while self._cards_layout.count():

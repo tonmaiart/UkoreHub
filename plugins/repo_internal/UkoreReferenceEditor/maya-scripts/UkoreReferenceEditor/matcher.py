@@ -10,7 +10,7 @@ import os
 import re
 from pathlib import Path, PureWindowsPath
 
-from core.paths import sanitize_folder_name
+from core.vcs.paths import sanitize_folder_name
 
 # Maya file-texture tokens (UDIM tiling, image sequences) and the classic
 # printf-style "#" frame padding — a path containing one of these will never

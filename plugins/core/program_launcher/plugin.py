@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
 
 from core.exceptions import NotFoundError
 from core.models import Program, Project, Repo
-from core.store import MetadataStore
-from core.theme import DEFAULT_THEME_NAME, get_theme
+from core.storage.metadata_store import MetadataStore
+from interface.theme import DEFAULT_THEME_NAME, get_theme
 from interface.program_launch_registry import ProgramLaunchRegistry
 from interface.section_registry import SectionHost, SectionSpec
 

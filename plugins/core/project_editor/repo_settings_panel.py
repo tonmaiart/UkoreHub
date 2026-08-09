@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.theme import DEFAULT_THEME_NAME, get_theme
+from interface.theme import DEFAULT_THEME_NAME, get_theme
 from interface.builtin_settings_tabs import BROWSER_LINKS, LOCAL_REPOSITORY, REQUIREMENTS_AND_PLUGINS
 from interface.settings_tab_registry import CATEGORY_REPO, SettingsTabRegistry, SettingsTabSpec
 

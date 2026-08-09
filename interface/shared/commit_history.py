@@ -9,8 +9,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from core.git_service import GitService
-from core.github.commits_api import GitHubCommitsApiError, download_bytes, fetch_commits_for_path
+from core.vcs.commits_api import GitHubCommitsApiError, download_bytes, fetch_commits_for_path
+from core.vcs.git_service import GitService
 from interface.shared.widget_helpers import wrap_scrollable
 
 AVATAR_SIZE = 22

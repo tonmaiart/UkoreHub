@@ -1,11 +1,9 @@
 # core/extensibility/
 
-The plugin discovery and hook system. No PySide6/Qt imports here —
-`hooks.py` deliberately isn't a `QObject` so `core/` stays importable and
-testable without a `QApplication`; UI-facing registration (sections,
-settings tabs, project-info tabs) is composed on top of these in
-`interface/plugin_api.py`, which is the actual `api` object a plugin's
-`register(api)` receives.
+Plugin discovery and per-plugin config storage. No PySide6/Qt imports here
+— UI-facing registration (sections, settings tabs, project-info tabs) is
+composed on top of these in `interface/plugin_api.py`, which is the actual
+`api` object a plugin's `register(api)` receives.
 
 - `loader.py` — `discover_plugins(roots, api_version)` scans manifest.json +
   entry-point Python files under a list of root directories (`plugins/core`,
@@ -30,51 +28,24 @@ settings tabs, project-info tabs) is composed on top of these in
   two-way visibility split.
 - `config_store.py` — `PluginConfigStore`: namespaced, atomic-write JSON
   settings for a single plugin (mirrors `LocalConfigStore`/`SystemConfigStore`
-  in `core/store.py`, but with a free-form key/value schema instead of fixed
-  fields). Also `ProjectPluginConfigStore`: same `get`/`set` contract, but
-  backed by the currently active `Project.plugin_data` (`core/models.py`)
-  instead of its own JSON blob — for plugin data that's inherently
-  session/project-scoped rather than studio-wide (e.g. `maya_launcher`'s
-  env-var bridge). See `interface/plugin_api.py`'s
-  `project_plugin_config_store()` and `plugins/README.md`.
-- `hooks.py` — `GitHookEvent`/`GitHookContext`/`HookRegistry`: plain-Python
-  pub/sub for git lifecycle events (before/after clone/pull/push/commit),
-  fired from `core/git_service.py`.
+  in `core/storage/config_store.py`, but with a free-form key/value schema
+  instead of fixed fields). Also `ProjectPluginConfigStore`: same `get`/`set`
+  contract, but backed by the currently active `Project.plugin_data`
+  (`core/models.py`) instead of its own JSON blob — for plugin data that's
+  inherently session/project-scoped rather than studio-wide (e.g.
+  `maya_launcher`'s env-var bridge). See `interface/plugin_api.py`'s
+  `project_plugin_config_store()` and `plugins/README.md`. Uses
+  `core/storage/atomic_file.py`'s `atomic_write` — the one file in this
+  folder with a dependency on another `core/` sub-package.
 - `file_opener.py` — `FileOpenerSpec`/`FileOpenerRegistry`: lets a plugin
   claim responsibility for opening certain file extensions (e.g. launching
   Maya with custom env vars instead of the OS default association) when a
   file is opened through Repo Browser (double-click in the file table) —
   never for files opened outside UkoreHub entirely.
-- `debug_log.py` — `register_source`/`log`/`entries`/`sources`/
-  `add_listener`/`remove_listener`/`clear`: an in-memory, cross-plugin
-  debug log bus, added 2026-07-20 alongside `plugins/core/DebugConsole/`
-  (that plugin's own README has the full story — this file is just the
-  Qt-free data side of it). Any plugin/core code can call
-  `log(source, message)` directly (import the module, no `api` handle
-  needed) from anywhere at runtime, not just inside `register(api)` —
-  the same "construct/reach directly, convention not import" pattern
-  `config_store.py`'s `PluginConfigStore` already relies on elsewhere in
-  this codebase. Not persisted (ephemeral, cleared on app restart or via
-  DebugConsole's "Clear" button) and capped at 1000 entries.
-- `notification_bus.py` — `NotificationEntry`/`push`/`entries`/
-  `entries_for`/`add_listener`/`remove_listener`/`clear`: the same
-  in-memory, cross-plugin, no-`api`-handle-needed bus pattern as
-  `debug_log.py` above, added 2026-08-03 alongside
-  `plugins/core/Notification/` (that plugin's own README has the full
-  socket/template contract — this file is just the Qt-free data side of
-  it). `push(source, project_id, repo_id, label, ...)` is the "template"
-  contract: `repo_id=None` means the notification applies to every repo in
-  the project, a specific repo id scopes it to just that repo — the
-  producer picks this at push time, there is no user-facing scope toggle.
-  Not persisted, same reasoning as `debug_log.py` (a notification's
-  `on_click` is a live Python callback that can't survive an app restart
-  anyway) and capped at 500 entries.
 
-None of these six files import each other. `hooks.py` and `file_opener.py`
-import `core.models` (for `Project`/`Repo`); `config_store.py` imports
-`core.store._atomic_write`; `debug_log.py`/`notification_bus.py` have no
-internal imports at all. All are absolute imports to modules that live
-directly in `core/`, not in this subpackage.
+The hook registry (`hooks.py`) and the two in-memory event buses
+(`debug_log.py`, `notification_bus.py`) that used to live in this folder
+moved to `core/events/` (2026-08-09 reorg) — see `core/events/README.md`.
 
 ## Plugins
 

@@ -5,11 +5,11 @@ from pathlib import Path
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from core.extensibility.file_opener import FileOpenerRegistry
-from core.git_service import GitService
+from core.vcs.git_service import GitService
 from core.models import Project, Repo
 from core.os_utils import open_with_default_app
-from core.paths import resolve_repo_path
-from core.store import LocalConfigStore
+from core.storage.config_store import LocalConfigStore
+from core.vcs.paths import resolve_repo_path
 from interface.shared.widget_helpers import show_exclusive
 from plugins.core.explorer.browser_widget import RepoBrowserWidget
 

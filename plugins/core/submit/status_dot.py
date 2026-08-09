@@ -18,9 +18,9 @@ class RepoStatusDot(QLabel):
     - "loading": a status check is in flight, or the last one is more than
       10 minutes stale — hidden, no color.
     - "dirty": the working tree has modified/staged changes pending —
-      yellow (core.theme's warning color).
+      yellow (interface.theme's warning color).
     - "fresh": the working tree was clean the last time it was checked, and
-      that check happened within the last 10 minutes — blue (core.theme's
+      that check happened within the last 10 minutes — blue (interface.theme's
       accent color).
     """
 

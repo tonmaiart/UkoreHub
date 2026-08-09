@@ -16,15 +16,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.auth.google_auth import run_installed_app_login
+from core.auth.token_store import SecureTokenStore, TokenStoreFallbackUsed
 from core.exceptions import GoogleAuthError
-from core.google_auth import GoogleTokenStore, run_installed_app_login
-from core.store import SystemConfigStore
+from core.storage.config_store import SystemConfigStore
 
 
 class _GoogleLoginWorker(QThread):
     """Runs the Google OAuth loopback login flow off the UI thread — same
     network-off-main-thread pattern as common_settings_page.py's
-    _AvatarFetchWorker. core/google_auth.py's run_installed_app_login()
+    _AvatarFetchWorker. core/auth/google_auth.py's run_installed_app_login()
     opens the system browser itself and blocks until the artist finishes
     (or the flow times out), so there's nothing else for this worker to do
     besides report the outcome."""
@@ -58,8 +59,8 @@ class StudioSettingsDialog(QDialog):
     registry sync, not just this machine's own preference.
 
     Two states, decided once at construction time by whether a Google
-    refresh token is already cached (core/google_auth.py's
-    GoogleTokenStore):
+    refresh token is already cached (core/auth/token_store.py's
+    SecureTokenStore):
     - No token yet -> the gate: Import from JSON (or manual Client ID/
       Secret entry) + Login with Google. Nothing is written to
       data/system_config.json until login actually succeeds — client_id/
@@ -71,12 +72,12 @@ class StudioSettingsDialog(QDialog):
       persists them all together. Re-running Login with Google is still
       available here too (e.g. switching accounts, or a revoked token)."""
 
-    def __init__(self, parent=None, *, system_config_store: SystemConfigStore, cache_dir: Path):
+    def __init__(self, parent=None, *, system_config_store: SystemConfigStore, google_tokens: SecureTokenStore):
         super().__init__(parent)
         self.setWindowTitle("Studio Setting")
         self.resize(480, 420)
         self._system_config_store = system_config_store
-        self._token_store = GoogleTokenStore(cache_dir / "gcs_refresh_token.json")
+        self._token_store = google_tokens
         self._login_worker: _GoogleLoginWorker | None = None
         # Set by _on_import_from_json only — the JSON download carries a
         # project_id, saved as a courtesy default on first login if the
@@ -196,7 +197,10 @@ class StudioSettingsDialog(QDialog):
         self._login_worker.start()
 
     def _on_gate_login_succeeded(self, refresh_token: str, client_id: str, client_secret: str) -> None:
-        self._token_store.save_token(refresh_token)
+        try:
+            self._token_store.save_token(refresh_token)
+        except TokenStoreFallbackUsed as exc:
+            QMessageBox.warning(self, "Login with Google", str(exc))
         self._system_config_store.set_google_oauth_client_id(client_id)
         self._system_config_store.set_google_oauth_client_secret(client_secret)
         if self._pending_project_id and not self._system_config_store.gcs_project_id:
@@ -273,7 +277,10 @@ class StudioSettingsDialog(QDialog):
         self._login_worker.start()
 
     def _on_relogin_succeeded(self, refresh_token: str) -> None:
-        self._token_store.save_token(refresh_token)
+        try:
+            self._token_store.save_token(refresh_token)
+        except TokenStoreFallbackUsed as exc:
+            QMessageBox.warning(self, "Login with Google", str(exc))
         self._relogin_button.setEnabled(True)
         self._relogin_button.setText("Login with Google")
         QMessageBox.information(self, "Login with Google", "Login successful.")

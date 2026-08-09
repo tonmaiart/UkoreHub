@@ -20,7 +20,7 @@ def register(api) -> None:
         # Constructed fresh on every open — no state carried between opens,
         # same convention every other Settings entry point follows.
         dialog = StudioSettingsDialog(
-            owner.window(), system_config_store=api.system_config_store, cache_dir=api.cache_dir
+            owner.window(), system_config_store=api.system_config_store, google_tokens=api.google_tokens
         )
         dialog.exec()
 

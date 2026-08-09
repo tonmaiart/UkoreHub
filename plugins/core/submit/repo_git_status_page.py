@@ -19,13 +19,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.events.hooks import GitHookContext
 from core.exceptions import GitHubAuthError, GitOperationError, UkoreHubError
-from core.extensibility.hooks import GitHookContext
-from core.git_service import GitService
-from core.github.repo_access import check_repo_access
 from core.models import Project, Repo, RepoStatus
-from core.paths import resolve_repo_path
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
+from core.vcs.git_service import GitService
+from core.vcs.paths import resolve_repo_path
+from core.vcs.repo_access import check_repo_access
 from interface.shared.widget_helpers import confirm_action, show_exclusive
 from plugins.core.submit.commit_dialog import CommitDialog
 from plugins.core.submit.conflict_dialog import ConflictResolutionDialog

@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
-from core.extensibility.notification_bus import NotificationEntry
+from core.events.notification_bus import NotificationEntry
 
 _DATETIME_FORMAT = "%Y-%m-%d %H:%M"
 _ICON_SIZE = 28
@@ -12,7 +12,7 @@ _ICON_SIZE = 28
 
 class NotificationCard(QFrame):
     """The one card template every producer's notification renders through
-    (core.theme.py's QFrame#notificationCard idiom, same shape as
+    (interface.theme.py's QFrame#notificationCard idiom, same shape as
     _VideoCard elsewhere in this codebase): icon, label, date/time,
     and an optional click action. Only clickable (pointer cursor + hover
     highlight via the [clickable="true"] QSS property) when the entry

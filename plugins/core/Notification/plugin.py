@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from core.extensibility import notification_bus
 from interface.section_registry import SectionHost, SectionSpec
 from plugins.core.Notification.notification_page import SECTION_KEY, NotificationPage
 
 PLUGIN_ID = "notification"
-
-
-def _wire(page: NotificationPage, host: SectionHost) -> None:
-    notification_bus.add_listener(page.on_bus_event)
 
 
 def register(api) -> None:
@@ -17,7 +12,12 @@ def register(api) -> None:
         local_config_store=api.local_config,
         config_store=api.plugin_config_store(PLUGIN_ID, shared=False),
         git_service=api.git,
+        notification_bus=api.notification_bus,
     )
+
+    def _wire(page: NotificationPage, host: SectionHost) -> None:
+        api.notification_bus.add_listener(page.on_bus_event)
+
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,

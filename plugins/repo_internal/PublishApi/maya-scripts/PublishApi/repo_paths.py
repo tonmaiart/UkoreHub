@@ -41,7 +41,8 @@ def get_active_repo():
     Python has no PluginAPI instance to call plugin_config_store()/
     api.metadata through."""
     root = find_ukorehub_root()
-    from core.store import LocalConfigStore, MetadataStore
+    from core.storage.config_store import LocalConfigStore
+    from core.storage.metadata_store import MetadataStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
     project_id = local_config.active_project_id
@@ -85,7 +86,8 @@ def resolve_ref(ref: dict):
     should check `repo_path.is_dir()` themselves if that matters."""
     root = find_ukorehub_root()
     from core.exceptions import NotFoundError
-    from core.store import LocalConfigStore, MetadataStore
+    from core.storage.config_store import LocalConfigStore
+    from core.storage.metadata_store import MetadataStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
     store = MetadataStore(root / "data" / "projects.json")
@@ -106,7 +108,7 @@ def get_custom_paths(project_id: str, repo_id: str) -> list[dict]:
     get_pipeline_refs() uses."""
     root = find_ukorehub_root()
     from core.exceptions import NotFoundError
-    from core.store import MetadataStore
+    from core.storage.metadata_store import MetadataStore
 
     store = MetadataStore(root / "data" / "projects.json")
     try:

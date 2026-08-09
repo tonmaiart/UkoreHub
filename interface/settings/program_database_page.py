@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.exceptions import ConflictError, UkoreHubError
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.settings.program_dialog import ProgramDialog
 from interface.shared.image_asset import save_image_asset
 from interface.shared.widget_helpers import confirm_action

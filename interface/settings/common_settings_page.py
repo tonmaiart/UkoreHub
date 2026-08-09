@@ -6,8 +6,8 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from core.github.auth import fetch_avatar_bytes
-from core.store import LocalConfigStore
+from core.auth.github_auth import fetch_avatar_bytes
+from core.storage.config_store import LocalConfigStore
 
 AVATAR_SIZE = 48
 

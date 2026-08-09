@@ -4,8 +4,10 @@ from typing import Callable
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from core.vcs.git_service import GitService
 from core.models import Project, Repo
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.settings_tab_registry import SettingsTabRegistry
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.project_graph_view import ProjectGraphView
@@ -51,6 +53,7 @@ class ProjectEditorPage(QWidget):
         local_config_store: LocalConfigStore,
         pipeline_store: PipelineStore,
         settings_tab_registry: SettingsTabRegistry,
+        git_service: GitService,
     ):
         super().__init__(parent)
         self.store = store
@@ -62,6 +65,7 @@ class ProjectEditorPage(QWidget):
             local_config_store=local_config_store,
             pipeline_store=pipeline_store,
             settings_tab_registry=settings_tab_registry,
+            git_service=git_service,
         )
 
         layout = QVBoxLayout(self)

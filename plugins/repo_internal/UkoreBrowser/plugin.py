@@ -24,9 +24,9 @@ def register(api) -> None:
         return
     contributions = bridge.get("contributions", {})
     contributions[TOOL_ID] = {
-        # api.app_root is contributed too so `import core.store` / `core.paths`
-        # resolves inside Maya's Python — that's how this tool's vendored
-        # core/repo_context.py talks to UkoreHub's own Project/Repo model to
+        # api.app_root is contributed too so `import core.storage.metadata_store` /
+        # `core.vcs.paths` resolves inside Maya's Python — that's how this tool's
+        # vendored core/repo_context.py talks to UkoreHub's own Project/Repo model to
         # find the active repo root.
         "PYTHONPATH": {ANY_VERSION: [str(tool_root / "maya-scripts"), str(api.app_root)]},
     }

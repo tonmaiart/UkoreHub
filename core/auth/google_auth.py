@@ -1,5 +1,5 @@
 """Google OAuth 2.0 login for Desktop app clients — authenticates
-core/cloud_sync.py's GcsJsonSync as the logged-in artist's own Google
+core/vcs/cloud_sync.py's GcsJsonSync as the logged-in artist's own Google
 identity, instead of a service-account key file (the studio's GCP
 organization enforces iam.disableServiceAccountKeyCreation, so no
 downloadable key can be created at all).
@@ -28,10 +28,6 @@ accepting the 7-day re-login cadence.
 """
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-
 from core.exceptions import GoogleAuthError
 
 AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
@@ -43,9 +39,9 @@ def run_installed_app_login(client_id: str, client_secret: str) -> str:
     """Blocks until the artist completes login in their browser (or the
     flow times out) — call this off the UI thread. Returns a refresh_token
     (access_type="offline" + prompt="consent" guarantee one is issued even
-    on repeat logins) for the caller to persist via GoogleTokenStore;
-    core/cloud_sync.py exchanges it for short-lived access tokens as
-    needed."""
+    on repeat logins) for the caller to persist via
+    core/auth/token_store.py's SecureTokenStore; core/vcs/cloud_sync.py
+    exchanges it for short-lived access tokens as needed."""
     if not client_id or not client_secret:
         raise GoogleAuthError("Google OAuth Client ID/Secret not configured — set them in the Studio Setting window.")
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -67,59 +63,3 @@ def run_installed_app_login(client_id: str, client_secret: str) -> str:
     if not credentials.refresh_token:
         raise GoogleAuthError("Google did not return a refresh token — try logging in again.")
     return credentials.refresh_token
-
-
-SERVICE_NAME = "UkoreHub"
-KEYRING_USERNAME_KEY = "gcs_refresh_token"
-
-
-class GoogleTokenStore:
-    """Stores the Google refresh token via the OS keyring, falling back to
-    a gitignored local file (cache/gcs_refresh_token.json) if the keyring
-    isn't available — same shape as core/github/token_store.py's
-    TokenStore, duplicated rather than shared since that class lives in
-    core/github/ (scoped to GitHub only per its own README) and this one
-    isn't GitHub-related."""
-
-    def __init__(self, fallback_path: Path):
-        self.fallback_path = Path(fallback_path)
-
-    def save_token(self, token: str) -> None:
-        try:
-            import keyring
-
-            keyring.set_password(SERVICE_NAME, KEYRING_USERNAME_KEY, token)
-            if self.fallback_path.exists():
-                self.fallback_path.unlink()
-        except Exception:
-            self._save_fallback(token)
-
-    def _save_fallback(self, token: str) -> None:
-        self.fallback_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = self.fallback_path.with_suffix(self.fallback_path.suffix + ".tmp")
-        tmp_path.write_text(json.dumps({"token": token}), encoding="utf-8")
-        os.replace(tmp_path, self.fallback_path)
-
-    def load_token(self) -> str | None:
-        try:
-            import keyring
-
-            token = keyring.get_password(SERVICE_NAME, KEYRING_USERNAME_KEY)
-            if token:
-                return token
-        except Exception:
-            pass
-        if self.fallback_path.exists():
-            data = json.loads(self.fallback_path.read_text(encoding="utf-8"))
-            return data.get("token")
-        return None
-
-    def clear_token(self) -> None:
-        try:
-            import keyring
-
-            keyring.delete_password(SERVICE_NAME, KEYRING_USERNAME_KEY)
-        except Exception:
-            pass
-        if self.fallback_path.exists():
-            self.fallback_path.unlink()

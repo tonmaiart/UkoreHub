@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
-from core.store import LocalConfigStore, MetadataStore, SystemConfigStore
+from core.storage.config_store import LocalConfigStore, SystemConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.browser_links.browser_links_settings_page import BrowserLinksSettingsPage
 from interface.repo_settings.local_repository_page import LocalRepositoryPage
 from interface.repo_settings.requirements_and_plugins_page import RequirementsAndPluginsPage

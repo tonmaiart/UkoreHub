@@ -118,7 +118,7 @@ def _get_repo(project_id: str, repo_id: str):
     that repo's own plugin_data (core/models.py's Repo)."""
     root = publish_api_repo_paths.find_ukorehub_root()
     from core.exceptions import NotFoundError
-    from core.store import MetadataStore
+    from core.storage.metadata_store import MetadataStore
 
     store = MetadataStore(root / "data" / "projects.json")
     try:

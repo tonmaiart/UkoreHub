@@ -338,7 +338,7 @@ class TicketManagerDialog(QtWidgets.QDialog):
 
     def _describe_ref(self, ref: dict) -> str:
         from core.exceptions import NotFoundError
-        from core.store import MetadataStore
+        from core.storage.metadata_store import MetadataStore
 
         root = repo_paths.find_ukorehub_root()
         store = MetadataStore(root / "data" / "projects.json")

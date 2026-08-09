@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QLineF, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -27,19 +27,23 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
+    QProgressDialog,
     QVBoxLayout,
     QWidget,
 )
 
 from core.exceptions import ConflictError, NotFoundError, UkoreHubError
+from core.vcs.git_service import GitService
 from core.models import Project, Repo
-from core.store import LocalConfigStore, MetadataStore
+from core.storage.config_store import LocalConfigStore
+from core.storage.metadata_store import MetadataStore
 from interface.settings_tab_registry import SettingsTabRegistry
 from plugins.core.project_editor.dialogs import RepoDialog
 from interface.shared.image_asset import pick_image_file, save_image_asset
 from interface.shared.widget_helpers import confirm_action
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.repo_settings_panel import RepoSettingsDialog
+from plugins.core.project_editor.required_repo_clone_worker import RequiredRepoCloneWorker
 
 NODE_WIDTH = 160.0
 NODE_HEIGHT = 110.0
@@ -68,7 +72,7 @@ _EDGE_Z_VALUE = 1
 _EDGE_HIGHLIGHT_Z_VALUE = 2
 # Radial gradient background (gray center fading to black edges), painted
 # in drawBackground below instead of a flat setBackgroundBrush color —
-# darker than the app-wide theme background (core/theme.py's "grey_dark"
+# darker than the app-wide theme background (interface/theme.py's "grey_dark"
 # background="#1e1f22", inherited by default since this view sets no
 # stylesheet of its own) so the graph reads as its own recessed canvas
 # rather than blending into the surrounding chrome. Centered on the
@@ -95,7 +99,7 @@ _OVERLAY_MARGIN = 12
 
 
 def _theme_colors():
-    from core.theme import DEFAULT_THEME_NAME, get_theme
+    from interface.theme import DEFAULT_THEME_NAME, get_theme
 
     return get_theme(DEFAULT_THEME_NAME)
 
@@ -421,12 +425,14 @@ class ProjectGraphView(QGraphicsView):
         local_config_store: LocalConfigStore,
         pipeline_store: PipelineStore,
         settings_tab_registry: SettingsTabRegistry,
+        git_service: GitService,
     ):
         super().__init__(parent)
         self.store = store
         self.local_config_store = local_config_store
         self.pipeline_store = pipeline_store
         self.settings_tab_registry = settings_tab_registry
+        self.git_service = git_service
 
         self._set_active_repo_callback: Callable[[str, str], None] | None = None
         self._project_id: str | None = None
@@ -530,13 +536,72 @@ class ProjectGraphView(QGraphicsView):
                 repo = self.store.get_repo(project_id, repo_id)
             except NotFoundError:
                 return
-            if not confirm_action(
-                self,
-                "Clone Repo",
-                f"'{repo.name}' hasn't been cloned yet. Clone it and switch to it now?",
-            ):
+            required = self.pipeline_store.get_required_repos(project_id, repo_id)
+            to_clone = [(pid, r) for pid, r in required if not self._is_repo_cloned(pid, r.id)]
+            if not confirm_action(self, "Clone Repo", self._build_clone_confirm_message(repo, to_clone)):
                 return
+            if to_clone:
+                if not self._clone_required_repos(to_clone):
+                    return
+                self.load_project(self._project_id)
         self._set_active_repo_callback(project_id, repo_id)
+
+    def _build_clone_confirm_message(self, repo: Repo, to_clone: list[tuple[str, Repo]]) -> str:
+        if not to_clone:
+            return f"'{repo.name}' hasn't been cloned yet. Clone it and switch to it now?"
+        noun = "repo" if len(to_clone) == 1 else "repos"
+        bullets = "\n".join(f"  • {target_repo.name}" for _pid, target_repo in to_clone)
+        return (
+            f"'{repo.name}' hasn't been cloned yet.\n\n"
+            f"It connects an Input Path to the following required {noun}, which will also be cloned:\n\n"
+            f"{bullets}\n\n"
+            f"Clone everything and switch to '{repo.name}' now?"
+        )
+
+    def _clone_required_repos(self, to_clone: list[tuple[str, Repo]]) -> bool:
+        workspace_root = self.local_config_store.workspace_root
+        progress = QProgressDialog("Preparing...", None, 0, len(to_clone), self)
+        progress.setWindowTitle("Cloning Required Repos")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        worker = RequiredRepoCloneWorker(git_service=self.git_service, workspace_root=workspace_root, targets=to_clone)
+        loop = QEventLoop()
+        outcome: dict[str, object] = {"ok": False, "repo_name": None, "error": None}
+        step = {"n": 0}
+
+        def on_progress(repo_name: str) -> None:
+            progress.setLabelText(f"Cloning '{repo_name}'...")
+            progress.setValue(step["n"])
+            step["n"] += 1
+
+        def on_finished_ok() -> None:
+            outcome["ok"] = True
+            loop.quit()
+
+        def on_failed(repo_name: str, error: str) -> None:
+            outcome["repo_name"] = repo_name
+            outcome["error"] = error
+            loop.quit()
+
+        worker.repo_progress.connect(on_progress)
+        worker.finished_ok.connect(on_finished_ok)
+        worker.failed.connect(on_failed)
+        worker.start()
+        loop.exec()
+        progress.close()
+        worker.wait()
+
+        if not outcome["ok"]:
+            QMessageBox.warning(
+                self,
+                "Clone Failed",
+                f"Cloning required repo '{outcome['repo_name']}' failed:\n\n{outcome['error']}\n\n"
+                "Some required repos may not have been cloned. Nothing was switched — you can try again.",
+            )
+            return False
+        return True
 
     def _is_repo_cloned(self, project_id: str, repo_id: str) -> bool:
         workspace_root = self.local_config_store.workspace_root

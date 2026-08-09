@@ -57,16 +57,19 @@ def check_git_lfs_prerequisite() -> bool:
     return shutil.which("git-lfs") is not None
 
 
-def _build_cloud_sync(data_dir: Path, appdata_dir: Path, cache_dir: Path):
+def _build_cloud_sync(data_dir: Path, appdata_dir: Path, google_tokens):
     """Best-effort: returns None (cloud sync disabled, the shared stores
     stay purely local — the pre-migration behavior) only if no bucket name
     can be found at all, from either source below. The bucket is
     public-read, so a machine with no cached Google refresh token (see
-    core/google_auth.py's GoogleTokenStore — obtained via the "Studio"
+    core/auth/token_store.py's SecureTokenStore — obtained via the "Studio"
     button, contributed by plugins/core/CloudConfig/'s plugin.py via the
     sidebar footer registry) still gets a real GcsJsonSync that can pull()
     anonymously; it just can't push() (see GcsJsonSync.can_push) until
-    that artist logs in.
+    that artist logs in. google_tokens is constructed by the caller
+    (main()) before UkoreCore exists, since this function needs to read the
+    cached refresh token before SystemConfigStore's bucket name is even
+    known.
 
     Reads config fields off the raw local system_config.json rather than
     through SystemConfigStore, since that store is itself one of the
@@ -101,11 +104,9 @@ def _build_cloud_sync(data_dir: Path, appdata_dir: Path, cache_dir: Path):
     client_id = config.get("google_oauth_client_id")
     client_secret = config.get("google_oauth_client_secret")
 
-    from core.google_auth import GoogleTokenStore
+    refresh_token = google_tokens.load_token()
 
-    refresh_token = GoogleTokenStore(cache_dir / "gcs_refresh_token.json").load_token()
-
-    from core.cloud_sync import GcsJsonSync
+    from core.vcs.cloud_sync import GcsJsonSync
 
     return GcsJsonSync(bucket_name, project_id, client_id, client_secret, refresh_token)
 
@@ -151,15 +152,15 @@ def main() -> None:
             "may not sync correctly.",
         )
 
+    from core.app_core import UkoreCore
+    from core.auth.token_store import SecureTokenStore
+    from core.events.debug_log import DebugLogBus
+    from core.events.notification_bus import NotificationBus
     from core.exceptions import ConflictError
-    from core.extensibility import debug_log
     from core.extensibility.file_opener import FileOpenerRegistry
-    from core.extensibility.hooks import HookRegistry
     from core.extensibility.loader import apply_plugins, discover_plugins, plugin_source
-    from core.git_service import GitService
-    from core.github.token_store import TokenStore
     from core.relaunch import relaunch_ukorehub_exe
-    from core.store import LocalConfigStore, MetadataStore, SystemConfigStore, migrate_legacy_programs, read_project_ids
+    from core.storage.metadata_store import migrate_legacy_programs, read_project_ids
     from interface.builtin_settings_tabs import register_builtin_settings_tabs
     from interface.main_window import MainWindow
     from interface.plugin_api import PLUGIN_API_VERSION, PluginAPI
@@ -195,34 +196,48 @@ def main() -> None:
     cache_dir = REPO_ROOT / "cache"
     cache_dir.mkdir(exist_ok=True)
 
+    # debug_bus/notification_bus/google_tokens are built here, before
+    # UkoreCore exists, because the cloud-bootstrap block right below
+    # already needs to log to the debug bus and read the cached Google
+    # refresh token — UkoreCore itself can't be constructed yet at this
+    # point (SystemConfigStore's bucket name isn't known until after the
+    # cloud pull completes). Passed into UkoreCore(...) further down so
+    # nothing is built twice.
+    debug_bus = DebugLogBus(max_entries=1000)
+    notification_bus = NotificationBus(max_entries=500)
+    google_tokens = SecureTokenStore(
+        "UkoreHub", "gcs_refresh_token", cache_dir / "gcs_refresh_token.json", token_label="Google"
+    )
+
     # projects.json, system_config.json, and programs.json are shared
-    # studio-wide via Google Cloud Storage (core/cloud_sync.py), not git —
+    # studio-wide via Google Cloud Storage (core/vcs/cloud_sync.py), not git —
     # pull whatever's newest before constructing the stores that read them,
     # and wire on_save so every local edit pushes straight back up.
     #
     # projects.json is itself just a lightweight index now (id/name only) —
     # the real per-project data lives in projects/<id>.json blobs (see
-    # core/store.py's MetadataStore, data/README.md). Once the index is
-    # pulled, pull every project blob it references too; a still-old-shape
-    # index (schema_version < 2, repos embedded) means nothing has migrated
-    # yet, so read_project_ids returns None and there's nothing per-project
-    # to pull — MetadataStore.load()'s one-time migration handles that
-    # locally and pushes the new blobs itself once constructed below.
-    cloud_sync = _build_cloud_sync(data_dir, appdata_dir, cache_dir)
+    # core/storage/metadata_store.py's MetadataStore, data/README.md). Once
+    # the index is pulled, pull every project blob it references too; a
+    # still-old-shape index (schema_version < 2, repos embedded) means
+    # nothing has migrated yet, so read_project_ids returns None and
+    # there's nothing per-project to pull — MetadataStore.load()'s one-time
+    # migration handles that locally and pushes the new blobs itself once
+    # constructed below.
+    cloud_sync = _build_cloud_sync(data_dir, appdata_dir, google_tokens)
     if cloud_sync is None:
         print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
-        debug_log.log("CloudSync", "not configured on this machine — shared data stays local-only")
+        debug_bus.log("CloudSync", "not configured on this machine — shared data stays local-only")
     else:
         try:
             for blob_name in ("projects.json", "programs.json", "system_config.json"):
                 cloud_sync.pull(blob_name, data_dir / blob_name)
-                debug_log.log("CloudSync", f"pulled '{blob_name}'")
+                debug_bus.log("CloudSync", f"pulled '{blob_name}'")
             project_ids = read_project_ids(data_dir / "projects.json")
             if project_ids is not None:
                 for project_id in project_ids:
                     blob_name = f"projects/{project_id}.json"
                     cloud_sync.pull(blob_name, data_dir / "projects" / f"{project_id}.json")
-                    debug_log.log("CloudSync", f"pulled '{blob_name}'")
+                    debug_bus.log("CloudSync", f"pulled '{blob_name}'")
         except Exception as exc:
             # Revoked/expired Google login, no network, IAM not granted yet,
             # etc. — never block the app from opening over a cloud problem;
@@ -230,7 +245,7 @@ def main() -> None:
             # at all". The artist can re-run "Login with Google" in Setting
             # > Developer if this keeps happening.
             print(f"UkoreHub: cloud sync unavailable this run ({exc}) — shared data stays local-only.")
-            debug_log.log("CloudSync", f"unavailable this run ({exc}) — shared data stays local-only")
+            debug_bus.log("CloudSync", f"unavailable this run ({exc}) — shared data stays local-only")
             cloud_sync = None
 
     def _push_shared_blob(blob_name: str) -> None:
@@ -238,11 +253,11 @@ def main() -> None:
             return
         try:
             cloud_sync.push(blob_name, data_dir / blob_name)
-            debug_log.log("CloudSync", f"pushed '{blob_name}'")
+            debug_bus.log("CloudSync", f"pushed '{blob_name}'")
         except ConflictError as exc:
             # Meaningful to the caller (a real conflicting edit elsewhere) —
             # let it propagate so the UI can tell the artist and reload.
-            debug_log.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
+            debug_bus.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
             raise
         except Exception as exc:
             # Timeout, no network, revoked login, etc. — the local save
@@ -250,7 +265,7 @@ def main() -> None:
             # don't fail the whole edit over a transient cloud problem;
             # just warn. The next successful save catches this file back up.
             print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
-            debug_log.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+            debug_bus.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
     def _delete_shared_blob(blob_name: str) -> None:
         # Only used by MetadataStore.delete_project, to clean up a removed
@@ -262,20 +277,28 @@ def main() -> None:
             return
         try:
             cloud_sync.delete(blob_name)
-            debug_log.log("CloudSync", f"deleted '{blob_name}'")
+            debug_bus.log("CloudSync", f"deleted '{blob_name}'")
         except Exception as exc:
             print(f"UkoreHub: cloud delete of '{blob_name}' failed ({exc}) — it may linger in the bucket.")
-            debug_log.log("CloudSync", f"delete of '{blob_name}' failed ({exc}) — it may linger in the bucket")
+            debug_bus.log("CloudSync", f"delete of '{blob_name}' failed ({exc}) — it may linger in the bucket")
 
-    store = MetadataStore(
-        data_dir / "projects.json",
+    core = UkoreCore(
+        data_dir=data_dir,
+        cache_dir=cache_dir,
         assets_dir=assets_dir,
-        on_save=_push_shared_blob,
-        on_delete=_delete_shared_blob,
+        on_metadata_save=_push_shared_blob,
+        on_metadata_delete=_delete_shared_blob,
+        on_system_config_save=lambda: _push_shared_blob("system_config.json"),
+        debug_bus=debug_bus,
+        notification_bus=notification_bus,
+        google_tokens=google_tokens,
     )
-    system_config_store = SystemConfigStore(
-        data_dir / "system_config.json", on_save=lambda: _push_shared_blob("system_config.json")
-    )
+    store = core.metadata
+    system_config_store = core.system_config
+    local_config_store = core.local_config
+    hook_registry = core.hooks
+    git_service = core.git
+    token_store = core.github_tokens
     # programs.json is a retired studio-wide Program Database — Program is
     # now owned per-Project (Project.programs, core/models.py) instead.
     # Still pulled above (fixed 3-blob loop) so this migration reads the
@@ -283,18 +306,12 @@ def main() -> None:
     # deliberately left in place rather than deleted — see
     # migrate_legacy_programs's own docstring.
     migrate_legacy_programs(store, data_dir / "programs.json")
-    # local_config.json and github_token.json are per-machine and gitignored
-    # — see cache_dir comment above.
-    local_config_store = LocalConfigStore(cache_dir / "local_config.json")
     # Workspace root is fixed to the repo's own storage/ folder — there is no
     # UI to point it elsewhere (see interface/settings/common_settings_page.py),
     # so force it here on every launch rather than only defaulting it once.
     forced_workspace_root = str(REPO_ROOT / "storage")
     if local_config_store.workspace_root != forced_workspace_root:
         local_config_store.set_workspace_root(forced_workspace_root)
-    hook_registry = HookRegistry()
-    git_service = GitService(hooks=hook_registry)
-    token_store = TokenStore(cache_dir / "github_token.json")
     # GitHub login now happens in the launcher exe before this process is
     # even spawned (updater.py (UkoreHubLauncher repo) owns the token cache) —
     # just load whatever it already cached, same "presence, not validity"
@@ -389,11 +406,7 @@ def main() -> None:
     )
 
     plugin_api = PluginAPI(
-        store=store,
-        local_config_store=local_config_store,
-        system_config_store=system_config_store,
-        git_service=git_service,
-        hooks=hook_registry,
+        core=core,
         section_registry=section_registry,
         settings_tab_registry=settings_tab_registry,
         file_opener_registry=file_opener_registry,
@@ -438,12 +451,8 @@ def main() -> None:
         print(f"UkoreHub: plugin at '{failure.dir_path}' failed to load: {failure.reason}")
 
     window = MainWindow(
-        store,
-        local_config_store,
-        git_service,
-        token_store,
+        core,
         cache_dir,
-        hook_registry,
         section_registry,
         settings_tab_registry,
         file_opener_registry,
