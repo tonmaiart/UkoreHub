@@ -37,12 +37,11 @@ from core.vcs.git_service import GitService
 from core.models import Project, Repo
 from core.storage.config_store import LocalConfigStore
 from core.storage.metadata_store import MetadataStore
-from interface.settings_tab_registry import SettingsTabRegistry
+from interface.builtin_settings_tabs import LOCAL_REPOSITORY
 from plugins.core.project_editor.dialogs import RepoDialog
 from interface.shared.image_asset import pick_image_file, save_image_asset
 from interface.shared.widget_helpers import confirm_action
 from plugins.core.project_editor.pipeline_store import PipelineStore
-from plugins.core.project_editor.repo_settings_panel import RepoSettingsDialog
 from plugins.core.project_editor.required_repo_clone_worker import RequiredRepoCloneWorker
 
 NODE_WIDTH = 160.0
@@ -424,17 +423,16 @@ class ProjectGraphView(QGraphicsView):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         pipeline_store: PipelineStore,
-        settings_tab_registry: SettingsTabRegistry,
         git_service: GitService,
     ):
         super().__init__(parent)
         self.store = store
         self.local_config_store = local_config_store
         self.pipeline_store = pipeline_store
-        self.settings_tab_registry = settings_tab_registry
         self.git_service = git_service
 
         self._set_active_repo_callback: Callable[[str, str], None] | None = None
+        self._open_settings_tab_callback: Callable[[str], None] | None = None
         self._project_id: str | None = None
         self._nodes: dict[str, RepoNodeItem] = {}
         self._edges: list[PipelineEdgeItem] = []
@@ -527,6 +525,9 @@ class ProjectGraphView(QGraphicsView):
 
     def bind_set_active_repo(self, callback: Callable[[str, str], None]) -> None:
         self._set_active_repo_callback = callback
+
+    def bind_open_settings_tab(self, callback: Callable[[str], None]) -> None:
+        self._open_settings_tab_callback = callback
 
     def request_active_repo(self, project_id: str, repo_id: str) -> None:
         if self._set_active_repo_callback is None:
@@ -958,20 +959,18 @@ class ProjectGraphView(QGraphicsView):
     # -- node context-menu actions ---------------------------------------
 
     def open_repo_settings(self) -> None:
-        """Opens RepoSettingsDialog for whichever repo is currently ACTIVE
-        (not necessarily the node that was right-clicked — see
-        RepoSettingsDialog's own docstring for why)."""
-        title = "Repository Setting"
-        project_id = self.local_config_store.active_project_id
-        repo_id = self.local_config_store.active_repo_id
-        if project_id and repo_id:
-            try:
-                repo = self.store.get_repo(project_id, repo_id)
-                title = f"Repository Setting — {repo.name}"
-            except NotFoundError:
-                pass
-        dialog = RepoSettingsDialog(self, settings_tab_registry=self.settings_tab_registry, title=title)
-        dialog.exec()
+        """Opens the unified Settings dialog on its Repo Setting (Dev) >
+        Local Repository tab, for whichever repo is currently ACTIVE (not
+        necessarily the node that was right-clicked — every Repo Setting
+        (Dev) page self-resolves the active repo from local_config_store,
+        same as every other CATEGORY_REPO tab). Repo-scoped settings used
+        to render in this plugin's own "Repository Setting" popup
+        (RepoSettingsDialog, retired) — they moved back into the main
+        Settings dialog, so this just opens that dialog via
+        UICommandService.open_settings_tab instead of building a second one."""
+        if self._open_settings_tab_callback is None:
+            return
+        self._open_settings_tab_callback(LOCAL_REPOSITORY)
         # Custom Paths' "Connect Input Path" section (see
         # custom_paths_settings_page.py) can add/remove pipeline_inputs
         # entries while this dialog is open — reload so the graph's edges

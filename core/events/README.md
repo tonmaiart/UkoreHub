@@ -4,9 +4,13 @@ The hook registry and the two in-memory event buses. No PySide6/Qt imports
 here — deliberately not `QObject`s, so `core/` stays importable and
 testable without a `QApplication`.
 
-- `hooks.py` — `GitHookEvent`/`GitHookContext`/`HookRegistry`: plain-Python
-  pub/sub for git lifecycle events (before/after clone/pull/push/commit),
-  fired from `core/vcs/git_service.py`.
+- `hooks.py` — `AppLifecycleContext`/`AppLifecycleHooks`: a fixed,
+  three-point plugin lifecycle (`on_app_start`/`on_repo_changed`/
+  `on_app_close`, fired from `interface/main_window.py`), replacing an
+  older open-ended `GitHookEvent` pub/sub (14 event keys spanning
+  before/after clone/pull/push/commit, fired from `core/vcs/git_service.py`,
+  plus these same three) that had zero subscribers anywhere in `plugins/`
+  — `core/vcs/git_service.py` fires nothing at all now.
 - `bus.py` — `InMemoryEventBus[T]`: generic base (`push`, `entries`,
   `add_listener`, `remove_listener`, `clear`, capped at `max_entries`)
   shared by the two buses below.

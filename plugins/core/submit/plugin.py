@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from interface.section_registry import SectionHost, SectionSpec
+from interface.section_registry import UICommandService, SectionSpec
 from plugins.core.submit.repo_git_status_page import RepoGitStatusPage
 
 SECTION_KEY = "repo_git_status"
 
 
-def _wire(page: RepoGitStatusPage, host: SectionHost) -> None:
+def _wire(page: RepoGitStatusPage, host: UICommandService) -> None:
     page.sync_started.connect(lambda: host.set_status_message(f"Syncing {page._repo.name}..."))
     page.sync_finished.connect(lambda: host.set_status_message(""))
     page.sync_failed.connect(lambda _message: host.set_status_message(""))

@@ -1,7 +1,7 @@
 """UkoreCore: composition facade for core/'s stateful services.
 
 Collects the objects launcher.py used to construct one at a time
-(MetadataStore, SystemConfigStore, LocalConfigStore, HookRegistry,
+(MetadataStore, SystemConfigStore, LocalConfigStore, AppLifecycleHooks,
 GitService, SecureTokenStore x2, DebugLogBus, NotificationBus) behind a
 single object, so MainWindow/PluginAPI each take one `core` param instead
 of wiring each service individually.
@@ -40,7 +40,7 @@ from typing import Callable
 from core.auth.token_store import SecureTokenStore
 from core.events.bus import InMemoryEventBus
 from core.events.debug_log import DebugLogBus
-from core.events.hooks import HookRegistry
+from core.events.hooks import AppLifecycleHooks
 from core.events.notification_bus import NotificationBus
 from core.models import Project, Repo
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
@@ -74,8 +74,8 @@ class UkoreCore:
             self.data_dir / "system_config.json", on_save=on_system_config_save
         )
         self.local_config = LocalConfigStore(self.cache_dir / "local_config.json")
-        self.hooks = HookRegistry()
-        self.git = GitService(hooks=self.hooks)
+        self.hooks = AppLifecycleHooks()
+        self.git = GitService()
         self.github_tokens = SecureTokenStore(
             "UkoreHub", "github_access_token", self.cache_dir / "github_token.json", token_label="GitHub"
         )

@@ -25,7 +25,7 @@ navigation aids now.)
   Owns file-open delegation (`core/extensibility/file_opener.py`'s
   `FileOpenerRegistry`, so a plugin can claim an extension) and implements
   the optional `browse_to_path(path)` protocol method (see
-  `interface/section_registry.py`'s `SectionHost`) — `plugins/core/submit/`
+  `interface/section_registry.py`'s `UICommandService`) — `plugins/core/submit/`
   calls into this generically via `MainWindow`'s `navigate_and_focus`, not by
   importing this module directly.
 - `browser_widget.py` — `RepoBrowserWidget`: the actual browser — a
@@ -109,4 +109,4 @@ navigation aids now.)
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `interface/shared/` addition, or touches
-`interface/main_window.py`'s generic `SectionHost` wiring.
+`interface/main_window.py`'s generic `UICommandService` wiring.

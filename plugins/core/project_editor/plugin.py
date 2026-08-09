@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from interface.section_registry import SectionHost, SectionSpec
+from interface.section_registry import UICommandService, SectionSpec
 from interface.settings_tab_registry import CATEGORY_PROJECT, CATEGORY_REPO, SettingsTabSpec
 from plugins.core.project_editor.custom_paths_settings_page import CustomPathsSettingsPage
 from plugins.core.project_editor.pipeline_store import PipelineStore, migrate_legacy_data
@@ -13,9 +13,10 @@ PROJECT_SETTINGS_KEY = "project_editor_project"
 CUSTOM_PATHS_SETTINGS_KEY = "project_editor_custom_paths"
 
 
-def _wire(page: ProjectEditorPage, host: SectionHost) -> None:
+def _wire(page: ProjectEditorPage, host: UICommandService) -> None:
     page.bind_set_active_repo(host.set_active_repo)
     page.bind_switch_project(host.switch_project)
+    page.bind_open_settings_tab(host.open_settings_tab)
 
 
 def register(api) -> None:
@@ -25,7 +26,6 @@ def register(api) -> None:
         store=api.metadata,
         local_config_store=api.local_config,
         pipeline_store=pipeline_store,
-        settings_tab_registry=api.settings_tab_registry,
         git_service=api.git,
     )
     api.register_section(
@@ -35,13 +35,6 @@ def register(api) -> None:
             order=5,
             page_factory=lambda: page,
             wire=_wire,
-            # Always-visible docked panel, not a switchable sidebar row —
-            # see interface/section_registry.py's SectionSpec.persistent.
-            # register_section/wire/page_factory/background_threads all
-            # still apply the same way; only Sidebar's SectionTabList row
-            # and view_stack membership are skipped for a persistent
-            # section (see MainWindow._build_main_ui).
-            persistent=True,
         )
     )
     api.register_settings_tab(

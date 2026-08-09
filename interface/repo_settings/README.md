@@ -9,11 +9,11 @@ app-level settings just because both happen to register into
 
 Both tabs are `CATEGORY_REPO` (registered in
 `interface/builtin_settings_tabs.py`) and — like every `CATEGORY_REPO`
-tab — are not rendered by `interface/settings/settings_view.py` at all;
-they show up in `plugins/core/project_editor/`'s "Repository Setting"
-popup instead, read generically off `SettingsTabRegistry` (see
-`interface/settings/README.md`'s "No longer rendered here at all" note).
-Both are genuinely scoped to a single repo, so neither relies on
+tab — render inside `interface/settings/settings_view.py`'s **Repo
+Setting (Dev)** top tab (see that folder's `README.md`'s "Rendering
+history" note — from 2026-07-15 through this refactor they instead
+rendered in `plugins/core/project_editor/`'s "Repository Setting" popup,
+now retired). Both are genuinely scoped to a single repo, so neither relies on
 `set_repo()` (`MainWindow` never calls that on Settings pages) — both
 subclass `interface/shared/base_repo_settings_page.py`'s
 `BaseRepoSettingsPage`, which resolves the active project/repo itself from
@@ -52,6 +52,5 @@ for the type-specific rebuild.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `shared/` addition, or touches
-`plugins/core/project_editor/repo_settings_panel.py` (the actual
-container that renders these tabs) or `interface/main_window.py`'s
-`_apply_plugin_visibility`.
+`interface/settings/settings_view.py` (the actual container that renders
+these tabs) or `interface/main_window.py`'s `_apply_plugin_visibility`.

@@ -14,12 +14,12 @@ plugin would.
   `background_threads` (reaches into `page._git_worker`/`_status_worker`/
   `_stream_worker` for `MainWindow.closeEvent`'s shutdown cleanup) and
   `wire` — connects `sync_started`/`sync_finished`/`sync_failed` to
-  `SectionHost.set_status_message` (the sidebar status line) and
-  `browse_file_requested` to `SectionHost.navigate_and_focus` (jumps to
+  `UICommandService.set_status_message` (the sidebar status line) and
+  `browse_file_requested` to `UICommandService.navigate_and_focus` (jumps to
   Explorer's `"repo_browser"` section key and calls its optional
   `browse_to_path` protocol method — see
   `plugins/core/explorer/repo_browser_page.py`). See
-  `interface/section_registry.py`'s `SectionHost` for why this is a fixed
+  `interface/section_registry.py`'s `UICommandService` for why this is a fixed
   set of named callbacks rather than a generic dispatcher.
 - `repo_git_status_page.py` — `RepoGitStatusPage`: the top-level Submit
   page. Drives the full sync/commit/pull/push workflow via the workers
@@ -105,4 +105,4 @@ near-duplicate. See that plugin's own README for the feed's contract.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `interface/shared/` addition, or touches
-`interface/main_window.py`'s generic `SectionHost` wiring.
+`interface/main_window.py`'s generic `UICommandService` wiring.

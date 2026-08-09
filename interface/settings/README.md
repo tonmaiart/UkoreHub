@@ -12,29 +12,25 @@ via a "Studio" footer button that plugin contributes through
 `SidebarFooterActionRegistry` rather than a hardcoded Sidebar button. See
 that plugin's own README for why.
 
-- `settings_view.py` — `SettingsView` (the left-tab-bar shell) +
-  `SettingsDialog` (the popup wrapper around it, reverted 2026-07-19 back
-  to a dialog — matches Repository Setting's own `RepoSettingsDialog`
-  pattern in `plugins/core/project_editor/repo_settings_panel.py`, and
-  this app's own pre-registry history; briefly an embedded
-  `MainWindow.view_stack` page in between, see `SettingsDialog`'s own
-  docstring). `MainWindow._on_settings_requested` constructs a fresh
-  `SettingsDialog` on every open — no state carried between opens, same
-  convention `register_builtin_settings_tabs`' docstring documents for
-  every tab's `page_factory`. `SettingsView` itself is driven by
-  `interface/settings_tab_registry.py`'s `SettingsTabRegistry` (open,
-  ordered — built-in and plugin-provided tabs register into the same
-  collection, see `interface/builtin_settings_tabs.py`). Renders three
-  sections with a non-selectable header row each — **General** (whole-app/
-  machine settings) then **Developer** (studio-admin/internal-plumbing
-  tabs most users never need) — per each tab's `SettingsTabSpec.category`
-  (`CATEGORY_GENERAL`/`CATEGORY_REPO`/`CATEGORY_DEVELOPER`, default
-  General). `CATEGORY_REPO` tabs are registered in the same registry but
-  are not rendered here (see the "No longer rendered here at all" note
-  above) — only `CATEGORY_GENERAL`/`CATEGORY_DEVELOPER` show up in this
-  tab list. A blank non-selectable gap row (`_add_gap_row`) separates each
-  rendered category group from the next, on top of each header row's own
-  padding.
+- `settings_view.py` — `SettingsView` (a top-level `QTabWidget` with three
+  categories) + `SettingsDialog` (the popup wrapper around it, reverted
+  2026-07-19 back to a dialog, matching this app's own pre-registry
+  history; briefly an embedded `MainWindow.view_stack` page in between,
+  see `SettingsDialog`'s own docstring). `MainWindow._on_settings_requested`
+  constructs a fresh `SettingsDialog` on every open — no state carried
+  between opens, same convention `register_builtin_settings_tabs`'
+  docstring documents for every tab's `page_factory`. `SettingsView` itself
+  is driven by `interface/settings_tab_registry.py`'s `SettingsTabRegistry`
+  (open, ordered — built-in and plugin-provided tabs register into the
+  same collection, see `interface/builtin_settings_tabs.py`). Renders three
+  top-level tabs, each a `_CategoryPage` — **Account**
+  (`CATEGORY_GENERAL`), **Project (Dev)** (`CATEGORY_PROJECT` +
+  `CATEGORY_DEVELOPER`, shown as two header groups), and **Repo Setting
+  (Dev)** (`CATEGORY_REPO`, split into "Repository"/"Plugins" header
+  groups the same way the now-retired `RepoSettingsPanel` used to). A
+  `_CategoryPage` that resolves to exactly one `SettingsTabSpec` shows that
+  page directly with no tab-list chrome at all (Account today) — see that
+  class's own docstring.
   `get_tab_widget(key)` is the one public escape hatch for reaching a
   specific constructed page from outside — `main_window.py` uses it (via
   `SettingsDialog.view.get_tab_widget(...)`) to connect
@@ -89,24 +85,24 @@ the Browser Link runtime tab it configures — see that folder's `README.md`);
 this folder's remaining app/machine-level tabs — see that folder's
 `README.md`). Both are still registered into the same
 `SettingsTabRegistry` from `interface/builtin_settings_tabs.py`, still
-`CATEGORY_REPO`, still rendered by
-`plugins/core/project_editor/repo_settings_panel.py` — only where their
-source files live changed.
+`CATEGORY_REPO` — only where their source files live changed.
 
-**No longer rendered here at all:** as of 2026-07-15, `SettingsView` stops
-rendering `CATEGORY_REPO` entirely — every `CATEGORY_REPO` tab (Browser,
-Local Repository, Requirements & Plugins, plus `project_editor`'s own
-Custom Paths) now renders as a grouped tab list inside
-`plugins/core/project_editor/`'s "Repository Setting" popup instead,
-read generically off the same `SettingsTabRegistry`
-(`category == CATEGORY_REPO`) — see that plugin's `repo_settings_panel.py`.
-The tabs themselves are unchanged and still registered exactly as below —
-only which container renders them changed. "Project Data Editor" (full
-CRUD for the whole Project/Repo registry, formerly `CATEGORY_DEVELOPER`)
-moved out to `plugins/core/project_editor/` the same day, now as a
-node-graph top-level section rather than a Settings tab — see that
-plugin's README. "Project Status" (read-only per-repo clone/sync status
-tree, `CATEGORY_REPO`) was removed entirely 2026-07-20 — no longer needed.
+**Rendering history:** from 2026-07-15 through this refactor,
+`SettingsView` didn't render `CATEGORY_REPO` at all — every `CATEGORY_REPO`
+tab rendered instead inside `plugins/core/project_editor/`'s "Repository
+Setting" popup (`RepoSettingsPanel`/`RepoSettingsDialog`,
+`repo_settings_panel.py`), to avoid the same setting being editable from
+two different dialogs. That popup is now retired: `CATEGORY_REPO` tabs
+render here again, under the **Repo Setting (Dev)** top tab, and a repo
+node's "Repository Setting..." right-click opens this same dialog (via
+`UICommandService.open_settings_tab`) instead of a popup of its own — see
+`plugins/core/project_editor/project_graph_view.py`'s
+`open_repo_settings()`. "Project Data Editor" (full CRUD for the whole
+Project/Repo registry, formerly `CATEGORY_DEVELOPER`) moved out to
+`plugins/core/project_editor/` back on 2026-07-15, now as a node-graph
+top-level section rather than a Settings tab — see that plugin's README.
+"Project Status" (read-only per-repo clone/sync status tree,
+`CATEGORY_REPO`) was removed entirely 2026-07-20 — no longer needed.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `shared/` addition, or touches `main_window.py`'s

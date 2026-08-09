@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,6 @@ import urllib.parse
 from pathlib import Path
 from typing import Callable
 
-from core.events.hooks import GitHookContext, GitHookEvent, HookRegistry
 from core.exceptions import GitOperationError
 from core.models import CommitInfo, RepoStatus
 
@@ -23,6 +23,17 @@ _NO_WINDOW_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _GITHUB_TOKEN_ENV_VAR = "UKOREHUB_GITHUB_TOKEN"
 _GITHUB_HOSTS = {"github.com", "www.github.com"}
+
+# Git 2.35.2+'s CVE-2022-24765 mitigation refuses to operate on a repo whose
+# folder owner doesn't match the current user — including, as a special
+# case, any folder on a filesystem that doesn't record ownership at all
+# (exFAT/FAT32 external drives, some network shares), which is exactly the
+# shape a manually copy-pasted repo folder (see
+# core/storage/metadata_store.py's refresh_statuses_from_disk) tends to take.
+# Matches the path out of git's own suggested fix ("git config --global
+# --add safe.directory <path>") so _run_capture can self-heal instead of
+# every artist needing to run that command by hand per repo.
+_DUBIOUS_OWNERSHIP_RE = re.compile(r"detected dubious ownership in repository at '([^']+)'")
 
 
 def _non_interactive_env(extra: dict | None = None) -> dict:
@@ -51,15 +62,9 @@ def _non_interactive_env(extra: dict | None = None) -> dict:
 
 
 class GitService:
-    def __init__(self, git_executable: str | None = None, hooks: HookRegistry | None = None):
+    def __init__(self, git_executable: str | None = None):
         self.git_executable = git_executable or shutil.which("git") or "git"
         self._github_token: str | None = None
-        self._hooks = hooks
-
-    def _fire(self, event: GitHookEvent, context: GitHookContext | None) -> None:
-        if self._hooks is None or context is None:
-            return
-        self._hooks.fire(event, context)
 
     def set_github_token(self, token: str | None) -> None:
         """Token from the app's GitHub login (see interface/main_window.py),
@@ -180,31 +185,21 @@ class GitService:
                 f"git {' '.join(args)} failed with exit code {return_code}"
             )
 
-    def clone(
-        self, git_url: str, dest: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
-    ) -> None:
+    def clone(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> None:
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         auth_args, auth_env = self._github_auth_args_and_env(git_url)
-        self._fire(GitHookEvent.BEFORE_CLONE, context)
-        try:
-            # --progress forces git to emit its progress meter even though
-            # stdout is a pipe, not a terminal (git suppresses it by default
-            # otherwise).
-            self._run_streaming(
-                [*auth_args, "clone", "--progress", git_url, str(dest)],
-                cwd=dest.parent,
-                on_output=on_output,
-                extra_env=auth_env,
-            )
-        except GitOperationError:
-            self._fire(GitHookEvent.CLONE_FAILED, context)
-            raise
-        self._fire(GitHookEvent.AFTER_CLONE, context)
+        # --progress forces git to emit its progress meter even though
+        # stdout is a pipe, not a terminal (git suppresses it by default
+        # otherwise).
+        self._run_streaming(
+            [*auth_args, "clone", "--progress", git_url, str(dest)],
+            cwd=dest.parent,
+            on_output=on_output,
+            extra_env=auth_env,
+        )
 
-    def pull(
-        self, local_path: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
-    ) -> None:
+    def pull(self, local_path: Path, on_output: OutputCallback = None) -> None:
         # Read the remote URL from the repo itself so the same github.com
         # credential check applies whether it was cloned via HTTPS or SSH.
         try:
@@ -212,7 +207,6 @@ class GitService:
         except GitOperationError:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
-        self._fire(GitHookEvent.BEFORE_PULL, context)
         if not self.has_upstream(Path(local_path)):
             # Remote has no commits yet (repo was cloned empty, or nothing
             # has been pushed since) — there's no `origin/<branch>` to merge
@@ -220,26 +214,20 @@ class GitService:
             # was fetched". Nothing to pull; let the caller push first.
             if on_output:
                 on_output("Nothing to pull yet (remote has no commits).")
-            self._fire(GitHookEvent.AFTER_PULL, context)
             return
-        try:
-            # --no-rebase: explicitly request a merge (not rebase)
-            # reconciliation. Without this, modern git refuses to pull at all
-            # on diverged branches ("Need to specify how to reconcile
-            # divergent branches") unless the user has a global
-            # pull.rebase/pull.ff default configured — we can't rely on that
-            # being set, and our conflict-resolution workflow below is built
-            # around a real merge commit, not a rebase.
-            self._run_streaming(
-                [*auth_args, "pull", "--no-rebase", "--progress"],
-                cwd=Path(local_path),
-                on_output=on_output,
-                extra_env=auth_env,
-            )
-        except GitOperationError:
-            self._fire(GitHookEvent.PULL_FAILED, context)
-            raise
-        self._fire(GitHookEvent.AFTER_PULL, context)
+        # --no-rebase: explicitly request a merge (not rebase)
+        # reconciliation. Without this, modern git refuses to pull at all
+        # on diverged branches ("Need to specify how to reconcile
+        # divergent branches") unless the user has a global
+        # pull.rebase/pull.ff default configured — we can't rely on that
+        # being set, and our conflict-resolution workflow below is built
+        # around a real merge commit, not a rebase.
+        self._run_streaming(
+            [*auth_args, "pull", "--no-rebase", "--progress"],
+            cwd=Path(local_path),
+            on_output=on_output,
+            extra_env=auth_env,
+        )
 
     def fetch(self, repo_path: Path) -> None:
         """Updates remote-tracking refs (origin/<branch>) only — unlike
@@ -255,19 +243,15 @@ class GitService:
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
         self._run_capture([*auth_args, "fetch", "--quiet"], cwd=repo_path, extra_env=auth_env)
 
-    def open_or_sync(
-        self, git_url: str, dest: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
-    ) -> str:
+    def open_or_sync(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> str:
         dest = Path(dest)
         if not self.is_cloned(dest):
-            self.clone(git_url, dest, on_output=on_output, context=context)
+            self.clone(git_url, dest, on_output=on_output)
             return "cloned"
-        self.pull(dest, on_output=on_output, context=context)
+        self.pull(dest, on_output=on_output)
         return "pulled"
 
-    def push(
-        self, local_path: Path, on_output: OutputCallback = None, *, context: GitHookContext | None = None
-    ) -> None:
+    def push(self, local_path: Path, on_output: OutputCallback = None) -> None:
         local_path = Path(local_path)
         try:
             remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=local_path).strip()
@@ -282,15 +266,7 @@ class GitService:
             # both creates the branch on the remote and wires up tracking so
             # every later pull/push on this repo is a normal one.
             push_args += ["--set-upstream", "origin", self.get_current_branch(local_path)]
-        self._fire(GitHookEvent.BEFORE_PUSH, context)
-        try:
-            self._run_streaming(
-                [*auth_args, *push_args], cwd=local_path, on_output=on_output, extra_env=auth_env
-            )
-        except GitOperationError:
-            self._fire(GitHookEvent.PUSH_FAILED, context)
-            raise
-        self._fire(GitHookEvent.AFTER_PUSH, context)
+        self._run_streaming([*auth_args, *push_args], cwd=local_path, on_output=on_output, extra_env=auth_env)
 
     def stage_paths(self, repo_path: Path, paths: list[str]) -> None:
         if not paths:
@@ -325,9 +301,7 @@ class GitService:
         if untracked_paths:
             self._run_capture_batched(["clean", "-f"], untracked_paths, repo_path)
 
-    def commit(
-        self, repo_path: Path, message: str, amend: bool = False, *, context: GitHookContext | None = None
-    ) -> None:
+    def commit(self, repo_path: Path, message: str, amend: bool = False) -> None:
         args = ["commit"]
         message = message.strip()
         if amend:
@@ -338,13 +312,7 @@ class GitService:
                 args.append("--no-edit")
         else:
             args += ["-m", message]
-        self._fire(GitHookEvent.BEFORE_COMMIT, context)
-        try:
-            self._run_capture(args, cwd=Path(repo_path))
-        except GitOperationError:
-            self._fire(GitHookEvent.COMMIT_FAILED, context)
-            raise
-        self._fire(GitHookEvent.AFTER_COMMIT, context)
+        self._run_capture(args, cwd=Path(repo_path))
 
     def has_unresolved_merge(self, repo_path: Path) -> bool:
         return (Path(repo_path) / ".git" / "MERGE_HEAD").exists()
@@ -445,7 +413,21 @@ class GitService:
             return None
         return parts[0], parts[1]
 
-    def _run_capture(self, args: list[str], cwd: Path, extra_env: dict | None = None) -> str:
+    def _add_safe_directory(self, path: str) -> None:
+        # Best-effort: if this itself fails, the caller's retry will just
+        # hit the same dubious-ownership error again and raise normally.
+        subprocess.run(
+            [self.git_executable, "config", "--global", "--add", "safe.directory", path],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=_non_interactive_env(),
+            creationflags=_NO_WINDOW_FLAGS,
+        )
+
+    def _run_capture(
+        self, args: list[str], cwd: Path, extra_env: dict | None = None, *, _retried_ownership: bool = False
+    ) -> str:
         try:
             result = subprocess.run(
                 [self.git_executable, *args],
@@ -467,7 +449,13 @@ class GitService:
             # on `except GitOperationError` around this never see it.
             raise GitOperationError(f"git {' '.join(args)} failed to start: {exc}") from exc
         if result.returncode != 0:
-            raise GitOperationError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+            stderr = result.stderr.strip()
+            if not _retried_ownership:
+                match = _DUBIOUS_OWNERSHIP_RE.search(stderr)
+                if match:
+                    self._add_safe_directory(match.group(1))
+                    return self._run_capture(args, cwd, extra_env, _retried_ownership=True)
+            raise GitOperationError(f"git {' '.join(args)} failed: {stderr}")
         return result.stdout
 
     # Stays safely under Windows' ~32,767-char CreateProcess command-line

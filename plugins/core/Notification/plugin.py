@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from interface.section_registry import SectionHost, SectionSpec
+from interface.section_registry import UICommandService, SectionSpec
 from plugins.core.Notification.notification_page import SECTION_KEY, NotificationPage
 
 PLUGIN_ID = "notification"
@@ -15,7 +15,7 @@ def register(api) -> None:
         notification_bus=api.notification_bus,
     )
 
-    def _wire(page: NotificationPage, host: SectionHost) -> None:
+    def _wire(page: NotificationPage, host: UICommandService) -> None:
         api.notification_bus.add_listener(page.on_bus_event)
 
     api.register_section(

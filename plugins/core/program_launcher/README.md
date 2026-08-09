@@ -13,7 +13,7 @@ different setup).
 - `plugin.py`:
   - Registers one `SectionSpec` (`ProgramLauncherPage`, order 40 — after
     Explorer=10/Submit=20/About=30), wired (`wire=_wire`) to
-    `SectionHost.open_settings_tab` via `bind_open_settings_tab` so its own
+    `UICommandService.open_settings_tab` via `bind_open_settings_tab` so its own
     "Software Linker Setting" shortcut button (always visible in the
     header, regardless of which cards are linked) can jump straight to
     Settings > Software Linker.
@@ -56,12 +56,12 @@ different setup).
     label instead of an empty grid.
 
 Cross-plugin/interface wiring this needed, beyond this folder:
-- `interface/section_registry.py`'s `SectionHost` gained an
+- `interface/section_registry.py`'s `UICommandService` gained an
   `open_settings_tab(key)` field.
 - `interface/settings/settings_view.py`'s `SettingsView`/`SettingsDialog`
   gained a `select_tab(key)` method.
 - `interface/main_window.py`'s `_on_settings_requested` gained an optional
-  `select_key` param, and `_build_main_ui`'s `SectionHost(...)` construction
+  `select_key` param, and `_build_main_ui`'s `UICommandService(...)` construction
   wires `open_settings_tab` to it.
 - `interface/program_launch_registry.py` is a brand-new registry
   (`ProgramLaunchRegistry`/`ProgramLaunchSpec`), plumbed through

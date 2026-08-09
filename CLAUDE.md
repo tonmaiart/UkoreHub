@@ -57,7 +57,7 @@ Concretely:
   `plugins/README.md` — never
   open a sibling plugin's source, and cross-plugin data/UI coordination
   goes through the documented
-  `plugin_config_store`/`SectionHost` conventions, not imports.
+  `plugin_config_store`/`UICommandService` conventions, not imports.
 - Told to fix/change `core/` → touch only `core/` unless the change
   requires updating an `interface/` call site.
 - Told to fix/change `interface/` → touch only `interface/` unless the
@@ -94,6 +94,24 @@ machine you're working on — check for one (e.g. `tasklist`) before assuming
 any change to a shared JSON store is safe to discard or revert.
 `pytest`'s own tests are unaffected by this — they already use `tmp_path`.
 
+## Program folder stays program-only — user/project data never lives under REPO_ROOT
+
+`cache/` and `storage/` (see their entries below) are per-machine, per-user
+data — never something the installed app folder should own. UkoreHub.exe
+(UkoreHubLauncher repo) normally points the `UKOREHUB_CACHE_DIR` /
+`UKOREHUB_STORAGE_DIR` env vars outside `REPO_ROOT` before spawning
+`launcher.py`. When those aren't set — the `python launcher.py` direct
+dev-invocation path, which bypasses UkoreHub.exe entirely — `launcher.py`
+falls back to `~/Documents/UkoreHub/cache` and `~/Documents/UkoreHub/storage`
+(`USER_DATA_DIR` in `launcher.py`), **not** `REPO_ROOT/cache` /
+`REPO_ROOT/storage`. Changed 2026-08-09: the app folder must contain only
+the program itself, so Update can wipe/replace it wholesale (see
+UkoreHubLauncher's README.md) without risking or silently orphaning real
+user/project data next to the new copy. Never reintroduce a
+`REPO_ROOT`-relative default for either path — any new per-machine or
+per-user data directory added later must default outside `REPO_ROOT` the
+same way, not join `cache/`/`storage/` as a sibling under the app folder.
+
 ## Project layout
 
 - `core/` — non-UI logic: metadata store, git operations, GitHub auth, theming.
@@ -118,9 +136,11 @@ any change to a shared JSON store is safe to discard or revert.
   off-by-default, opt-in per repo). See `core/extensibility/README.md` for
   the discovery mechanism and `plugins/README.md` plus the `ukorehub-plugin`
   skill for the "stay inside one folder" editing discipline it uses.
-- `cache/` — every per-machine, gitignored file UkoreHub owns:
+- `cache/` — every per-machine, gitignored file UkoreHub owns (actual
+  on-disk location is `CACHE_DIR`, set by `launcher.py` — see "Program
+  folder stays program-only" above, **not** necessarily under `REPO_ROOT`):
   `local_config.json`, `github_token.json` (a credential — never open,
-  quote, or otherwise surface its contents), `webengine_profile/`,
+  quote, or otherwise surface its contents),
   `plugin_local_config/`, and `plugins/` — **repo plugins**: each entry is
   its own separate git clone (own remote/history, not part of this repo at
   all), fetched/updated on demand only for a repo that requires it. Never
@@ -132,7 +152,10 @@ any change to a shared JSON store is safe to discard or revert.
   is actually about that specific plugin — see `plugins/README.md`). See
   [cache/README.md](cache/README.md) for the full breakdown.
 - `storage/` — **the actual workspace root**, pointed to by
-  `cache/local_config.json`'s `workspace_root`: real cloned production repos
+  `cache/local_config.json`'s `workspace_root` (actual on-disk location is
+  `STORAGE_DIR`, set by `launcher.py` — see "Program folder stays
+  program-only" above, **not** necessarily under `REPO_ROOT`): real cloned
+  production repos
   (Maya/Blender scenes, huge binaries, studio artwork), gitignored. Named
   `storage/`, not `projects/`, specifically so it can't be confused with
   `data/projects/` (the per-project metadata blobs — see

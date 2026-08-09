@@ -30,7 +30,7 @@ class NotificationPage(QWidget):
     own unread-count widget — plugin.py hands it to SectionSpec as a
     trailing_widget_factory (interface/section_registry.py), so
     SectionTabList only ever lays it out; this page updates its text/
-    visibility directly, no SectionHost round-trip needed.
+    visibility directly, no UICommandService round-trip needed.
 
     Also owns the team activity feed: a CommitFeedWorker poll (every
     _POLL_INTERVAL_MS, plus on every repo switch and the manual Refresh

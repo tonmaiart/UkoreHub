@@ -25,12 +25,17 @@ if str(REPO_ROOT) not in sys.path:
 # Sourced from env vars instead so the real launcher exe (UkoreHub.exe, built
 # from the separate UkoreHubLauncher repo) can point them at a path outside
 # app/ before spawning this file — same UKOREHUB_-prefixed convention as
-# core/vcs/git_service.py's UKOREHUB_GITHUB_TOKEN. Falls back to the old
-# REPO_ROOT-relative paths only for the `python launcher.py` direct-invocation
-# dev path, which bypasses UkoreHub.exe entirely and so never gets these set.
-CACHE_DIR = Path(os.environ["UKOREHUB_CACHE_DIR"]) if os.environ.get("UKOREHUB_CACHE_DIR") else REPO_ROOT / "cache"
+# core/vcs/git_service.py's UKOREHUB_GITHUB_TOKEN. Falls back to a folder
+# under the user's own Documents (never REPO_ROOT — see root CLAUDE.md's
+# "program folder stays program-only" rule) only for the `python launcher.py`
+# direct-invocation dev path, which bypasses UkoreHub.exe entirely and so
+# never gets these set.
+USER_DATA_DIR = Path.home() / "Documents" / "UkoreHub"
+CACHE_DIR = (
+    Path(os.environ["UKOREHUB_CACHE_DIR"]) if os.environ.get("UKOREHUB_CACHE_DIR") else USER_DATA_DIR / "cache"
+)
 STORAGE_DIR = (
-    Path(os.environ["UKOREHUB_STORAGE_DIR"]) if os.environ.get("UKOREHUB_STORAGE_DIR") else REPO_ROOT / "storage"
+    Path(os.environ["UKOREHUB_STORAGE_DIR"]) if os.environ.get("UKOREHUB_STORAGE_DIR") else USER_DATA_DIR / "storage"
 )
 
 REQUIRED_PACKAGES = [
@@ -185,6 +190,7 @@ def main() -> None:
     from interface.settings_tab_registry import SettingsTabRegistry
     from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
     from interface.theme_apply import apply_theme
+    from interface.ui_registry_manager import UIRegistryManager
 
     data_dir = REPO_ROOT / "data"
     data_dir.mkdir(exist_ok=True)
@@ -386,6 +392,16 @@ def main() -> None:
                 sys.exit(0)
             local_config_store.set_active_project(selector.selected_project_id())
 
+    # Reconcile Repo.status against disk for the active project — picks up
+    # a repo folder an artist copy-pasted into the workspace root directly
+    # (see core/storage/metadata_store.py's refresh_statuses_from_disk)
+    # instead of leaving it showing stale/"not_cloned" until the artist
+    # happens to switch to that repo and trigger a Sync.
+    if local_config_store.active_project_id:
+        store.refresh_statuses_from_disk(
+            local_config_store.active_project_id, local_config_store.workspace_root, git_service
+        )
+
     # plugins/core and plugins/repo_internal are both git-tracked and
     # distributed to everyone via self_update.py's whole-tree `git pull`,
     # mirroring how data/programs.json is shared today — both ship bundled
@@ -409,14 +425,15 @@ def main() -> None:
         api_version=PLUGIN_API_VERSION,
     )
 
-    file_opener_registry = FileOpenerRegistry()
-    program_launch_registry = ProgramLaunchRegistry()
-
-    section_registry = SectionRegistry()
-    settings_tab_registry = SettingsTabRegistry()
-    sidebar_footer_action_registry = SidebarFooterActionRegistry()
+    registries = UIRegistryManager(
+        sections=SectionRegistry(),
+        settings_tabs=SettingsTabRegistry(),
+        file_openers=FileOpenerRegistry(),
+        program_launchers=ProgramLaunchRegistry(),
+        sidebar_footer_actions=SidebarFooterActionRegistry(),
+    )
     register_builtin_settings_tabs(
-        settings_tab_registry,
+        registries.settings_tabs,
         store=store,
         local_config_store=local_config_store,
         system_config_store=system_config_store,
@@ -426,11 +443,7 @@ def main() -> None:
 
     plugin_api = PluginAPI(
         core=core,
-        section_registry=section_registry,
-        settings_tab_registry=settings_tab_registry,
-        file_opener_registry=file_opener_registry,
-        program_launch_registry=program_launch_registry,
-        sidebar_footer_action_registry=sidebar_footer_action_registry,
+        registries=registries,
         plugins_data_dir=data_dir / "plugins",
         plugins_local_dir=cache_dir / "plugin_local_config",
         cache_dir=cache_dir,
@@ -438,7 +451,7 @@ def main() -> None:
         cloud_sync=cloud_sync,
     )
     # Applied one plugin at a time (rather than one bulk apply_plugins(discovery.loaded, ...)
-    # call) so section_registry.keys() can be diffed before/after each
+    # call) so registries.sections.keys() can be diffed before/after each
     # plugin's own register(api) call, learning which section(s) it
     # contributed — section_key_to_plugin_id below is what
     # MainWindow._apply_plugin_visibility uses for per-repo Plugin gating
@@ -446,9 +459,9 @@ def main() -> None:
     plugin_apply_failures: list = []
     section_key_to_plugin_id: dict[str, str] = {}
     for plugin in discovery.loaded:
-        keys_before = section_registry.keys()
+        keys_before = registries.sections.keys()
         plugin_apply_failures += apply_plugins([plugin], plugin_api)
-        for key in section_registry.keys() - keys_before:
+        for key in registries.sections.keys() - keys_before:
             section_key_to_plugin_id[key] = plugin.manifest.id
 
     # Every plugins/core/ plugin is always visible for every repo, no
@@ -472,10 +485,7 @@ def main() -> None:
     window = MainWindow(
         core,
         cache_dir,
-        section_registry,
-        settings_tab_registry,
-        file_opener_registry,
-        sidebar_footer_action_registry,
+        registries,
         section_key_to_plugin_id=section_key_to_plugin_id,
         core_plugin_ids=core_plugin_ids,
         opt_in_plugin_ids=opt_in_plugin_ids,

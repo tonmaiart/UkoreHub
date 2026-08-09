@@ -19,11 +19,9 @@ class Sidebar(QWidget):
     """Left-hand navigation column — replaces the old horizontal MenuBar
     row. Top to bottom: ActiveRepoWidget (display-only repo thumbnail +
     name label — no click-to-open picker anymore, see that widget's own
-    docstring), the repo-scoped SectionTabList (Explorer/Submit/About, plus
-    a dynamic row per Browser Link — stretched to fill the remaining
-    height; Project Editor is NOT a row here, it's an always-visible docked
-    panel instead, see plugins/core/project_editor/ and
-    interface/section_registry.py's SectionSpec.persistent), and a footer
+    docstring), the repo-scoped SectionTabList (Explorer/Submit/About/
+    Project Editor, plus a dynamic row per Browser Link — stretched to fill
+    the remaining height), and a footer
     strip for sync status, SidebarFooterActionRegistry-provided widgets
     (e.g. plugins/core/CloudConfig/'s "Studio" button, opening its own
     StudioSettingsDialog — the gated Google Cloud Storage sync config,
@@ -37,6 +35,7 @@ class Sidebar(QWidget):
     way to change the active repo."""
 
     navigation_changed = Signal(str)
+    external_link_activated = Signal(str)
     settings_requested = Signal()
 
     def __init__(
@@ -50,6 +49,7 @@ class Sidebar(QWidget):
 
         self.tab_list = SectionTabList(section_registry=section_registry)
         self.tab_list.navigation_changed.connect(self.navigation_changed.emit)
+        self.tab_list.external_link_activated.connect(self.external_link_activated.emit)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)

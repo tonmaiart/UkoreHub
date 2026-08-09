@@ -25,7 +25,7 @@ class ProjectSettingsPage(QWidget):
       gate actually runs (a fresh launch, or via Switch Project below).
     - "Switch Project..." is the only way to view a different project at
       all, and does it honestly — on_switch_project (bound in plugin.py to
-      ProjectEditorPage.switch_project, wrapping SectionHost.switch_project)
+      ProjectEditorPage.switch_project, wrapping UICommandService.switch_project)
       triggers a full app restart back through that same gate, rather than
       swapping state in a running window full of pages that assumed the
       active project couldn't change under them.

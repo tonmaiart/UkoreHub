@@ -23,7 +23,7 @@ from core.models import Program, Project, Repo
 from core.storage.metadata_store import MetadataStore
 from interface.theme import DEFAULT_THEME_NAME, get_theme
 from interface.program_launch_registry import ProgramLaunchRegistry
-from interface.section_registry import SectionHost, SectionSpec
+from interface.section_registry import UICommandService, SectionSpec
 
 PLUGIN_ID = "program_launcher"
 # Convention-only string match with plugins/core/software_linker/plugin.py
@@ -246,7 +246,7 @@ class ProgramLauncherPage(QWidget):
             self._open_settings_tab(SOFTWARE_LINKER_PLUGIN_ID)
 
 
-def _wire(page: ProgramLauncherPage, host: SectionHost) -> None:
+def _wire(page: ProgramLauncherPage, host: UICommandService) -> None:
     page.bind_open_settings_tab(host.open_settings_tab)
 
 

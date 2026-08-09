@@ -10,12 +10,14 @@ from interface.registry_base import KeyedOrderedRegistry
 
 
 @dataclass(frozen=True)
-class SectionHost:
-    """Passed to SectionSpec.wire(page, host). A fixed, small set of named
-    callbacks — not a generic event bus — mirroring background_threads'
-    shape below: MainWindow invokes wire() generically, the closure reaches
-    into the page's own internals. Add a new named field only on
-    demonstrated need, not speculatively."""
+class UICommandService:
+    """Passed to SectionSpec.wire(page, host) — named SectionHost before
+    this refactor; renamed to reflect what it actually is: a single command
+    surface a plugin page calls into, not a per-section "host" object. A
+    fixed, small set of named callbacks — not a generic event bus —
+    mirroring background_threads' shape below: MainWindow invokes wire()
+    generically, the closure reaches into the page's own internals. Add a
+    new named field only on demonstrated need, not speculatively."""
 
     set_status_message: Callable[[str], None]
     navigate_and_focus: Callable[[str, Path], None]
@@ -65,19 +67,12 @@ class SectionSpec:
     # not manage its content. A general "status widget" slot any current or
     # future section can use, not Notification-specific — added 2026-08-03.
     trailing_widget_factory: Callable[[], QWidget] | None = None
-    # Optional: given the constructed page and a SectionHost, connect
+    # Optional: given the constructed page and a UICommandService, connect
     # whatever signals the page needs wired to app-level services (sidebar
     # status line, cross-section navigation) — lets a plugin page react to
     # generic MainWindow services without MainWindow importing the page's
     # specific type. See interface/main_window.py's __init__.
-    wire: Callable[[QWidget, "SectionHost"], None] | None = None
-    # True for a section that's always visible docked next to view_stack
-    # (added 2026-07-15 for Project Editor) instead of a switchable
-    # full-width page — never gets a Sidebar row (SectionTabList skips it),
-    # never joins MainWindow._section_view_index/view_stack, and is never a
-    # navigate_and_focus target. page_factory/wire/background_threads all
-    # still apply the same way. See MainWindow._build_main_ui.
-    persistent: bool = False
+    wire: Callable[[QWidget, "UICommandService"], None] | None = None
 
 
 class SectionRegistry(KeyedOrderedRegistry[SectionSpec]):

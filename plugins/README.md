@@ -150,6 +150,13 @@ another plugin" below instead.
   `None`/`KeyError`. There is no separate `api.programs` anymore.
 - `api.local_config` — per-machine `LocalConfigStore`.
 - `api.git` — `GitService`.
+- `api.repo_context` — a read-only `RepoContextDTO` snapshot of the active
+  project/repo (id/name, resolved repo path, workspace_root,
+  browser_links, required_plugin_ids), or `None` if no repo is active yet.
+  For a plugin that only needs this identity/path info — not a
+  replacement for `api.metadata`/`api.git` above, which stay the way to
+  write to the registry or run a git operation; see that property's own
+  docstring for why a read-only snapshot can't cover either.
 - `api.file_opener_registry` — read access to the `FileOpenerRegistry`
   (for a page that needs to call `find_opener()` itself, like Explorer's
   `RepoBrowserPage`) — separate from `api.register_file_opener(...)`,
@@ -163,21 +170,28 @@ another plugin" below instead.
   contract, scoped to the currently active Project instead of the whole
   studio (see below). Returns `None` if no project is active yet.
 - `api.register_section(spec)` — a full top-level tab in `SectionRegistry`
-  (Explorer/Submit/About today — see `interface/section_registry.py`'s
-  `SectionSpec`, including the optional `background_threads` and `wire`
-  fields for shutdown cleanup and app-level signal wiring). Set
-  `persistent=True` for a section that should be permanently docked
-  visible instead of a normal switchable sidebar row/tab — a rare need,
-  currently only `plugins/core/project_editor/` (see that plugin's
-  README and `interface/main_window.py`'s `_build_main_ui`).
+  (Explorer/Submit/About/Project Editor today — see
+  `interface/section_registry.py`'s `SectionSpec`, including the optional
+  `background_threads` and `wire` fields for shutdown cleanup and
+  app-level signal wiring). Every section is an ordinary switchable
+  sidebar row/tab in the single `view_stack` — there used to be a
+  `persistent=True` option to dock a section permanently visible beside
+  `view_stack` instead (used only by `plugins/core/project_editor/`),
+  removed as part of folding everything into one view stack.
   `trailing_widget_factory` is a further optional field — a small widget
   built once and shown at the right edge of this section's own sidebar row
   (e.g. `plugins/core/Notification/`'s unread-count badge); the plugin
   keeps its own reference to the returned widget and updates it directly,
   `SectionTabList` only lays it out. A general status-widget slot, not
   Notification-specific.
-- `api.register_settings_tab`, `api.register_file_opener`,
-  `api.register_git_hook` — the remaining registries.
+- `api.register_settings_tab`, `api.register_file_opener` — the remaining
+  registries.
+- `api.on_app_start(handler)`, `api.on_repo_changed(handler)`,
+  `api.on_app_close(handler)` — the fixed app lifecycle (`core/events/hooks.py`'s
+  `AppLifecycleHooks`), replacing an older open-ended `register_git_hook(event, handler)`
+  pub/sub (14 event keys spanning before/after clone/pull/push/commit plus
+  these three) that had zero subscribers anywhere in `plugins/` — these
+  three are the entire surface now.
 
 ## Sharing data with another plugin: `plugin_config_store`, not imports
 
@@ -223,7 +237,7 @@ studio-wide or spans projects (a global catalog, ...) —
 `plugins/repo_internal/UkoreBrowser/settings_page.py` are the worked
 examples of the former.
 
-## `SectionSpec.wire`/`SectionHost`: cross-plugin UI coordination, not imports
+## `SectionSpec.wire`/`UICommandService`: cross-plugin UI coordination, not imports
 
 If one plugin's page needs to trigger a specific behavior in another
 plugin's page (e.g. Submit's "Inspect in Explorer" jumping to Explorer and
@@ -233,7 +247,7 @@ focusing a file), don't import the other plugin's page type. Use:
   `register(api)` if the other plugin is ever missing/broken.
 - An optional protocol method on the target page (e.g.
   `browse_to_path(path)`, mirroring the existing `set_repo()` convention
-  every page already implements) — `SectionHost.navigate_and_focus(key,
+  every page already implements) — `UICommandService.navigate_and_focus(key,
   path)` (`interface/section_registry.py`) calls it generically via
   `getattr`/`callable`, without `interface/main_window.py` or your plugin
   needing to import the target page's type. See

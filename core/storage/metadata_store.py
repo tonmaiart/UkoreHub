@@ -8,6 +8,7 @@ from typing import Callable
 from core.exceptions import NotFoundError, ValidationError
 from core.models import BrowserLink, Program, Project, Repo
 from core.storage.atomic_file import atomic_write, utc_now_iso
+from core.vcs.git_service import GitService
 from core.vcs.paths import resolve_repo_path
 
 SCHEMA_VERSION = 2
@@ -312,18 +313,31 @@ class MetadataStore:
             return None
         return self.browser_link_icons_dir / link.icon_filename
 
-    def refresh_statuses_from_disk(self, workspace_root: str) -> None:
-        for project in self.projects:
-            changed = False
-            for repo in project.repos:
-                abs_path = Path(workspace_root) / repo.local_path
-                is_cloned = (abs_path / ".git").exists()
-                new_status = "cloned" if is_cloned else "not_cloned"
-                if new_status != repo.status:
-                    repo.status = new_status
-                    changed = True
-            if changed:
-                self._save_project(project)
+    def refresh_statuses_from_disk(self, project_id: str, workspace_root: str, git_service: GitService) -> None:
+        """Reconciles Repo.status against what's actually on disk, for the
+        case where an artist manually copies an already-cloned repo folder
+        into workspace_root instead of letting Sync clone it (e.g. to skip a
+        slow first clone). Called by launcher.py once per app launch,
+        scoped to just the active project rather than every project in the
+        store — this runs a git subprocess per repo, so scanning every
+        project studio-wide on every launch isn't free.
+
+        Uses git_service.is_repo_root(), not the cheaper is_cloned(),
+        because a folder that didn't come from this app's own clone() call
+        is exactly the case bug-history 2026-08-08 warns about: a
+        broken/partial .git directory doesn't stop git's repo-discovery
+        walk, so a plain ".git" existence check can silently resolve to
+        some unrelated repo further up the tree instead of failing."""
+        project = self.get_project(project_id)
+        changed = False
+        for repo in project.repos:
+            abs_path = Path(workspace_root) / repo.local_path
+            new_status = "cloned" if git_service.is_repo_root(abs_path) else "not_cloned"
+            if new_status != repo.status:
+                repo.status = new_status
+                changed = True
+        if changed:
+            self._save_project(project)
 
     def list_programs(self, project_id: str) -> list[Program]:
         return list(self.get_project(project_id).programs)

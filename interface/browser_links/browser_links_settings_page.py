@@ -23,12 +23,12 @@ from interface.shared.widget_helpers import wrap_scrollable
 
 class BrowserLinksSettingsPage(BaseRepoSettingsPage):
     """Add/rename/remove the active repo's Browser Links — each shown as
-    its own top-level tab elsewhere (see interface/main_window.py's dynamic
-    tab rebuild). Lives in interface/browser_links/ alongside
-    browser_link_page.py (the runtime tab this settings page configures)
-    rather than interface/settings/ — same feature domain, not grouped by
-    "is a Settings tab". Active-repo resolution + refresh() preamble live
-    in BaseRepoSettingsPage (interface/shared/)."""
+    its own dynamic Sidebar row elsewhere, opening externally in the OS's
+    default browser on click (see interface/main_window.py's
+    _rebuild_dynamic_tabs). Lives in interface/browser_links/ rather than
+    interface/settings/ — same feature domain, not grouped by "is a
+    Settings tab". Active-repo resolution + refresh() preamble live in
+    BaseRepoSettingsPage (interface/shared/)."""
 
     browser_links_changed = Signal()
 

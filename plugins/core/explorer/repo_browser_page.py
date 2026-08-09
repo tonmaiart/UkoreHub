@@ -73,7 +73,7 @@ class RepoBrowserPage(QWidget):
             self._last_repo_id = repo.id
 
     def browse_to_path(self, path: Path) -> None:
-        """Optional MainWindow SectionHost protocol — see
-        interface/section_registry.py's SectionHost.navigate_and_focus and
+        """Optional MainWindow UICommandService protocol — see
+        interface/section_registry.py's UICommandService.navigate_and_focus and
         plugins/core/submit/plugin.py's browse_file_requested wiring."""
         self.browser.browse_to_file(path)

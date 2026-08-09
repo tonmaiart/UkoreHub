@@ -8,7 +8,6 @@ from core.vcs.git_service import GitService
 from core.models import Project, Repo
 from core.storage.config_store import LocalConfigStore
 from core.storage.metadata_store import MetadataStore
-from interface.settings_tab_registry import SettingsTabRegistry
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.project_graph_view import ProjectGraphView
 
@@ -22,16 +21,24 @@ class ProjectEditorPage(QWidget):
     nothing but the graph itself (the project picker there was itself later
     removed entirely — see that file's own docstring). Just a
     QGraphicsView node graph (1 node = 1 repo, ProjectGraphView), full
-    width/height. Repo settings (Browser, Local Repository,
-    Requirements & Plugins, and any plugin's own CATEGORY_REPO tab) are also
-    not a permanent right panel here — as of 2026-07-15 they're a popup
-    (RepoSettingsPanel wrapped in RepoSettingsDialog, repo_settings_panel.py)
-    opened via a node's right-click context menu ("Repository Setting...",
-    see project_graph_view.py). Implements the standard set_repo() page
-    protocol purely to keep the graph's active-node highlight (and which
-    project it's showing) in sync — this page never receives commands to
-    change the active repo, only notifications that it already changed (a
-    node click here, or an action on another section).
+    width/height. Implements the standard set_repo() page protocol purely
+    to keep the graph's active-node highlight (and which project it's
+    showing) in sync — this page never receives commands to change the
+    active repo, only notifications that it already changed (a node click
+    here, or an action on another section).
+
+    Repo settings (Browser, Local Repository, Requirements & Plugins, and
+    any plugin's own CATEGORY_REPO tab) render generically in the main
+    Settings dialog's Repo Setting (Dev) category (see
+    interface/settings/settings_view.py). A repo node's right-click
+    "Repository Setting..." opens that same dialog via
+    UICommandService.open_settings_tab (bind_open_settings_tab below) rather
+    than a plugin-owned popup — from 2026-07-15 through this refactor they
+    briefly lived in their own popup instead (RepoSettingsPanel/
+    RepoSettingsDialog, repo_settings_panel.py, now retired) to avoid
+    duplicating them in both Settings and here; the same reasoning now
+    argues for a single dialog rather than a single popup, since both were
+    only ever reading the same SettingsTabRegistry entries.
 
     current_project_id()/add_repo() are this page's own single source of
     truth/entry points for "which project the graph is showing" (fixed for
@@ -52,7 +59,6 @@ class ProjectEditorPage(QWidget):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         pipeline_store: PipelineStore,
-        settings_tab_registry: SettingsTabRegistry,
         git_service: GitService,
     ):
         super().__init__(parent)
@@ -64,7 +70,6 @@ class ProjectEditorPage(QWidget):
             store=store,
             local_config_store=local_config_store,
             pipeline_store=pipeline_store,
-            settings_tab_registry=settings_tab_registry,
             git_service=git_service,
         )
 
@@ -83,17 +88,20 @@ class ProjectEditorPage(QWidget):
         # switch_project() below).
         self.set_current_project(local_config_store.active_project_id)
 
-    # -- SectionHost wiring (see plugin.py's _wire) ----------------------
+    # -- UICommandService wiring (see plugin.py's _wire) ----------------------
 
     def bind_set_active_repo(self, callback: Callable[[str, str], None]) -> None:
         self.graph_view.bind_set_active_repo(callback)
+
+    def bind_open_settings_tab(self, callback: Callable[[str], None]) -> None:
+        self.graph_view.bind_open_settings_tab(callback)
 
     def bind_switch_project(self, callback: Callable[[], None]) -> None:
         self._switch_project_callback = callback
 
     def switch_project(self) -> None:
         """Bound to project_settings_page.py's "Switch Project..." button —
-        wraps SectionHost.switch_project (interface/section_registry.py),
+        wraps UICommandService.switch_project (interface/section_registry.py),
         itself wrapping MainWindow._request_switch_project. Never changes
         current_project_id() in place; a real restart is the only way this
         app admits a different project."""

@@ -1,24 +1,49 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 from core.app_core import UkoreCore
-from core.events.hooks import GitHookEvent, HookHandler
-from core.exceptions import ConflictError
+from core.events.hooks import AppLifecycleHandler
+from core.exceptions import ConflictError, NotFoundError
 from core.extensibility.config_store import PluginConfigStore, ProjectPluginConfigStore
 from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
-from core.models import Repo
+from core.models import BrowserLink, Repo
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore
 from core.vcs.cloud_sync import GcsJsonSync
 from core.vcs.git_service import GitService
 from interface.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
-from interface.section_registry import SectionRegistry, SectionSpec
+from interface.section_registry import SectionSpec
 from interface.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
-from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry, SidebarFooterActionSpec
+from interface.sidebar_footer_action_registry import SidebarFooterActionSpec
+from interface.ui_registry_manager import UIRegistryManager
 
 PLUGIN_API_VERSION = 1
+
+
+@dataclass(frozen=True)
+class RepoContextDTO:
+    """Read-only snapshot of "which project/repo is active right now" —
+    the pure-read subset of what a plugin would otherwise reach
+    api.metadata/api.local_config directly for. Built fresh on every
+    api.repo_context access (same freshness contract as reading those
+    stores directly — do not cache a returned DTO across a repo switch).
+
+    This does not replace api.metadata/api.git for a plugin that needs to
+    write to the registry or run git operations (clone/pull/push) — those
+    still go through the real services. See PluginAPI.repo_context's own
+    docstring for why a strictly read-only DTO can't cover that case."""
+
+    project_id: str
+    project_name: str
+    repo_id: str
+    repo_name: str
+    repo_path: Path | None
+    workspace_root: Path | None
+    browser_links: tuple[BrowserLink, ...]
+    required_plugin_ids: tuple[str, ...]
 
 
 class PluginAPI:
@@ -26,6 +51,15 @@ class PluginAPI:
     Composes the existing core/ services (unmodified — same objects the app
     itself uses) with the Qt-aware UI registries, since core/ stays Qt-free
     and section/settings-tab registration needs QWidget factories.
+
+    `api.metadata`/`api.git`/`api.local_config` remain the sanctioned way
+    to reach the real stores/git operations — every write and every
+    background git operation (clone/pull/push/log) any plugin runs goes
+    through one of these three. `api.repo_context` is a narrower,
+    read-only addition for the common case of "which project/repo is
+    active and where does it live on disk" — it doesn't replace the three
+    above, since a read-only DTO architecturally can't cover writes or git
+    operations (see that property's own docstring).
 
     Phase 1+2 exposes services as-is; hardening (e.g. excluding TokenStore,
     restricting writes) is a documented follow-up once untrusted third-party
@@ -36,11 +70,7 @@ class PluginAPI:
         self,
         *,
         core: UkoreCore,
-        section_registry: SectionRegistry,
-        settings_tab_registry: SettingsTabRegistry,
-        file_opener_registry: FileOpenerRegistry,
-        program_launch_registry: ProgramLaunchRegistry,
-        sidebar_footer_action_registry: SidebarFooterActionRegistry,
+        registries: UIRegistryManager,
         plugins_data_dir: Path,
         plugins_local_dir: Path,
         cache_dir: Path,
@@ -48,11 +78,11 @@ class PluginAPI:
         cloud_sync: GcsJsonSync | None = None,
     ):
         self._core = core
-        self._section_registry = section_registry
-        self._settings_tab_registry = settings_tab_registry
-        self._file_opener_registry = file_opener_registry
-        self._program_launch_registry = program_launch_registry
-        self._sidebar_footer_action_registry = sidebar_footer_action_registry
+        self._section_registry = registries.sections
+        self._settings_tab_registry = registries.settings_tabs
+        self._file_opener_registry = registries.file_openers
+        self._program_launch_registry = registries.program_launchers
+        self._sidebar_footer_action_registry = registries.sidebar_footer_actions
         self._plugins_data_dir = Path(plugins_data_dir)
         self._plugins_local_dir = Path(plugins_local_dir)
         self._cache_dir = Path(cache_dir)
@@ -98,6 +128,43 @@ class PluginAPI:
     @property
     def git(self) -> GitService:
         return self._core.git
+
+    @property
+    def repo_context(self) -> RepoContextDTO | None:
+        """Read-only snapshot of the active project/repo — project/repo
+        id/name, the repo's resolved on-disk path, workspace_root,
+        browser_links, and required_plugin_ids. None when no repo is
+        active yet (e.g. very first launch, before any repo has ever been
+        selected).
+
+        Deliberately does not replace api.metadata/api.git for anything
+        beyond this read-only identity/path info: a plugin that writes to
+        the registry (add_repo, set_repo_thumbnail, set_repo_plugin_data,
+        ...) or runs a git operation (clone/pull/push/log, typically on a
+        background QThread) still needs the real store/service, which a
+        frozen snapshot dataclass architecturally cannot provide — see
+        PluginAPI's own docstring."""
+        local_config = self._core.local_config
+        project_id = local_config.active_project_id
+        repo_id = local_config.active_repo_id
+        if project_id is None or repo_id is None:
+            return None
+        try:
+            project = self._core.metadata.get_project(project_id)
+            repo = self._core.metadata.get_repo(project_id, repo_id)
+        except NotFoundError:
+            return None
+        workspace_root = Path(local_config.workspace_root) if local_config.workspace_root else None
+        return RepoContextDTO(
+            project_id=project.id,
+            project_name=project.name,
+            repo_id=repo.id,
+            repo_name=repo.name,
+            repo_path=(workspace_root / repo.local_path) if workspace_root is not None else None,
+            workspace_root=workspace_root,
+            browser_links=tuple(repo.browser_links),
+            required_plugin_ids=tuple(repo.required_plugin_ids),
+        )
 
     @property
     def debug_bus(self):
@@ -179,8 +246,18 @@ class PluginAPI:
     def register_sidebar_footer_action(self, spec: SidebarFooterActionSpec) -> None:
         self._sidebar_footer_action_registry.register(spec)
 
-    def register_git_hook(self, event: GitHookEvent, handler: HookHandler) -> None:
-        self._core.hooks.subscribe(event, handler)
+    def on_app_start(self, handler: AppLifecycleHandler) -> None:
+        """Runs once, right after the app finishes launching (whichever
+        repo is already active by then, if any)."""
+        self._core.hooks.subscribe_app_start(handler)
+
+    def on_repo_changed(self, handler: AppLifecycleHandler) -> None:
+        """Runs every time the user switches the active repo."""
+        self._core.hooks.subscribe_repo_changed(handler)
+
+    def on_app_close(self, handler: AppLifecycleHandler) -> None:
+        """Runs once, as the main window is closing."""
+        self._core.hooks.subscribe_app_close(handler)
 
     def plugin_config_store(self, plugin_id: str, *, shared: bool = False) -> PluginConfigStore:
         # shared=True -> data/plugins/core/ (synced via Google Cloud Storage,

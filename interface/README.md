@@ -38,19 +38,19 @@ a new top-level section that needs `section_registry.py`).
   page from `SectionRegistry`, wires `sidebar/`'s `Sidebar` (the left-hand
   navigation column — display-only repo thumbnail/name label,
   `SectionTabList`, a `SidebarFooterActionRegistry`-driven footer), drives
-  active-repo restore + auto-sync on launch, and owns
-  the one shared `QWebEngineProfile`
-  (`browser_links/web_engine_profile.py`) every
-  `browser_links/browser_link_page.py` tab uses. GitHub login happens
+  active-repo restore + auto-sync on launch, and rebuilds the dynamic
+  Browser Link sidebar rows on every repo switch (opened externally via
+  `QDesktopServices.openUrl`, no embedded browser tab — see
+  `browser_links/README.md`). GitHub login happens
   entirely before this process is even spawned now (see the "GitHub login"
   note below), so `MainWindow` builds the real UI immediately on
-  construction — no gate to show/teardown. Every ordinary section is its
-  own standalone page in `view_stack`,
-  switched to via `Sidebar.navigation_changed` — except a section flagged
-  `SectionSpec.persistent=True` (Project Editor), which is never added to
-  `view_stack`/`SectionTabList` at all and instead sits permanently docked
-  beside `view_stack` in a `QSplitter`, always visible regardless of which
-  ordinary section is currently showing.
+  construction — no gate to show/teardown. Every section (Explorer/Submit/
+  About/Project Editor) is its own standalone page in `view_stack`,
+  switched to via `Sidebar.navigation_changed` — Project Editor used to be
+  an exception (`SectionSpec.persistent=True`, permanently docked beside
+  `view_stack` in a `QSplitter` instead of a row/page like everything
+  else), folded into the single `view_stack` along with everything else as
+  part of tightening the app down to one navigation model.
 - `registry_base.py` — `KeyedOrderedRegistry[T]`: shared base for
   `section_registry.py`/`settings_tab_registry.py`/
   `sidebar_footer_action_registry.py` below, each otherwise an identical
@@ -67,7 +67,17 @@ a new top-level section that needs `section_registry.py`).
   because they're cross-cutting infrastructure with no single domain
   owner — and `settings_tab_registry.py` specifically is imported directly
   by `plugins/core/software_linker/plugin.py`, so keeping it at a stable
-  path avoids touching that plugin's source.
+  path avoids touching that plugin's source. `section_registry.py` also
+  defines `UICommandService`, the fixed set of named callbacks passed to
+  `SectionSpec.wire(page, host)`.
+- `ui_registry_manager.py` — `UIRegistryManager`: bundles this file's three
+  registries plus `core/extensibility/file_opener.py`'s `FileOpenerRegistry`
+  and `program_launch_registry.py`'s `ProgramLaunchRegistry` into one
+  object. `launcher.py` constructs a single instance and threads it into
+  both `PluginAPI` and `MainWindow` instead of five separate constructor
+  parameters — a pure construction/wiring simplification, not a change to
+  how a plugin registers anything (`api.register_section(...)` etc. are
+  unchanged).
 - `builtin_settings_tabs.py` — constructs the built-in Settings tabs
   (pulling from `settings/`, `browser_links/`, `repo_settings/` —
   Explorer and Submit register themselves from `plugins/core/`, not from
@@ -76,6 +86,18 @@ a new top-level section that needs `section_registry.py`).
 - `plugin_api.py` — `PluginAPI`, the object passed to every plugin's
   `register(api)` entry point; composes `core/` services with the
   section/settings-tab/sidebar-footer-action registries.
+  `RepoContextDTO`/`api.repo_context` also live here — a read-only
+  snapshot of the active project/repo for a plugin that only needs
+  identity/path info, alongside (not instead of) the raw
+  `api.metadata`/`api.git`/`api.local_config` services every write and git
+  operation still goes through.
+- `page_protocols.py` — `SetRepoPage`/`PathFocusablePage`/`AutoSyncPage`:
+  small `@runtime_checkable Protocol`s a page can optionally satisfy
+  (structurally — no inheritance needed) so `main_window.py`'s three
+  per-page optional-capability call sites use `isinstance()` instead of
+  `getattr(page, "...", None)` duck-typing. Each stays independently
+  optional on purpose — see this file's own module docstring for why a
+  single combined Protocol, or a mandatory one, would break existing pages.
 - `theme.py` — color theme definitions (`ThemeColors`, `THEMES`,
   `DEFAULT_THEME_NAME`) and Qt stylesheet generation (`build_stylesheet`).
   Moved here from `core/` since it's a pure UI/presentation concern with no
@@ -97,16 +119,18 @@ a new top-level section that needs `section_registry.py`).
 ## Domain folders
 
 - `sidebar/` — the left navigation column: `ActiveRepoWidget` (display-only
-  repo thumbnail + name label — no click-to-open picker; double-clicking a
-  node in Project Editor's always-visible graph panel is the only way to
-  change the active repo now), `SectionTabList` (a vertical list of section
-  tabs + dynamic Browser Link tabs + a trailing Setting row — Project
-  Editor is not one of these rows, see below), and a footer built from
+  repo thumbnail + name label — no click-to-open picker; clicking a node in
+  Project Editor's graph panel is the only way to change the active repo
+  now), `SectionTabList` (a vertical list of section tabs, including
+  Project Editor, plus dynamic Browser Link rows and a trailing Setting
+  row), and a footer built from
   `sidebar_footer_action_registry.py`. See `sidebar/README.md`.
 - `browser_links/` — the Browser Link feature end-to-end: its Settings tab
-  and its runtime `QWebEngineView` tab, previously split across
-  `settings/`/`about/` by UI-kind rather than domain (`about/` itself was
-  dissolved once nothing else was left in it). See `browser_links/README.md`.
+  and its dynamic Sidebar row, opened via `QDesktopServices.openUrl` in the
+  OS's default browser rather than an embedded `QWebEngineView` tab (see
+  that folder's `README.md`) — previously split across `settings/`/`about/`
+  by UI-kind rather than domain (`about/` itself was dissolved once
+  nothing else was left in it).
 - `repo_settings/` — the repo-configuration domain (Local Repository,
   Requirements & Plugins) — split out of `settings/` since these two are
   per-repo `CATEGORY_REPO` tabs, a different concern from `settings/`'s
@@ -160,8 +184,7 @@ clicks Logout). End the script with
 `sys.stdout.flush(); os._exit(0)` — `os._exit` is required because Qt/
 Windows can hang on normal process teardown after `QApplication` is
 destroyed without an explicit `app.quit()`; without the `os._exit(0)` the
-script can look hung even though it actually finished. Note that
-constructing a real `QWebEngineProfile`/`QWebEngineView` can itself be slow
-to spin up cold (Chromium subsystem init) — a plain
+script can look hung even though it actually finished. A plain
 `importlib.import_module` sweep over every file is a faster, sufficient
-check for import-path correctness alone (no GUI needed).
+check for import-path correctness alone when a full `MainWindow` isn't
+needed (no GUI needed either way).

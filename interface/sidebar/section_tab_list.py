@@ -14,14 +14,21 @@ DEFAULT_BROWSER_LINK_ICON = Path(__file__).resolve().parent.parent.parent / "ass
 class SectionTabList(QListWidget):
     """Vertical replacement for the old horizontal TopTabBar: one row per
     registered SectionRegistry section (built-in and plugin-provided alike,
-    in registry order, excluding any SectionSpec.persistent=True section —
-    see interface/section_registry.py, e.g. Project Editor is an
-    always-visible docked panel rather than a row here), then one row per
-    dynamic Browser Link on the active repo (see add_dynamic_tab — inserted
+    in registry order), then one row per dynamic Browser Link on the active
+    repo (see add_dynamic_tab — inserted
     right after the fixed sections on every repo switch). Setting is
     deliberately NOT a row here — it's its own icon-only button in
     Sidebar's footer, next to the GitHub username, since it's an app-level
     control rather than a repo-scoped one (see interface/sidebar/sidebar.py).
+
+    A Browser Link row is a bit different from every other row: clicking it
+    opens the link in the OS's default browser (external_link_activated,
+    handled in interface/main_window.py via QDesktopServices.openUrl)
+    rather than switching view_stack to some page — no QtWebEngine/embedded
+    browser tab involved. It never becomes the "current" row for this
+    reason: clicking it snaps selection straight back to whatever was
+    selected before, so the highlighted row always still reflects the
+    actually-visible page.
 
     Every row (fixed or dynamic alike) is built the same way, as one
     composite QWidget installed via setItemWidget — not native
@@ -36,17 +43,18 @@ class SectionTabList(QListWidget):
     interface/theme.py covers that instead, toggled by _update_current_label."""
 
     navigation_changed = Signal(str)
+    external_link_activated = Signal(str)
 
     def __init__(self, parent=None, *, section_registry: SectionRegistry):
         super().__init__(parent)
         self.setObjectName("sectionTabList")
 
         self._row_labels: dict[str, QLabel] = {}
+        self._external_urls: dict[str, str] = {}
+        self._current_row = 0
 
         self._fixed_count = 0
         for spec in section_registry.ordered():
-            if spec.persistent:
-                continue
             trailing_widget = spec.trailing_widget_factory() if spec.trailing_widget_factory is not None else None
             self._add_row(spec.key, spec.label, spec.icon_path, trailing_widget)
             self._fixed_count += 1
@@ -90,15 +98,19 @@ class SectionTabList(QListWidget):
         self.setItemWidget(item, row_widget)
         self._row_labels[key] = text_label
 
-    def add_dynamic_tab(self, key: str, label: str, icon_path: Path | None = None) -> None:
+    def add_dynamic_tab(self, key: str, label: str, icon_path: Path | None = None, *, url: str) -> None:
         """Inserted right after the fixed sections and any earlier dynamic
         tabs. icon_path defaults to the generic Browser Link icon when the
         link has no per-link override (see
         BrowserLinksSettingsPage._on_change_browser_link_icon in
-        interface/settings/browser_links_settings_page.py)."""
+        interface/browser_links/browser_links_settings_page.py). `url` is
+        opened externally on click (see class docstring) rather than
+        switching to an embedded page — every dynamic tab today is a
+        Browser Link, so `url` is required."""
         self._add_row(
             key, label, icon_path or DEFAULT_BROWSER_LINK_ICON, index=self._fixed_count + self._dynamic_count
         )
+        self._external_urls[key] = url
         self._dynamic_count += 1
 
     def clear_dynamic_tabs(self) -> None:
@@ -106,6 +118,7 @@ class SectionTabList(QListWidget):
             item = self.item(self._fixed_count)
             key = item.data(Qt.UserRole)
             self._row_labels.pop(key, None)
+            self._external_urls.pop(key, None)
             self.takeItem(self._fixed_count)
         self._dynamic_count = 0
 
@@ -131,6 +144,7 @@ class SectionTabList(QListWidget):
         blocked = self.blockSignals(True)
         self.setCurrentRow(row)
         self.blockSignals(blocked)
+        self._current_row = row
         self._update_current_label(row)
 
     def _row_for_key(self, key: str) -> int | None:
@@ -153,7 +167,19 @@ class SectionTabList(QListWidget):
             label.style().polish(label)
 
     def _on_current_row_changed(self, row: int) -> None:
-        self._update_current_label(row)
         if row < 0:
             return
-        self.navigation_changed.emit(self.item(row).data(Qt.UserRole))
+        key = self.item(row).data(Qt.UserRole)
+        url = self._external_urls.get(key)
+        if url is not None:
+            # Not a real navigation — snap selection back to whatever page
+            # was actually showing before this click, then open the link
+            # externally. blockSignals so this doesn't re-enter here.
+            blocked = self.blockSignals(True)
+            self.setCurrentRow(self._current_row)
+            self.blockSignals(blocked)
+            self.external_link_activated.emit(url)
+            return
+        self._current_row = row
+        self._update_current_label(row)
+        self.navigation_changed.emit(key)

@@ -1,11 +1,15 @@
 # plugins/core/project_editor/
 
-Node-graph editor for the Project/Repo registry — a `SectionRegistry`
-section (`persistent=True`), meaning it's never a sidebar row and never a
-switchable `view_stack` page: it's docked permanently beside `view_stack`
-in a `QSplitter` (see `interface/main_window.py`'s `_build_main_ui`), always
-visible no matter which ordinary section (Explorer/Submit/About/Settings)
-is currently showing. Renamed from `pipeline_architect` on 2026-07-15, when
+Node-graph editor for the Project/Repo registry — an ordinary
+`SectionRegistry` section, a Sidebar row and `view_stack` page like every
+other section. Before this refactor it was `persistent=True`: never a
+sidebar row, docked permanently beside `view_stack` in a `QSplitter`
+instead, always visible no matter which ordinary section was currently
+showing — folded into the single `view_stack` along with everything else
+as part of tightening the app down to one navigation model (its node
+highlight/HUD now only refreshes when this tab is actually visible,
+matching how every other page already behaved, instead of continuously).
+Renamed from `pipeline_architect` on 2026-07-15, when
 this stopped being a buried Settings > Developer tab (`ProjectDataEditorPage`,
 a CRUD tree); briefly a full-width switchable section the same day, then
 changed again the same day to the always-visible docked panel it is now.
@@ -59,15 +63,13 @@ real, visible consequence (no way to add/edit/delete repos at all until
 it's fixed). See `core/extensibility/loader.py`'s `PluginLoadFailure`
 handling for why every other plugin failure is isolated and this one isn't.
 
-This section is `persistent=True` (never added to `_section_view_index`/
-`SectionTabList` — see the top of this file), so
-`MainWindow._apply_plugin_visibility` never gates it at all, persistent or
-not — there used to be a `manifest.json` `"core": true` flag here too,
-load-bearing back when this plugin registered a normal switchable section,
-but it had already gone fully redundant once the section became
-persistent. Removed 2026-08-04 once every `plugins/core/` plugin (not just
-this one) became unconditionally visible for every repo — see
-`plugins/README.md`. This plugin's row still shows up, label-only and
+`MainWindow._apply_plugin_visibility` never gates this section at all —
+there used to be a `manifest.json` `"core": true` flag here, load-bearing
+back when this plugin registered a normal switchable section, but it had
+already gone fully redundant once the section became `persistent=True`
+(now removed, see the top of this file). Removed 2026-08-04 once every
+`plugins/core/` plugin (not just this one) became unconditionally visible
+for every repo — see `plugins/README.md`. This plugin's row still shows up, label-only and
 unchecked, in the "Core Plugin" list on the "Requirements & Plugins" tab
 (`interface/repo_settings/requirements_and_plugins_page.py`), same as
 every other `plugins/core/` plugin — nothing plugin-specific needed here
@@ -85,17 +87,15 @@ anymore.
   data still in the old blob on `register(api)`.
 - `plugin.py` — `register(api)`: constructs `PipelineStore` and one
   `ProjectEditorPage` instance, registers it via `api.register_section(...)`
-  with `wire=_wire` — `_wire` calls `page.bind_set_active_repo(host.set_active_repo)`
-  and `page.bind_switch_project(host.switch_project)`, both `SectionHost`
-  fields added specifically for this plugin (see
-  `interface/section_registry.py`) so a node click can trigger a real
-  active-repo switch, and Settings > Project's "Switch Project..." button
-  can trigger a full app restart, without the page holding a `MainWindow`
-  reference.
-  Also reads `api.settings_tab_registry` (a new read-access property on
-  `PluginAPI`, mirroring the existing `api.file_opener_registry` pattern)
-  so the Repository Setting popup can enumerate `CATEGORY_REPO` tabs
-  generically.
+  with `wire=_wire` — `_wire` calls `page.bind_set_active_repo(host.set_active_repo)`,
+  `page.bind_switch_project(host.switch_project)`, and
+  `page.bind_open_settings_tab(host.open_settings_tab)` — all three
+  `UICommandService` fields (see `interface/section_registry.py`) so a node
+  click can trigger a real active-repo switch, Settings > Project's
+  "Switch Project..." button can trigger a full app restart, and a node's
+  "Repository Setting..." right-click can open the unified Settings dialog
+  on its Repo Setting (Dev) category — all without the page holding a
+  `MainWindow` reference.
 - `dialogs.py` — `ProjectDialog`/`RepoDialog`. `RepoDialog` embeds
   `interface/shared/requirements_tree_widget.py`'s `RequirementsTreeWidget`
   (the checkable Program requirements tree, for repo creation) — that
@@ -138,7 +138,7 @@ anymore.
   see below), but nothing calls it with a project id other than the one
   fixed at construction anymore — `bind_switch_project()`/`switch_project()`
   is the only way to view a different project at all, and it does that via
-  a full app restart (`SectionHost.switch_project`, wrapping
+  a full app restart (`UICommandService.switch_project`, wrapping
   `MainWindow._request_switch_project`), not an in-place load. Implements
   the standard `set_repo()` page protocol purely to keep the graph's
   active-node highlight in sync when the active repo changes elsewhere —
@@ -247,10 +247,11 @@ anymore.
     no pipeline connections (or whose connections are all already cloned)
     still sees the exact same one-line prompt as before this existed.
   - **Right-click context menu**: "Repository Setting..." (opens
-    `open_repo_settings`, see `repo_settings_panel.py` below — this one
-    doesn't touch the scene, so it's called directly, no `QTimer` deferral
-    needed), then rename/thumbnail/delete — every mutation delegated back
-    to `ProjectGraphView`'s own methods rather than duplicated per node.
+    `open_repo_settings`, which opens the unified Settings dialog via
+    `bind_open_settings_tab` — this one doesn't touch the scene, so it's
+    called directly, no `QTimer` deferral needed), then
+    rename/thumbnail/delete — every mutation delegated back to
+    `ProjectGraphView`'s own methods rather than duplicated per node.
   - **Bottom-right overlay HUD** (`ProjectGraphView._overlay_container`, a
     plain child `QWidget` positioned by hand in `resizeEvent`/
     `_position_overlay` rather than a layout of its own, so it floats over
@@ -342,36 +343,15 @@ anymore.
   QThread-wraps-a-callable/`finished_ok`/`failed` shape rather than an
   import of it — this plugin doesn't reach into a sibling plugin's source
   (see "Working here" at the bottom of this file).
-- `repo_settings_panel.py` — `RepoSettingsPanel`: every `CATEGORY_REPO`
-  `SettingsTabSpec`, read off `SettingsTabRegistry.ordered()` and rendered
-  with the **exact same tab-list + `QStackedWidget` template**
-  `interface/settings/settings_view.py`'s `SettingsView` uses (a
-  `QListWidget` of tab labels on the left switching a `QStackedWidget` on
-  the right, every page constructed eagerly) — fully generic, so any
-  plugin's own `CATEGORY_REPO` settings tab shows up here automatically
-  with zero edits to this file. Changed 2026-07-19 away from a column of
-  collapsible accordion sections (`_CollapsibleSection`, now removed) so
-  this popup reads as one consistent settings UI with the program's own
-  Setting view. Changed again 2026-07-20 to group tabs under two
-  non-selectable category header rows, same `settings_view.py`
-  General/Developer grouping mechanic: "Repository" (a hardcoded key set —
-  Local Repository, Custom Paths, Requirements & Plugins, Browser) and
-  "Plugins" (everything else registered under `CATEGORY_REPO`, i.e. every
-  plugin-contributed tab) — this is also when the "Project Status" tab was
-  removed entirely (no longer needed). This is also why
-  `interface/settings/settings_view.py`
-  stopped rendering `CATEGORY_REPO` at all (see that file) — a single
-  source of UI for repo settings. `RepoSettingsDialog` wraps a fresh
-  `RepoSettingsPanel` in a `QDialog`, constructed on every open (no state
-  carried between opens, same convention `interface/builtin_settings_tabs.py`
-  documents for Settings tabs) — this used to be a permanent panel beside
-  the graph, moved into this popup 2026-07-15, opened via a node's
-  right-click "Repository Setting..." (`ProjectGraphView.open_repo_settings`).
-  Always reflects the currently **active** repo, not necessarily whichever
-  node was right-clicked — every tab inside self-resolves the active repo
-  from `local_config_store`, the same convention each one already used
-  inside Settings; left-click a node first (switches the active repo) if
-  you want the two to match.
+- `repo_settings_panel.py` (**removed** as part of this refactor —
+  `RepoSettingsPanel`/`RepoSettingsDialog` used to render every
+  `CATEGORY_REPO` `SettingsTabSpec` in its own popup, opened via a node's
+  right-click "Repository Setting...", so these tabs weren't editable from
+  both there and the app-level Setting dialog at once. Those tabs now
+  render inside `interface/settings/settings_view.py`'s Repo Setting (Dev)
+  top tab instead — see that file's `README.md` "Rendering history" note —
+  and `ProjectGraphView.open_repo_settings()` opens that same dialog via
+  `UICommandService.open_settings_tab` rather than building a second one).
 - `pipeline_store.py` — `PipelineStore`/`RepoRef`/`CustomPath`. Lives in each
   repo's own `Repo.plugin_data["project_editor"]` (`core/models.py`,
   `data/projects/<project_id>.json` — moved off the old standalone
@@ -481,12 +461,10 @@ def resolve_pipeline_connection(api, project_id: str, repo_id: str, connection_i
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, or touches `interface/section_registry.py`'s
-`SectionHost`/`SectionSpec.persistent`, `interface/plugin_api.py`'s
-`settings_tab_registry` wiring, or `interface/main_window.py`'s persistent-
-panel docking in `_build_main_ui` (all added specifically for this plugin).
-`interface/settings_tab_registry.py`'s `CATEGORY_PROJECT` and
-`interface/settings/settings_view.py`'s category-iteration tuple are the
-one other cross-boundary exception (added 2026-08-03 specifically to give
-`project_settings_page.py` a real "Project" header row in the app-level
-Setting popup) — a genuinely new settings category is framework-level,
-not something this plugin's own folder can add by itself.
+`UICommandService` (the `open_settings_tab`/`set_active_repo`/`switch_project`
+fields this plugin's `_wire` binds). `interface/settings_tab_registry.py`'s
+`CATEGORY_PROJECT` and `interface/settings/settings_view.py`'s category
+grouping are the one other cross-boundary exception (added 2026-08-03
+specifically to give `project_settings_page.py` a real "Project" header
+row in the app-level Setting popup) — a genuinely new settings category is
+framework-level, not something this plugin's own folder can add by itself.

@@ -37,8 +37,9 @@ beyond "core infrastructure":
   list[Program]`, that Project's own Program Database — pipeline software
   like "Autodesk Maya" a repo can list as a requirement, **not** shared
   with other Projects), `Repo` (including `browser_links:
-  list[BrowserLink]`, repo-scoped bookmarks rendered as their own top-level
-  tab — see `interface/about/browser_link_page.py`), `RepoStatus`, etc.
+  list[BrowserLink]`, repo-scoped bookmarks rendered as dynamic Sidebar
+  rows that open externally — see `interface/browser_links/README.md`),
+  `RepoStatus`, etc.
 - `os_utils.py` — OS-level helpers (open in file explorer, open with default
   app).
 - `relaunch.py` — `relaunch_ukorehub_exe(repo_root)`: spawns `UkoreHub.exe`
@@ -69,10 +70,12 @@ Settings > (repo) > Requirements & Plugins
 
 A second field, `Repo.browser_links` (`set_repo_browser_links`,
 `core/models.py`'s `BrowserLink`) is a different shape again: each entry
-becomes its own **dynamic sidebar tab** while the owning repo is active,
+becomes its own **dynamic sidebar row** while the owning repo is active,
 rebuilt from scratch on every repo switch by `interface/main_window.py`'s
-`_rebuild_dynamic_tabs` (`interface/about/browser_link_page.py`'s
-`BrowserLinkPage`). Edited via Settings > (repo) > Browser. Unlike
+`_rebuild_dynamic_tabs` — clicking one opens the link in the OS's default
+browser (`QDesktopServices.openUrl`), not an embedded page (see
+`interface/browser_links/README.md`). Edited via Settings > Repo Setting
+(Dev) > Browser. Unlike
 `active_plugin_ids`, this doesn't hide anything that exists elsewhere — it
 *adds* tabs that only exist because the link record does. (A sibling
 Explorer-pin mechanism used to work the same way — `Repo.explorer_pins`/

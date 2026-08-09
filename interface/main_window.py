@@ -4,35 +4,29 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
-    QSplitter,
-    QSplitterHandle,
     QStackedWidget,
     QWidget,
 )
 
 from core.app_core import UkoreCore
 from core.exceptions import NotFoundError
-from core.extensibility.file_opener import FileOpenerRegistry
-from core.events.hooks import GitHookContext, GitHookEvent
+from core.events.hooks import AppLifecycleContext
 from core.vcs.paths import resolve_repo_path
 from core.relaunch import relaunch_ukorehub_exe
-from interface.theme import DEFAULT_THEME_NAME, get_theme
 from core.version import APP_NAME, APP_VERSION
 from interface import builtin_settings_tabs
-from interface.browser_links.browser_link_page import BrowserLinkPage
-from interface.browser_links.web_engine_profile import make_persistent_browser_link_profile
-from interface.section_registry import SectionHost, SectionRegistry
+from interface.page_protocols import AutoSyncPage, PathFocusablePage, SetRepoPage
+from interface.section_registry import UICommandService
 from interface.settings.settings_view import SettingsDialog
-from interface.settings_tab_registry import SettingsTabRegistry
 from interface.sidebar.sidebar import Sidebar
-from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
+from interface.ui_registry_manager import UIRegistryManager
 
 # interface/main_window.py -> interface/ -> repo root — used only to find
 # UkoreHub.exe for _relaunch_to_login (the launcher exe built at the repo
@@ -47,61 +41,13 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # also force-resizes if the window is currently shorter than this.
 MAIN_WINDOW_MIN_HEIGHT = 600
 
-# Width of the grab bar between view_stack and the persistent-section panel
-# (see _build_main_ui's content_splitter) — wide and hand-painted rather
-# than the default ~1px handle, which was too thin to reliably grab and
-# gave no visual cue it was draggable at all.
-_CONTENT_SPLITTER_HANDLE_WIDTH = 30
-
-
-class _ContentSplitterHandle(QSplitterHandle):
-    """Paints its own background instead of relying on QSS `::handle`/
-    `::handle:hover` selectors — those looked correct on paper but the
-    Windows native style (`windowsvista`) still painted over them, so
-    neither the resting bar color nor the hover highlight ever actually
-    showed up. Tracking hover state by hand (WA_Hover + enter/leaveEvent)
-    and filling the whole rect directly in paintEvent sidesteps that
-    native-style painting entirely, guaranteeing both the bar and its
-    hover highlight actually render."""
-
-    def __init__(self, orientation, parent):
-        super().__init__(orientation, parent)
-        self.setAttribute(Qt.WA_Hover, True)
-        self._hovered = False
-
-    def enterEvent(self, event) -> None:
-        self._hovered = True
-        self.update()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:
-        self._hovered = False
-        self.update()
-        super().leaveEvent(event)
-
-    def paintEvent(self, event) -> None:
-        colors = get_theme(DEFAULT_THEME_NAME)
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(colors.accent if self._hovered else colors.border))
-
-
-class _ContentSplitter(QSplitter):
-    """QSplitter whose handles are _ContentSplitterHandle instead of the
-    plain native one — see that class's docstring for why."""
-
-    def createHandle(self) -> QSplitterHandle:
-        return _ContentSplitterHandle(self.orientation(), self)
-
 
 class MainWindow(QMainWindow):
     def __init__(
         self,
         core: UkoreCore,
         cache_dir: Path,
-        section_registry: SectionRegistry,
-        settings_tab_registry: SettingsTabRegistry,
-        file_opener_registry: FileOpenerRegistry,
-        sidebar_footer_action_registry: SidebarFooterActionRegistry,
+        registries: UIRegistryManager,
         section_key_to_plugin_id: dict[str, str] | None = None,
         core_plugin_ids: set[str] | None = None,
         opt_in_plugin_ids: set[str] | None = None,
@@ -117,10 +63,10 @@ class MainWindow(QMainWindow):
         self._token_store = core.github_tokens
         self._cache_dir = Path(cache_dir)
         self.hook_registry = core.hooks
-        self.section_registry = section_registry
-        self.settings_tab_registry = settings_tab_registry
-        self.file_opener_registry = file_opener_registry
-        self.sidebar_footer_action_registry = sidebar_footer_action_registry
+        self.section_registry = registries.sections
+        self.settings_tab_registry = registries.settings_tabs
+        self.file_opener_registry = registries.file_openers
+        self.sidebar_footer_action_registry = registries.sidebar_footer_actions
         # Maps a SectionRegistry key back to the plugin id that registered
         # it (built in launcher.py by diffing section_registry.keys() around
         # each plugin's register(api) call) — used by _apply_plugin_visibility
@@ -149,15 +95,6 @@ class MainWindow(QMainWindow):
         self.sidebar: Sidebar | None = None
         self.view_stack: QStackedWidget | None = None
         self._section_view_index: dict[str, int] = {}
-        self._persistent_pages: list[QWidget] = []
-        self._dynamic_view_index: dict[str, int] = {}
-        # Shared across every Browser Link tab so a login persists across
-        # app restarts — see interface/web_engine_profile.py. Lives under
-        # cache/ (per-machine, gitignored — see launcher.py), not data/,
-        # since it holds cookies/session state, not shared config.
-        self._web_engine_profile = make_persistent_browser_link_profile(
-            self._cache_dir / "webengine_profile", self
-        )
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
 
@@ -193,8 +130,8 @@ class MainWindow(QMainWindow):
         # Generic per-page wiring — lets a plugin page (Explorer, Submit)
         # connect its own signals to app-level services without MainWindow
         # importing that page's specific type. See
-        # interface/section_registry.py's SectionHost/SectionSpec.wire.
-        section_host = SectionHost(
+        # interface/section_registry.py's UICommandService/SectionSpec.wire.
+        command_service = UICommandService(
             set_status_message=self._set_status_message,
             navigate_and_focus=self._navigate_and_focus,
             set_active_repo=self._set_active_repo,
@@ -203,63 +140,44 @@ class MainWindow(QMainWindow):
         )
         for spec in section_registry.ordered():
             if spec.wire is not None:
-                spec.wire(self.pages[spec.key], section_host)
+                spec.wire(self.pages[spec.key], command_service)
 
         self.sidebar = Sidebar(
             section_registry=section_registry, sidebar_footer_action_registry=self.sidebar_footer_action_registry
         )
         self.sidebar.navigation_changed.connect(self._on_navigation_changed)
+        self.sidebar.external_link_activated.connect(self._on_external_link_activated)
         self.sidebar.settings_requested.connect(self._on_settings_requested)
 
-        # Every non-persistent section is its own full-width top-level page,
-        # switched to via the Sidebar's SectionTabList. A persistent section
-        # (SectionSpec.persistent=True, e.g. Project Editor) never joins
-        # view_stack at all — it's always visible, docked beside it (see the
-        # QSplitter below) rather than switched to.
+        # Every section (including Project Editor, folded into this stack
+        # like any other section as of this refactor — it used to be
+        # SectionSpec.persistent=True, always visible docked beside
+        # view_stack in a QSplitter rather than switched to) is its own
+        # full-width top-level page, switched to via the Sidebar's
+        # SectionTabList.
         self.view_stack = QStackedWidget()
         self._section_view_index = {
-            spec.key: self.view_stack.addWidget(self.pages[spec.key])
-            for spec in section_registry.ordered()
-            if not spec.persistent
+            spec.key: self.view_stack.addWidget(self.pages[spec.key]) for spec in section_registry.ordered()
         }
-        self._persistent_pages = [self.pages[spec.key] for spec in section_registry.ordered() if spec.persistent]
 
         # Setting is a popup dialog (SettingsDialog), not a view_stack page
         # — see _on_settings_requested, which constructs one fresh on every
-        # open, same as Repository Setting's own RepoSettingsDialog.
+        # open. A repo node's "Repository Setting..." right-click opens this
+        # same dialog (via UICommandService.open_settings_tab) rather than a
+        # popup of its own.
 
-        # One top-level tab + page per Browser Link on the active repo —
+        # One dynamic Sidebar row per Browser Link on the active repo —
         # rebuilt from scratch on every repo switch and whenever it changes,
-        # see _rebuild_dynamic_tabs.
-        self._dynamic_view_index = {}
+        # see _rebuild_dynamic_tabs. Opens externally on click (no
+        # view_stack page of its own), so there's no view-index to track
+        # here.
 
         central = QWidget()
         central_layout = QHBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.sidebar)
-
-        # view_stack plus any persistent section pages (Project Editor)
-        # share a user-resizable splitter, so the always-visible panel
-        # doesn't permanently steal a fixed chunk of width from whichever
-        # section is currently showing.
-        content_splitter = _ContentSplitter()
-        content_splitter.setHandleWidth(_CONTENT_SPLITTER_HANDLE_WIDTH)
-        content_splitter.addWidget(self.view_stack)
-        for persistent_page in self._persistent_pages:
-            content_splitter.addWidget(persistent_page)
-        content_splitter.setStretchFactor(0, 1)
-        if self._persistent_pages:
-            # Initial split favoring view_stack — QSplitter defaults to an
-            # even split otherwise, which would give Project Editor's panel
-            # as much width as whatever section (Explorer/Submit/About) is
-            # showing next to it. setStretchFactor above only governs how
-            # extra space is distributed on a window resize, not this
-            # initial layout pass. Project Editor's Graph View still gets a
-            # generous share (not a even 50/50) so the section pages keep
-            # the larger side.
-            content_splitter.setSizes([1000, 900] + [0] * (len(self._persistent_pages) - 1))
-        central_layout.addWidget(content_splitter, stretch=1)
+        central_layout.addWidget(self.view_stack, stretch=1)
         self.setCentralWidget(central)
 
         self.setMinimumHeight(MAIN_WINDOW_MIN_HEIGHT)
@@ -279,7 +197,6 @@ class MainWindow(QMainWindow):
         self.sidebar.set_account_username(self.local_config_store.github_username)
         self._restore_active_repo()
         self._apply_to_current_page()
-        self._apply_to_persistent_pages()
         QTimer.singleShot(0, self._start_auto_sync)
         self._fire_app_started()
 
@@ -288,11 +205,15 @@ class MainWindow(QMainWindow):
     def _on_navigation_changed(self, key: str) -> None:
         index = self._section_view_index.get(key)
         if index is None:
-            index = self._dynamic_view_index.get(key)
-        if index is None:
             return
         self.view_stack.setCurrentIndex(index)
         self._apply_to_current_page()
+
+    def _on_external_link_activated(self, url: str) -> None:
+        """A Browser Link row (Sidebar.external_link_activated) — opens in
+        the OS's default browser instead of an embedded page, see
+        interface/sidebar/section_tab_list.py's class docstring."""
+        QDesktopServices.openUrl(QUrl(url))
 
     def _on_settings_requested(self, select_key: str | None = None) -> None:
         # Setting is its own icon button in Sidebar's footer, opened as a
@@ -301,9 +222,9 @@ class MainWindow(QMainWindow):
         # whatever section is showing behind it stays exactly as it was,
         # so unlike the old view_stack-page version there's no sidebar row
         # to deselect here. select_key lets a section's own "Open Setting"
-        # button (via SectionHost.open_settings_tab) land directly on one
+        # button (via UICommandService.open_settings_tab) land directly on one
         # tab instead of whatever opens by default — see
-        # interface/section_registry.py's SectionHost.
+        # interface/section_registry.py's UICommandService.
         dialog = SettingsDialog(self, settings_tab_registry=self.settings_tab_registry)
         common_settings_page = dialog.view.get_tab_widget(builtin_settings_tabs.COMMON)
         if common_settings_page is not None:
@@ -328,46 +249,27 @@ class MainWindow(QMainWindow):
         # another section and focus a specific file there — switches the
         # sidebar row + view stack to `key`, then calls that page's optional
         # browse_to_path(path) protocol method if it implements one (see
-        # interface/section_registry.py's SectionHost).
+        # interface/section_registry.py's UICommandService).
         self.sidebar.tab_list.select(key)
         self._on_navigation_changed(key)
         page = self.pages.get(key)
-        browse_to_path = getattr(page, "browse_to_path", None)
-        if callable(browse_to_path):
-            browse_to_path(path)
+        if isinstance(page, PathFocusablePage):
+            page.browse_to_path(path)
 
     def _rebuild_dynamic_tabs(self) -> None:
-        """Rebuilds every dynamic (non-fixed) sidebar tab — one per
+        """Rebuilds every dynamic (non-fixed) sidebar row — one per
         active-repo Browser Link. Called on every repo switch and whenever
-        browser_links_changed fires."""
-        dynamic_indexes = set(self._dynamic_view_index.values())
-        was_showing_dynamic = self.view_stack.currentIndex() in dynamic_indexes
-        # Resolve every widget by its (still-valid) index BEFORE removing
-        # any of them — QStackedWidget re-indexes remaining widgets after
-        # each removeWidget(), so removing by stale index one at a time
-        # would skip/miss widgets once earlier removals shift things down.
-        old_dynamic_pages = [self.view_stack.widget(index) for index in self._dynamic_view_index.values()]
-        for page in old_dynamic_pages:
-            self.view_stack.removeWidget(page)
-            page.deleteLater()
-        self._dynamic_view_index = {}
+        browser_links_changed fires. Each row just opens its link in the
+        OS's default browser on click (see
+        interface/sidebar/section_tab_list.py) rather than switching to an
+        embedded view_stack page, so there's no page teardown or "was this
+        the currently-showing page" fallback needed here anymore."""
         self.sidebar.tab_list.clear_dynamic_tabs()
-
         if self._active_repo is not None:
             for link_index, link in enumerate(self._active_repo.browser_links):
                 key = f"browser_link:{link_index}"
-                view_index = self.view_stack.addWidget(BrowserLinkPage(link.url, self._web_engine_profile))
-                self._dynamic_view_index[key] = view_index
                 icon_path = self.store.resolve_browser_link_icon_path(link)
-                self.sidebar.tab_list.add_dynamic_tab(key, link.name, icon_path)
-
-        if was_showing_dynamic:
-            # The tab the user was looking at just got torn down (its link/
-            # pin was removed, or the repo changed) — land on the first
-            # remaining static section rather than hardcoding one.
-            fallback_key = next(iter(self._section_view_index))
-            self.sidebar.tab_list.select(fallback_key)
-            self._on_navigation_changed(fallback_key)
+                self.sidebar.tab_list.add_dynamic_tab(key, link.name, icon_path, url=link.url)
 
     def _apply_plugin_visibility(self) -> None:
         """Hides the sidebar row of any plugins/ section the active repo
@@ -438,25 +340,17 @@ class MainWindow(QMainWindow):
         return self.view_stack.currentWidget()
 
     def _apply_set_repo(self, page) -> None:
-        # set_repo is an optional per-page protocol method, same convention
-        # as _navigate_and_focus's browse_to_path above — a page that has no
-        # notion of "active repo" (e.g. DebugConsole, BananaSketch) simply
-        # doesn't implement it rather than being forced into a no-op stub.
-        set_repo = getattr(page, "set_repo", None)
-        if callable(set_repo):
-            set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
+        # SetRepoPage is an optional per-page Protocol (interface/page_protocols.py),
+        # same convention as _navigate_and_focus's PathFocusablePage above —
+        # a page that has no notion of "active repo" (e.g. DebugConsole,
+        # BananaSketch) simply doesn't implement it rather than being
+        # forced into a no-op stub.
+        if isinstance(page, SetRepoPage):
+            page.set_repo(self._active_project, self._active_repo, self.local_config_store.workspace_root)
 
     def _apply_to_current_page(self) -> None:
         page = self._current_page()
         if page is not None:
-            self._apply_set_repo(page)
-
-    def _apply_to_persistent_pages(self) -> None:
-        """Persistent section pages (e.g. Project Editor) aren't in
-        view_stack at all, so _current_page()/_apply_to_current_page()
-        never reaches them — push the active repo to every one of them
-        directly instead, alongside every _apply_to_current_page() call."""
-        for page in self._persistent_pages:
             self._apply_set_repo(page)
 
     def _set_active_repo(self, project_id: str, repo_id: str) -> None:
@@ -468,7 +362,6 @@ class MainWindow(QMainWindow):
         self._rebuild_dynamic_tabs()
         self._apply_plugin_visibility()
         self._apply_to_current_page()
-        self._apply_to_persistent_pages()
         self._fire_repo_selected()
         self._start_auto_sync()
 
@@ -478,27 +371,24 @@ class MainWindow(QMainWindow):
         repo_path = resolve_repo_path(
             self.local_config_store.workspace_root, self._active_project.name, self._active_repo.name
         )
-        self.hook_registry.fire(
-            GitHookEvent.REPO_SELECTED,
-            GitHookContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path),
+        self.hook_registry.fire_repo_changed(
+            AppLifecycleContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path)
         )
 
     def _fire_app_started(self) -> None:
         workspace_root = self.local_config_store.workspace_root
         repo_path = Path(workspace_root) if workspace_root else Path.cwd()
-        self.hook_registry.fire(
-            GitHookEvent.APP_STARTED,
-            GitHookContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path),
+        self.hook_registry.fire_app_start(
+            AppLifecycleContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path)
         )
 
     def _start_auto_sync(self) -> None:
         """Clone/pull the active repo. Runs on every "Select Repo..." pick and
         again on every app launch, so the working copy is always up to date
         without the user having to remember to sync manually. Calls the
-        optional sync_active_repo(...) protocol method (see
-        interface/section_registry.py's SectionHost) on whichever registered
-        page(s) implement it — today, just Submit — rather than hardcoding
-        a specific page type."""
+        optional AutoSyncPage protocol method (interface/page_protocols.py)
+        on whichever registered page(s) implement it — today, just Submit —
+        rather than hardcoding a specific page type."""
         if self._active_repo is None or self._active_project is None:
             return
         workspace_root = self.local_config_store.workspace_root
@@ -508,9 +398,8 @@ class MainWindow(QMainWindow):
             )
             return
         for page in self.pages.values():
-            sync_active_repo = getattr(page, "sync_active_repo", None)
-            if callable(sync_active_repo):
-                sync_active_repo(self._active_project, self._active_repo, workspace_root)
+            if isinstance(page, AutoSyncPage):
+                page.sync_active_repo(self._active_project, self._active_repo, workspace_root)
 
     # -- GitHub logout ----------------------------------------------------
 
@@ -554,7 +443,7 @@ class MainWindow(QMainWindow):
 
     def _request_switch_project(self) -> None:
         # plugins/core/project_editor's Settings > Project "Switch
-        # Project..." button, via SectionHost.switch_project. Project is
+        # Project..." button, via UICommandService.switch_project. Project is
         # fixed for the whole run (LocalConfigStore.active_project_id, set
         # once by launcher.py's mandatory Project Selector gate before this
         # window was even built) — every page downstream assumed it
@@ -574,6 +463,11 @@ class MainWindow(QMainWindow):
     # -- shutdown -------------------------------------------------------------
 
     def closeEvent(self, event) -> None:
+        workspace_root = self.local_config_store.workspace_root
+        repo_path = Path(workspace_root) if workspace_root else Path.cwd()
+        self.hook_registry.fire_app_close(
+            AppLifecycleContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path)
+        )
         # Qt aborts the process if a QThread object is garbage-collected while
         # still running (e.g. an update check or sync in flight when the user
         # closes the window) — terminate and wait for any live worker first.
