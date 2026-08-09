@@ -62,10 +62,18 @@ class GcsJsonSync:
     an anonymous client. can_push reflects whether this instance was built
     with real credentials; push() raises GoogleAuthError up front instead
     of making a doomed anonymous write request against a public-read-only
-    bucket."""
+    bucket. Needs client_id/client_secret too, not just refresh_token — on
+    a machine where launcher.py's _build_cloud_sync fell back to
+    data/system_config.default.json (a fresh machine with no local
+    system_config.json yet, but one that already has a cached refresh
+    token from a previous login), that file deliberately omits the OAuth
+    client fields, so refresh_token alone isn't enough to build valid
+    Credentials. Missing either falls back to the anonymous client for
+    this run; the next run picks up the real client_id/secret once the
+    first pull() has cached the full system_config.json locally."""
 
     def __init__(self, bucket_name: str, project_id: str | None, client_id: str | None, client_secret: str | None, refresh_token: str | None):
-        self.can_push = refresh_token is not None
+        self.can_push = bool(refresh_token and client_id and client_secret)
         if self.can_push:
             credentials = Credentials(
                 token=None,
