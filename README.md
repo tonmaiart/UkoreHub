@@ -59,11 +59,38 @@ any that are missing automatically — no manual `pip install` step required.
 It reads whatever GitHub token `UkoreHub.exe` already cached; **it cannot
 complete a first-time login itself** — there is no login UI left in the
 plain-Python app anymore, so run `UkoreHub.exe` at least once first. The
-workspace folder (where cloned repos live) is fixed to `<this repo>/storage`.
+workspace folder (where cloned repos live) defaults to `<this repo>/storage`,
+and per-machine app state (`local_config.json`, cached tokens, etc.)
+defaults to `<this repo>/cache` — see "Overriding cache/storage location"
+below to point either somewhere else.
 Managers add Projects/Repos via the Project Editor section (a node graph, 1
 node = 1 repo). Whatever's added there becomes available to pick as the
 active repo by clicking its node in Project Editor — there is no separate
 sidebar repo-picker button.
+
+### Overriding cache/storage location
+
+`launcher.py` reads two environment variables, both optional:
+
+- `UKOREHUB_CACHE_DIR` — where per-machine app state lives (see "System
+  config vs. local config" below).
+- `UKOREHUB_STORAGE_DIR` — the workspace folder cloned repos live in.
+
+If unset, both fall back to `<this repo>/cache` and `<this repo>/storage`.
+`UkoreHub.exe` sets these itself before launching `python launcher.py`, so
+they point outside the `app/` folder that Update replaces on every run —
+see `cache/README.md`. Set them yourself only when running
+`python launcher.py` directly (e.g. testing a specific location):
+
+```powershell
+$env:UKOREHUB_CACHE_DIR = "C:\Path\To\Cache"
+$env:UKOREHUB_STORAGE_DIR = "C:\Path\To\Storage"
+python launcher.py
+```
+
+```bash
+UKOREHUB_CACHE_DIR=/path/to/cache UKOREHUB_STORAGE_DIR=/path/to/storage python launcher.py
+```
 
 Admins rebuild and recommit `UkoreHub.exe` via `python build_exe.py` on
 the separate `UkoreHubLauncher` repo's own `main` branch when rebranding
@@ -97,13 +124,15 @@ Settings are split into two files with different sharing behavior:
   Google** (the "Studio" button in the sidebar footer, next to Setting)
   once for the cloud-synced files to work — see "Google Cloud Sync Setup"
   below; without it, those stores just stay local-only on that machine.
-- **Local config** — `cache/local_config.json` (workspace folder, color theme,
+- **Local config** — `local_config.json` (workspace folder, color theme,
   which repo you currently have selected, cached GitHub username) and
-  `cache/github_token.json` (GitHub token, only if the OS keyring isn't
-  available). These live under `cache/`, not `data/`, and are gitignored and
-  stay per-machine — everyone picks their own workspace folder and theme.
-  Keeping them out of `data/` means a stray folder copy of the app (as
-  opposed to a fresh `git clone`) never carries your login along with it.
+  `github_token.json` (GitHub token, only if the OS keyring isn't
+  available). These live under `cache/` (see "Overriding cache/storage
+  location" above for where that actually points), not `data/`, and are
+  gitignored and stay per-machine — everyone picks their own workspace
+  folder and theme. Keeping them out of `data/` means a stray folder copy
+  of the app (as opposed to a fresh `git clone`) never carries your login
+  along with it.
 
 ## GitHub Login Setup (optional, needed for private repos)
 
@@ -193,7 +222,9 @@ crashes or blocks the app.
 - `cache/` — `local_config.json`, `github_token.json`,
   `gcs_refresh_token.json`, `webengine_profile/`, `plugin_local_config/`
   (gitignored, per-machine — see `cache/README.md`), plus `plugins/`,
-  per-repo plugin git clones.
+  per-repo plugin git clones. Default location only — actual location
+  comes from `UKOREHUB_CACHE_DIR`, see "Overriding cache/storage location"
+  above.
 - `launcher.py` — entry point.
 - `developer/` — dev-only tooling (bug-history, glossary); lives only in
   this repo (UkoreHubDev), stripped when publishing to the separate
@@ -204,6 +235,8 @@ crashes or blocks the app.
 - `storage/` — workspace folder (gitignored; actual cloned repos live here).
   Named `storage/` rather than `projects/` so it can't be confused with
   `data/projects/`, the per-project metadata blobs (see `data/README.md`).
+  Default location only — actual location comes from `UKOREHUB_STORAGE_DIR`,
+  see "Overriding cache/storage location" above.
 
 ## Tests
 

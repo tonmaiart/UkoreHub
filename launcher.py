@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,21 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+# cache/ (per-machine app state) and storage/ (cloned workspace repos) used to
+# be hardcoded as REPO_ROOT-relative — a problem for Update, which replaces
+# this whole app/ folder (see UkoreHubLauncher's README.md): anything left
+# inside it is either wiped or, worse, silently orphaned next to the new copy.
+# Sourced from env vars instead so the real launcher exe (UkoreHub.exe, built
+# from the separate UkoreHubLauncher repo) can point them at a path outside
+# app/ before spawning this file — same UKOREHUB_-prefixed convention as
+# core/vcs/git_service.py's UKOREHUB_GITHUB_TOKEN. Falls back to the old
+# REPO_ROOT-relative paths only for the `python launcher.py` direct-invocation
+# dev path, which bypasses UkoreHub.exe entirely and so never gets these set.
+CACHE_DIR = Path(os.environ["UKOREHUB_CACHE_DIR"]) if os.environ.get("UKOREHUB_CACHE_DIR") else REPO_ROOT / "cache"
+STORAGE_DIR = (
+    Path(os.environ["UKOREHUB_STORAGE_DIR"]) if os.environ.get("UKOREHUB_STORAGE_DIR") else REPO_ROOT / "storage"
+)
 
 REQUIRED_PACKAGES = [
     ("PySide6", "PySide6>=6.7,<7.0"),
@@ -192,9 +208,10 @@ def main() -> None:
     # data/) — it's already excluded wholesale from UkoreHub.exe (git-
     # tracked) and from developer/commit-main.ps1's release publish, so
     # anything placed here can never accidentally ship in a release the way
-    # a stray copy of data/ would. See cache/README.md.
-    cache_dir = REPO_ROOT / "cache"
-    cache_dir.mkdir(exist_ok=True)
+    # a stray copy of data/ would. See cache/README.md. Location comes from
+    # CACHE_DIR (module-level, above) — not necessarily under REPO_ROOT.
+    cache_dir = CACHE_DIR
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
     # debug_bus/notification_bus/google_tokens are built here, before
     # UkoreCore exists, because the cloud-bootstrap block right below
@@ -306,10 +323,12 @@ def main() -> None:
     # deliberately left in place rather than deleted — see
     # migrate_legacy_programs's own docstring.
     migrate_legacy_programs(store, data_dir / "programs.json")
-    # Workspace root is fixed to the repo's own storage/ folder — there is no
-    # UI to point it elsewhere (see interface/settings/common_settings_page.py),
-    # so force it here on every launch rather than only defaulting it once.
-    forced_workspace_root = str(REPO_ROOT / "storage")
+    # Workspace root is fixed to STORAGE_DIR (module-level, above — not
+    # necessarily under REPO_ROOT) — there is no UI to point it elsewhere (see
+    # interface/settings/common_settings_page.py), so force it here on every
+    # launch rather than only defaulting it once.
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    forced_workspace_root = str(STORAGE_DIR)
     if local_config_store.workspace_root != forced_workspace_root:
         local_config_store.set_workspace_root(forced_workspace_root)
     # GitHub login now happens in the launcher exe before this process is
