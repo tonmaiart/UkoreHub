@@ -110,13 +110,31 @@ class StudioSettingsDialog(QDialog):
         self._layout.addWidget(intro)
 
         form = QFormLayout()
-        self._gate_client_id_edit = QLineEdit(self._system_config_store.google_oauth_client_id or "")
-        self._gate_client_id_edit.setPlaceholderText('OAuth client, type "Desktop app"')
-        self._gate_client_secret_edit = QLineEdit(self._system_config_store.google_oauth_client_secret or "")
-        form.addRow("Google OAuth Client ID:", self._gate_client_id_edit)
-        form.addRow("Google OAuth Client Secret:", self._gate_client_secret_edit)
+        self._client_id_edit = QLineEdit(self._system_config_store.google_oauth_client_id or "")
+        self._client_id_edit.setPlaceholderText('OAuth client, type "Desktop app"')
+        self._client_secret_edit = QLineEdit(self._system_config_store.google_oauth_client_secret or "")
+        form.addRow("Google OAuth Client ID:", self._client_id_edit)
+        form.addRow("Google OAuth Client Secret:", self._client_secret_edit)
         self._layout.addLayout(form)
 
+        self._add_import_from_json_button()
+
+        self._login_button = QPushButton("Login with Google")
+        self._login_button.clicked.connect(self._on_login_with_google)
+        self._layout.addWidget(self._login_button)
+
+        self._layout.addStretch()
+        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        buttons.rejected.connect(self.reject)
+        self._layout.addWidget(buttons)
+
+    def _add_import_from_json_button(self) -> None:
+        """Shared by both the gate and the full form — always visible,
+        not just before first login, so switching to a different OAuth
+        client later doesn't require deleting the cached token to get the
+        gate back. Fills whichever Client ID/Secret fields are currently
+        on screen (self._client_id_edit/_client_secret_edit, reassigned by
+        each of _build_gate/_build_form)."""
         import_button = QPushButton("Import from JSON...")
         import_button.clicked.connect(self._on_import_from_json)
         self._layout.addWidget(import_button)
@@ -128,15 +146,6 @@ class StudioSettingsDialog(QDialog):
         import_hint.setProperty("secondary", True)
         import_hint.setWordWrap(True)
         self._layout.addWidget(import_hint)
-
-        self._login_button = QPushButton("Login with Google")
-        self._login_button.clicked.connect(self._on_login_with_google)
-        self._layout.addWidget(self._login_button)
-
-        self._layout.addStretch()
-        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
-        buttons.rejected.connect(self.reject)
-        self._layout.addWidget(buttons)
 
     def _on_import_from_json(self) -> None:
         file_path, _filter = QFileDialog.getOpenFileName(self, "Import Google OAuth Client JSON", "", "JSON (*.json)")
@@ -159,13 +168,21 @@ class StudioSettingsDialog(QDialog):
                 "JSON Google Cloud Console offers to download for this OAuth client.",
             )
             return
-        self._gate_client_id_edit.setText(client_id)
-        self._gate_client_secret_edit.setText(client_secret)
-        self._pending_project_id = client_config.get("project_id")
+        self._client_id_edit.setText(client_id)
+        self._client_secret_edit.setText(client_secret)
+        project_id = client_config.get("project_id")
+        if project_id:
+            if hasattr(self, "gcs_project_edit"):
+                # Full form is on screen — no later "login succeeded" step
+                # to apply _pending_project_id from, so fill it directly.
+                if not self.gcs_project_edit.text().strip():
+                    self.gcs_project_edit.setText(project_id)
+            else:
+                self._pending_project_id = project_id
 
     def _on_login_with_google(self) -> None:
-        client_id = self._gate_client_id_edit.text().strip()
-        client_secret = self._gate_client_secret_edit.text().strip()
+        client_id = self._client_id_edit.text().strip()
+        client_secret = self._client_secret_edit.text().strip()
         if not client_id or not client_secret:
             QMessageBox.information(
                 self, "Login with Google", "Set the Google OAuth Client ID and Client Secret above first."
