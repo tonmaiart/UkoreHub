@@ -25,18 +25,14 @@ from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 from interface.shared.widget_helpers import wrap_scrollable
 
-# Matches plugins/core/ExternalPlugins/external_plugins_page.py's own
-# _PLUGIN_DATA_KEY/_SELECTED_ENTRY_IDS_KEY and catalog_store.py's
-# _CATALOG_KEY by convention (agreeing on a string + JSON shape), not by
-# importing that plugin's source — see plugins/README.md's "Sharing data
-# with another plugin".
-_EXTERNAL_PLUGINS_DATA_KEY = "external_plugins"
-_SELECTED_ENTRY_IDS_KEY = "selected_entry_ids"
+# Matches plugins/core/ExternalPlugins/catalog_store.py's _CATALOG_KEY by
+# convention (agreeing on a string + JSON shape), not by importing that
+# plugin's source — see plugins/README.md's "Sharing data with another
+# plugin".
 _EXTERNAL_CATALOG_KEY = "catalog"
 _NOT_CLONED_SUFFIX = " (not installed — check to clone)"
 _PENDING_RESTART_SUFFIX = " (installed — restart UkoreHub to activate)"
 _BROKEN_CLONE_SUFFIX = " (broken clone — fix via Settings > Developer > External Plugins)"
-_NOT_SELECTED_SUFFIX = " (not selected for this project)"
 
 _PLUGIN_DESCRIPTION = (
     "Choose which plugins actually apply to this repo. Core plugins are "
@@ -70,21 +66,17 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         meant to be universal app-level functionality now that anything
         repo-specific (Maya tools, ...) lives under cache/plugins/ instead.
       - External (cache/plugins/, its own separate git clone) — opt-in,
-        unchecked by default, persisted to Repo.required_plugin_ids, but
-        further filtered (2026-08-10) against the active Project's own selection
-        over plugins/core/ExternalPlugins/'s studio-wide catalog
-        (Project.plugin_data["external_plugins"]["selected_entry_ids"] —
-        see that plugin's own README) instead of unconditionally listing
-        every "repo"-source plugin discover_plugins() happens to find
-        cloned on this machine: a repo plugin cloned for one project
-        shouldn't show up as a choice for every other project on a shared
-        studio machine. A selected-but-not-yet-cloned entry still shows,
-        disabled, labeled "(not installed — ...)"; an already-required
-        plugin the project no longer has selected still shows too, labeled
-        "(not selected for this project)" rather than silently disappearing
-        — see _rebuild_plugin_lists.
+        unchecked by default, persisted to Repo.required_plugin_ids. Lists
+        every "repo"-source plugin discover_plugins() finds cloned on this
+        machine, plus every entry in plugins/core/ExternalPlugins/'s
+        studio-wide catalog that isn't cloned/discovered yet (a brief
+        2026-08-10 attempt at filtering this list against a per-project
+        selection was reverted the same day — see that plugin's own README
+        for why: catalog entries added before the filter existed had no
+        way back into a project's selection once the manual toggle that
+        set it was removed, so any project's list could go silently empty).
 
-        A selected-but-not-yet-cloned entry is checkable — checking it
+        A catalogued-but-not-yet-cloned entry is checkable — checking it
         clones it immediately (via GitService, into plugins_root, no
         confirmation prompt) and marks it required, rather than sending the
         user to Settings > Developer > External Plugins to clone it by hand
@@ -207,33 +199,21 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         self._item_by_plugin_id = {}
         if self._repo is not None:
             required_ids = self._repo.required_plugin_ids
-            selected_entries = self._selected_external_catalog_entries()
-            selected_folder_names = {entry["folder_name"] for entry in selected_entries}
             discovered_repo_folders: set[str] = set()
             for plugin in self._plugin_catalog:
                 source = plugin_source(plugin)
                 if source == "core":
                     self._core_list.addItem(QListWidgetItem(plugin.manifest.name))
                     continue
-                # source == "repo" (External) — only offer it if the active
-                # project has selected it from the studio-wide External
-                # Plugins catalog, or it's already required (never silently
-                # drop an existing requirement just because the project's
-                # selection changed later).
+                # source == "repo" (External) — every discovered one is a
+                # choice, whether or not it's currently required.
                 discovered_repo_folders.add(plugin.dir_path.name)
-                is_selected = plugin.dir_path.name in selected_folder_names
-                is_required = plugin.manifest.id in required_ids
-                if not is_selected and not is_required:
-                    continue
-                suffix = "" if is_selected else _NOT_SELECTED_SUFFIX
-                self._add_plugin_item(self._external_list, plugin, required_ids, label_suffix=suffix)
-            self._add_pending_external_items(selected_entries, discovered_repo_folders, required_ids)
+                self._add_plugin_item(self._external_list, plugin, required_ids)
+            self._add_pending_external_items(discovered_repo_folders, required_ids)
         self._loading_plugins = False
 
-    def _add_plugin_item(
-        self, target_list: QListWidget, plugin: DiscoveredPlugin, required_ids: list[str], *, label_suffix: str = ""
-    ) -> None:
-        item = QListWidgetItem(plugin.manifest.name + self._requires_label(plugin) + label_suffix)
+    def _add_plugin_item(self, target_list: QListWidget, plugin: DiscoveredPlugin, required_ids: list[str]) -> None:
+        item = QListWidgetItem(plugin.manifest.name + self._requires_label(plugin))
         item.setData(Qt.UserRole, plugin.manifest.id)
         item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
         item.setCheckState(Qt.Checked if plugin.manifest.id in required_ids else Qt.Unchecked)
@@ -256,11 +236,9 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         ]
         return f" — requires: {', '.join(names)}"
 
-    def _add_pending_external_items(
-        self, selected_entries: list[dict], discovered_repo_folders: set[str], required_ids: list[str]
-    ) -> None:
-        """A catalog entry the active project has selected but that this
-        session's plugin discovery hasn't picked up (see loader.py's
+    def _add_pending_external_items(self, discovered_repo_folders: set[str], required_ids: list[str]) -> None:
+        """A studio-wide catalog entry (plugins/core/ExternalPlugins/) that
+        this session's plugin discovery hasn't picked up (see loader.py's
         discover_plugins, run once at app startup) — split by actual on-disk
         state, since "not discovered yet" covers three different situations:
         - Not cloned at all: checkable — checking it clones it right here
@@ -274,7 +252,7 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
           is_repo_root, not just is_cloned"): shown disabled, pointing at
           External Plugins to fix it rather than silently treating it as
           installed."""
-        for entry in sorted(selected_entries, key=lambda e: e["name"]):
+        for entry in sorted(self._read_external_catalog(), key=lambda e: e["name"]):
             if entry["folder_name"] in discovered_repo_folders:
                 continue
             local_path = self._plugins_root / entry["folder_name"]
@@ -313,26 +291,12 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         except (OSError, ValueError, KeyError):
             return None
 
-    def _selected_external_catalog_entries(self) -> list[dict]:
-        """Studio-wide External Plugins catalog entries (see
-        plugins/core/ExternalPlugins/catalog_store.py) the active Project has
-        opted into (Project.plugin_data["external_plugins"]
-        ["selected_entry_ids"]). Re-reads both stores fresh on every call —
-        no caching — so an edit made on the External Plugins settings tab
-        earlier in the same session, or a cloud pull landing mid-session, is
-        picked up the next time this tab is opened."""
-        if self._project is None:
-            return []
-        selected_ids = set(
-            self.store.get_project_plugin_data(self._project.id, _EXTERNAL_PLUGINS_DATA_KEY).get(
-                _SELECTED_ENTRY_IDS_KEY, []
-            )
-        )
-        if not selected_ids:
-            return []
-        return [entry for entry in self._read_external_catalog() if entry.get("id") in selected_ids]
-
     def _read_external_catalog(self) -> list[dict]:
+        """Studio-wide External Plugins catalog (see
+        plugins/core/ExternalPlugins/catalog_store.py), read fresh on every
+        call — no caching — so an edit made on the External Plugins
+        settings tab earlier in the same session, or a cloud pull landing
+        mid-session, is picked up the next time this tab is opened."""
         if not self._external_catalog_path.exists():
             return []
         try:
@@ -350,7 +314,7 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         if item.checkState() != Qt.Checked:
             return
 
-        entry = next((e for e in self._selected_external_catalog_entries() if e.get("id") == entry_id), None)
+        entry = next((e for e in self._read_external_catalog() if e.get("id") == entry_id), None)
         if entry is None:
             self._set_item_checked(item, False)
             return

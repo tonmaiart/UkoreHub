@@ -51,71 +51,63 @@ by hand.
   a new one every time Settings is opened" convention every Settings tab
   uses (see `interface/settings/settings_view.py`'s `SettingsView`
   docstring), so there's nothing here to wire up for shutdown cleanup.
-  Threads `api.metadata`/`api.local_config` into the page too — see "Used by
-  this Project" below.
 
-## Used by this Project
-
-Added 2026-08-10. This catalog is studio-wide (every entry is visible to
-every project), but not every project actually needs every repo plugin — a
-`cache/plugins/AdvancedSkeleton` clone one rigging-heavy project needs has no
-business showing up as an option for an unrelated project's repos. Each
-catalogued entry (not the auto-detected "(not catalogued)" rows — nothing to
-mark until they're adopted into the catalog) tracks whether it's "used by"
-the *active* project, in `Project.plugin_data["external_plugins"]
-["selected_entry_ids"]` (a `list[str]` of catalog entry ids) via
-`MetadataStore.get_project_plugin_data`/`set_project_plugin_data` — both
-already generic, so this needed no `core/models.py` or
-`core/storage/metadata_store.py` changes.
-
-This was originally a manual per-row checkbox; changed same day after
-feedback that it was a redundant click — adding a catalog entry (Add) or
-adopting an auto-detected on-disk folder (Edit on a "(not catalogued)" row)
-only ever happens because the active project needs it, so
-`ExternalPluginsPage._auto_select_entry` now marks the entry "used by" the
-active project automatically right after either action, with no separate
-toggle. A no-op if no project is active yet — there's nothing to persist
-the selection against.
+## Every catalogued entry is a choice for every project
 
 `interface/repo_settings/requirements_and_plugins_page.py`'s External column
-(Settings > Repo Setting (Dev) > Requirements & Plugins) reads this same
-`selected_entry_ids` list (plus this catalog's raw JSON, read directly rather
-than importing this plugin's `CatalogEntry` — see that file's own comments)
-to decide which `cache/plugins/` repo plugins are even offered as a
-requirement choice for the active project's repos, instead of listing every
-"repo"-source plugin `discover_plugins()` happens to find physically cloned
-on this machine regardless of which project it was cloned for.
+(Settings > Repo Setting (Dev) > Requirements & Plugins) lists every
+`cache/plugins/` repo plugin `discover_plugins()` finds cloned on this
+machine, plus every catalog entry here that isn't cloned/discovered yet
+(reading this catalog's raw JSON directly rather than importing
+`CatalogEntry` — see that file's own comments). There's no per-project
+pre-filter on top of this catalog.
 
-A selected-but-not-yet-cloned entry no longer requires a separate trip to
-this page to clone it (2026-08-10): its row on Requirements & Plugins is
-itself checkable, and checking it clones straight into
-`cache/plugins/<folder_name>` immediately (no confirm prompt — the only
-git-clone action in the app that skips one, since checking the box already
-is the explicit action), then marks it required for that repo by reading
-the fresh clone's `manifest.json` directly (no import/execution — just a
-`json.loads`, via `RequirementsAndPluginsPage._read_manifest_if_cloned`).
-Since `discover_plugins()`/`apply_plugins()` are one-shot at app startup
-(see `core/extensibility/README.md`), the plugin still doesn't actually
-*load* until UkoreHub is restarted — the row reflects that afterward as
+There briefly was one (2026-08-10, same day, reverted before end of day):
+each catalogued row got a "Used by this Project" checkbox, persisted to
+`Project.plugin_data["external_plugins"]["selected_entry_ids"]`, that
+Requirements & Plugins filtered against — the idea being a repo plugin
+cloned for one project shouldn't show up as a choice for an unrelated one.
+That got replaced hours later with an auto-select-on-add/adopt version (no
+manual checkbox — marking an entry "used" happened automatically right
+after `_on_add`/`_on_edit` added it to the catalog) after feedback that the
+manual click was redundant. Both versions shared the same flaw: entries
+already in the catalog before either version existed had no `selected_entry_ids`
+entry for a given project and no way to gain one — auto-select only fires
+on *new* Add/Edit-adopt, not on already-catalogued rows — so an existing
+project's Requirements & Plugins > External list could go silently empty
+even though the catalog itself was full. Reverted back to no filter at all
+rather than adding a third mechanism (e.g. an explicit "Use in this
+Project" button) to fix that gap, per the same feedback that started this:
+the studio's actual usage pattern is closer to "every catalogued entry is
+relevant to every project" anyway.
+
+A selected-but-not-yet-cloned entry doesn't require a separate trip to this
+page to clone it: its row on Requirements & Plugins is itself checkable,
+and checking it clones straight into `cache/plugins/<folder_name>`
+immediately (no confirm prompt — the only git-clone action in the app that
+skips one, since checking the box already is the explicit action), then
+marks it required for that repo by reading the fresh clone's
+`manifest.json` directly (no import/execution — just a `json.loads`, via
+`RequirementsAndPluginsPage._read_manifest_if_cloned`). Since
+`discover_plugins()`/`apply_plugins()` are one-shot at app startup (see
+`core/extensibility/README.md`), the plugin still doesn't actually *load*
+until UkoreHub is restarted — the row reflects that afterward as
 "(installed — restart UkoreHub to activate)" rather than going back to
 "(not installed — ...)".
 
-### Showing and cascading `PluginManifest.requires`
+### Showing `PluginManifest.requires`
 
 Each catalogued row's label also shows `— requires: X, Y` when the entry is
 cloned and its `manifest.json` declares `requires` — resolved via
 `PluginAPI.plugin_catalog` (the same `discover_plugins()` result the rest of
 the app uses; threaded into this page's constructor by `plugin.py`), not by
 this page re-parsing `manifest.json` itself. An entry that isn't cloned yet
-shows no requires text — there's no manifest to read until it is.
-`_auto_select_entry` also cascades: an entry auto-selected whose
-requirements resolve to *other* catalogued, cloned External entries marks
-those as "used by" the project too, silently (no confirm prompt — see "Used
-by this Project" above for why this page dropped the manual-toggle/confirm
-shape entirely). A requirement that resolves to a Core/Internal plugin, or
-to a plugin this machine hasn't discovered at all, has nothing to
-cascade-select on this page — Core is always on and Internal is opted into
-per-repo, not per-project.
+shows no requires text — there's no manifest to read until it is. On
+Requirements & Plugins, checking a plugin whose `requires` aren't all
+enabled yet for that repo prompts to enable the closure too (see that
+file's `_confirm_and_enable_requirements`) — there's no equivalent
+cascade here, since this page has nothing per-repo or per-project left to
+cascade into.
 
 ## Why `is_repo_root`, not just `is_cloned`
 
