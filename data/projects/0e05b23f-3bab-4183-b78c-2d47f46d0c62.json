@@ -7,16 +7,15 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-09T12:30:21.641961+00:00",
+      "last_synced": "2026-08-10T05:17:33.877697+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
       "required_program_ids": [
-        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0",
-        "ab07c675-48ef-4f04-8c57-876dced7ddf1"
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0"
       ],
       "program_version_pins": {
-        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0": "2026"
+        "1e4dbbbb-5721-4165-abb1-d7c9db55a9a0": "2024"
       },
       "active_plugin_ids": [
         "debug_console",
@@ -42,13 +41,6 @@
         "dreamwall_picker",
         "studio_library",
         "ukore_shot"
-      ],
-      "browser_links": [
-        {
-          "name": "Progress",
-          "url": "https://flame-fox-875.notion.site/Shot-Progress-39e6774cd29b80c6a537eb5bffd7ed27?source=copy_link",
-          "icon_filename": null
-        }
       ],
       "plugin_data": {
         "project_editor": {
@@ -101,7 +93,6 @@
       "program_version_pins": {},
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": [],
       "plugin_data": {}
     },
     {
@@ -127,7 +118,6 @@
         "ukore_browser",
         "ukore_reference_editor"
       ],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [
@@ -186,7 +176,6 @@
         "publish_api",
         "ukore_browser"
       ],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [
@@ -245,7 +234,6 @@
       },
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [
@@ -284,7 +272,6 @@
       "program_version_pins": {},
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [],
@@ -321,7 +308,6 @@
       "program_version_pins": {},
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [
@@ -340,7 +326,7 @@
       "name": "RigPublish",
       "git_url": "https://github.com/tonmaiart/RigPublish.git",
       "local_path": "MerderaProject\\RigPublish",
-      "last_synced": "2026-08-05T10:12:17.719992+00:00",
+      "last_synced": "2026-08-09T17:25:59.617074+00:00",
       "status": "cloned",
       "thumbnail_filename": null,
       "description": "",
@@ -350,7 +336,6 @@
       },
       "active_plugin_ids": [],
       "required_plugin_ids": [],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [],
@@ -385,7 +370,6 @@
       "required_plugin_ids": [
         "maya_launcher"
       ],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "pipeline_inputs": [
@@ -425,7 +409,6 @@
       "required_plugin_ids": [
         "maya_launcher"
       ],
-      "browser_links": [],
       "plugin_data": {
         "project_editor": {
           "custom_paths": [
@@ -473,50 +456,50 @@
         "maya_publisher": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaPublisher\\maya-scripts"
+              "C:\\Users\\natch\\Downloads\\UkoreHubLauncher-main\\UkoreHubLauncher-main\\app\\plugins\\repo_internal\\MayaPublisher\\maya-scripts"
             ]
           }
         },
         "maya_toolkit": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaToolkit\\maya-scripts"
+              "C:\\Tonmai\\Test\\cache\\plugins\\MayaToolkit\\maya-scripts"
             ]
           },
           "MAYA_PLUG_IN_PATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\MayaToolkit\\maya-plug-ins"
+              "C:\\Tonmai\\Test\\cache\\plugins\\MayaToolkit\\maya-plug-ins"
             ]
           }
         },
         "publish_api": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\PublishApi\\maya-scripts",
-              "C:\\Tonmai\\UkoreHub"
+              "C:\\Tonmai\\Test\\cache\\plugins\\PublishApi\\maya-scripts",
+              "C:\\Tonmai\\TonmaiWorkspace\\app"
             ]
           }
         },
         "ukore_browser": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\UkoreBrowser\\maya-scripts",
-              "C:\\Tonmai\\UkoreHub"
+              "C:\\Users\\natch\\Downloads\\UkoreHubLauncher-main\\UkoreHubLauncher-main\\app\\plugins\\repo_internal\\UkoreBrowser\\maya-scripts",
+              "C:\\Users\\natch\\Downloads\\UkoreHubLauncher-main\\UkoreHubLauncher-main\\app"
             ]
           }
         },
         "ukore_playblast": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\UkorePlayblast\\maya-scripts"
+              "C:\\Users\\natch\\Downloads\\UkoreHubLauncher-main\\UkoreHubLauncher-main\\app\\plugins\\repo_internal\\UkorePlayblast\\maya-scripts"
             ]
           }
         },
         "ukore_reference_editor": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\UkoreHub\\plugins\\repo_internal\\UkoreReferenceEditor\\maya-scripts",
-              "C:\\Tonmai\\UkoreHub"
+              "C:\\Tonmai\\Test\\cache\\plugins\\UkoreReferenceEditor\\maya-scripts",
+              "C:\\Tonmai\\TonmaiWorkspace\\app"
             ]
           }
         }
