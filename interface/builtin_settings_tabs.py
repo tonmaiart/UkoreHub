@@ -43,7 +43,6 @@ def register_builtin_settings_tabs(
     system_config_store: SystemConfigStore,
     plugin_catalog: list[DiscoveredPlugin],
     plugin_load_failures: list[PluginLoadFailure],
-    external_catalog_path: Path,
     git_service: GitService,
     plugins_root: Path,
 ) -> None:
@@ -91,7 +90,6 @@ def register_builtin_settings_tabs(
                 store=store,
                 local_config_store=local_config_store,
                 plugin_catalog=plugin_catalog,
-                external_catalog_path=external_catalog_path,
                 git_service=git_service,
                 plugins_root=plugins_root,
             ),

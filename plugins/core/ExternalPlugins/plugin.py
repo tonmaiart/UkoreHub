@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.events.hooks import AppLifecycleContext
-from interface.settings_tab_registry import CATEGORY_DEVELOPER, SettingsTabSpec
+from interface.settings_tab_registry import CATEGORY_PROJECT, SettingsTabSpec
 from plugins.core.ExternalPlugins.catalog_store import ExternalPluginCatalog
 from plugins.core.ExternalPlugins.external_plugins_page import ExternalPluginsPage
 from plugins.core.ExternalPlugins.sync_engine import PERSISTENT_STATUSES
@@ -36,7 +36,15 @@ class _SyncController:
         # itself passes discover_plugins() (cache_plugins_root there) — see
         # bug-history 2026-08-10.
         self._plugins_root = api.cache_dir / "plugins"
-        self.catalog = ExternalPluginCatalog(api.plugin_config_store(PLUGIN_ID, shared=True))
+        # Scoped to the active Project (Project.plugin_data), not a
+        # studio-wide shared=True blob anymore — see catalog_store.py's own
+        # docstring. active_project_id is fixed for the whole app session
+        # (launcher.py's Project Selector gate runs before plugin
+        # registration, and switching projects mid-session means a full
+        # restart back through that gate — see core/storage/config_store.py's
+        # LocalConfigStore.set_active_project), so building this once here
+        # and holding it for the session is safe, same as before.
+        self.catalog = ExternalPluginCatalog(api.project_plugin_config_store(PLUGIN_ID))
         self.status_store = ExternalPluginSyncStatusStore(api.plugin_config_store(PLUGIN_ID, shared=False))
         self._worker: ExternalPluginSyncWorker | None = None
         self._pending_context: AppLifecycleContext | None = None
@@ -95,9 +103,11 @@ def register(api) -> None:
         SettingsTabSpec(
             key=PLUGIN_ID,
             label="External Plugins",
-            # After the built-in Developer tabs (Plugins is order=30, the
-            # highest today — see interface/builtin_settings_tabs.py).
-            order=40,
+            # After Settings > Project's built-in "Project" (order=0) and
+            # "Program Database" (order=20) tabs — see
+            # interface/builtin_settings_tabs.py and
+            # plugins/core/project_editor/plugin.py.
+            order=30,
             page_factory=lambda: ExternalPluginsPage(
                 git_service=api.git,
                 plugins_root=api.cache_dir / "plugins",  # see _SyncController's own comment on this
@@ -105,6 +115,6 @@ def register(api) -> None:
                 plugin_catalog=api.plugin_catalog,
                 sync_status_store=sync_controller.status_store,
             ),
-            category=CATEGORY_DEVELOPER,
+            category=CATEGORY_PROJECT,
         )
     )

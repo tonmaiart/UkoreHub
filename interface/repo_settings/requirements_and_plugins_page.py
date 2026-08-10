@@ -25,10 +25,11 @@ from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 from interface.shared.widget_helpers import wrap_scrollable
 
-# Matches plugins/core/ExternalPlugins/catalog_store.py's _CATALOG_KEY by
-# convention (agreeing on a string + JSON shape), not by importing that
-# plugin's source — see plugins/README.md's "Sharing data with another
-# plugin".
+# Matches plugins/core/ExternalPlugins/catalog_store.py's _CATALOG_KEY and
+# PLUGIN_ID by convention (agreeing on a plugin_id + JSON shape inside
+# Project.plugin_data), not by importing that plugin's source — see
+# plugins/README.md's "Sharing data with another plugin".
+_EXTERNAL_PLUGINS_ID = "external_plugins"
 _EXTERNAL_CATALOG_KEY = "catalog"
 _NOT_CLONED_SUFFIX = " (not installed — check to clone)"
 _PENDING_RESTART_SUFFIX = " (installed — restart UkoreHub to activate)"
@@ -68,13 +69,18 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
       - External (cache/plugins/, its own separate git clone) — opt-in,
         unchecked by default, persisted to Repo.required_plugin_ids. Lists
         every "repo"-source plugin discover_plugins() finds cloned on this
-        machine, plus every entry in plugins/core/ExternalPlugins/'s
-        studio-wide catalog that isn't cloned/discovered yet (a brief
-        2026-08-10 attempt at filtering this list against a per-project
-        selection was reverted the same day — see that plugin's own README
-        for why: catalog entries added before the filter existed had no
-        way back into a project's selection once the manual toggle that
-        set it was removed, so any project's list could go silently empty).
+        machine, plus every entry in the active Project's own
+        plugins/core/ExternalPlugins/ catalog
+        (Project.plugin_data["external_plugins"]["catalog"]) that isn't
+        cloned/discovered yet. Was a studio-wide catalog with a brief,
+        reverted 2026-08-10 attempt at a per-project selection filter on
+        top of it — see that plugin's own README for why the filter
+        version failed (catalog entries added before the filter existed
+        had no way back into a project's selection once the manual toggle
+        that set it was removed). Moving the catalog itself into
+        Project.plugin_data replaces that filter outright: each project
+        now has its own catalog rather than a shared one with a selection
+        overlay, so this class of bug has no filter left to have.
 
         A catalogued-but-not-yet-cloned entry is checkable — checking it
         clones it immediately (via GitService, into plugins_root, no
@@ -104,13 +110,11 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         plugin_catalog: list[DiscoveredPlugin],
-        external_catalog_path: Path,
         git_service: GitService,
         plugins_root: Path,
     ):
         super().__init__(parent, store=store, local_config_store=local_config_store)
         self._plugin_catalog = plugin_catalog
-        self._external_catalog_path = Path(external_catalog_path)
         self._git_service = git_service
         self._plugins_root = Path(plugins_root)
         self._plugin_by_id = {plugin.manifest.id: plugin for plugin in plugin_catalog}
@@ -292,18 +296,15 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
             return None
 
     def _read_external_catalog(self) -> list[dict]:
-        """Studio-wide External Plugins catalog (see
-        plugins/core/ExternalPlugins/catalog_store.py), read fresh on every
-        call — no caching — so an edit made on the External Plugins
-        settings tab earlier in the same session, or a cloud pull landing
-        mid-session, is picked up the next time this tab is opened."""
-        if not self._external_catalog_path.exists():
+        """The active Project's own External Plugins catalog (see
+        plugins/core/ExternalPlugins/catalog_store.py) — read straight from
+        self.store on every call, no caching, so an edit made on the
+        External Plugins settings tab earlier in the same session is
+        picked up the next time this tab is opened."""
+        if self._project is None:
             return []
-        try:
-            data = json.loads(self._external_catalog_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
-        return data.get(_EXTERNAL_CATALOG_KEY, [])
+        plugin_data = self.store.get_project_plugin_data(self._project.id, _EXTERNAL_PLUGINS_ID)
+        return plugin_data.get(_EXTERNAL_CATALOG_KEY, [])
 
     def _on_catalog_entry_checked(self, item: QListWidgetItem, entry_id: str) -> None:
         """Handles a check-state change on a not-yet-cloned catalog entry

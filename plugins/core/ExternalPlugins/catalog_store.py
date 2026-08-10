@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 from core.exceptions import ValidationError
-from core.extensibility.config_store import PluginConfigStore
+from core.extensibility.config_store import ProjectPluginConfigStore
 
 _CATALOG_KEY = "catalog"
 
@@ -34,32 +34,33 @@ def _is_safe_folder_name(folder_name: str) -> bool:
 
 
 class ExternalPluginCatalog:
-    """Studio-wide list of known cache/plugins/ repo plugins (cloned or
-    not), backed by a shared PluginConfigStore — same "namespaced JSON,
-    git-tracked" convention every other cross-machine plugin setting
-    uses (see plugins/README.md's "Sharing data with another plugin")."""
+    """Per-project list of known cache/plugins/ repo plugins (cloned or
+    not), backed by a ProjectPluginConfigStore — i.e. the active Project's
+    own Project.plugin_data["external_plugins"]["catalog"]
+    (core/models.py), not a studio-wide file anymore. config_store is None
+    when no project is active yet (interface/plugin_api.py's
+    PluginAPI.project_plugin_config_store's documented contract) — every
+    method degrades to a no-op/empty list in that case rather than
+    crashing.
 
-    def __init__(self, config_store: PluginConfigStore):
+    Unlike the old shared=True PluginConfigStore this replaced, no
+    explicit re-read-before-use is needed here: ProjectPluginConfigStore
+    reads straight through to the single, live MetadataStore instance the
+    whole app shares (core/extensibility/config_store.py), so there's no
+    separate in-memory copy of the file that can go stale."""
+
+    def __init__(self, config_store: ProjectPluginConfigStore | None):
         self._store = config_store
 
     def list_entries(self) -> list[CatalogEntry]:
-        # Always re-read the backing file first — this store is built once
-        # at app startup and then held for the whole session (plugin.py's
-        # _SyncController), so its in-memory copy can silently go stale
-        # whenever something else changes the file without going through
-        # this exact object: another machine pushing a newer catalog, or a
-        # push conflict on this machine (core/vcs/cloud_sync.py's
-        # R2JsonSync.push() reloads the *file* on a conflicting write but
-        # has no way to reach back into this in-memory PluginConfigStore to
-        # refresh it too). Without this, a stuck-stale catalog here would keep
-        # disagreeing with anything that reads the file fresh (e.g.
-        # interface/repo_settings/requirements_and_plugins_page.py's
-        # _read_external_catalog()) for the rest of the session.
-        self._store.load()
+        if self._store is None:
+            return []
         raw = self._store.get(_CATALOG_KEY, [])
         return [CatalogEntry(**entry) for entry in raw]
 
     def _save(self, entries: list[CatalogEntry]) -> None:
+        if self._store is None:
+            return
         self._store.set(_CATALOG_KEY, [vars(entry) for entry in entries])
 
     def _validate(self, name: str, git_url: str, folder_name: str, *, existing_id: str | None = None) -> None:

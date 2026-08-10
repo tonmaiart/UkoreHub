@@ -38,30 +38,34 @@ _PENDING_RESTART = "Pending Restart — cloned/updated this session, restart Uko
 @dataclass
 class _Row:
     entry: CatalogEntry
-    catalogued: bool  # False for an on-disk folder auto-detected but not yet added to the catalog
     status: str
 
 
 class ExternalPluginsPage(QWidget):
-    """Settings > Developer tab: every known cache/plugins/ repo plugin
-    (catalogued or just found on disk), whether it's behind its remote,
-    and Clone/Pull actions. See this plugin's own README for why this
-    page's own manual actions run synchronously (with a wait cursor)
-    instead of a background QThread — the separate auto-sync engine
-    (below) does use one.
+    """Settings > Project tab: every cache/plugins/ repo plugin the active
+    Project's own catalog declares (Project.plugin_data["external_plugins"]
+    ["catalog"], core/models.py), whether it's behind its remote, and
+    Clone/Pull actions. See this plugin's own README for why this page's
+    own manual actions run synchronously (with a wait cursor) instead of a
+    background QThread — the separate auto-sync engine (below) does use
+    one.
 
-    Each catalogued row also shows its own manifest's `requires` (only
-    known once the entry is actually cloned — resolved via `plugin_catalog`,
-    the same discover_plugins() result the rest of the app uses, so no
-    manual manifest.json parsing here). An entry that isn't cloned yet
-    shows no requires text — there's no manifest to read until it is.
+    Only entries actually in this Project's catalog are listed — no
+    auto-detected "(not catalogued)" rows for an already-cloned
+    cache/plugins/ folder the catalog doesn't mention. An entry must be
+    added here explicitly before anything else (Requirements & Plugins,
+    the auto-sync engine) can see it.
 
-    This page only manages the studio-wide catalog itself (Add/Edit/
+    Each row also shows its own manifest's `requires` (only known once the
+    entry is actually cloned — resolved via `plugin_catalog`, the same
+    discover_plugins() result the rest of the app uses, so no manual
+    manifest.json parsing here). An entry that isn't cloned yet shows no
+    requires text — there's no manifest to read until it is.
+
+    This page manages the active Project's catalog itself (Add/Edit/
     Delete/Clone/Pull/Check for Updates); every catalogued entry is a
-    choice on every project's Requirements & Plugins tab — see this
-    plugin's own README's "Used by this Project" section for the
-    per-project filter this page tried and dropped the same day it was
-    added.
+    choice on that same project's Requirements & Plugins tab — see this
+    plugin's own README.
 
     Entries the active repo currently requires are also cloned/updated
     automatically at app start and on repo switch, off the UI thread — see
@@ -93,9 +97,9 @@ class ExternalPluginsPage(QWidget):
         self._rows: list[_Row] = []
 
         description = QLabel(
-            "Every external (repo) plugin known to the studio — cloned into cache/plugins/ or not yet. "
+            "External (repo) plugins declared for this project — cloned into cache/plugins/ or not yet. "
             "Add one that hasn't been cloned here yet, then Clone it; use Check for Updates to see which "
-            "cloned ones are behind their remote. Every entry here is offered as a choice on every project's "
+            "cloned ones are behind their remote. Every entry here is offered as a choice on this project's "
             "Requirements & Plugins tab. Entries a repo currently requires clone/update themselves at app "
             "start and on repo switch — Update Conflict here means an automatic update hit a merge conflict "
             "and needs a dev to resolve it by hand (Open Git Directory)."
@@ -137,40 +141,20 @@ class ExternalPluginsPage(QWidget):
     # -- listing --------------------------------------------------------------
 
     def refresh_list(self) -> None:
-        """Fast, local-only pass: catalog entries + any un-catalogued
-        cache/plugins/ folder. No network calls — Check for Updates does
-        those on demand."""
-        catalogued = self.catalog.list_entries()
-        known_folder_names = {entry.folder_name for entry in catalogued}
-
-        rows: list[_Row] = []
-        for entry in catalogued:
-            rows.append(_Row(entry=entry, catalogued=True, status=self._local_status(entry)))
-
-        if self.plugins_root.exists():
-            for child in sorted(self.plugins_root.iterdir()):
-                if not child.is_dir() or child.name in known_folder_names:
-                    continue
-                if not self.git_service.is_cloned(child):
-                    continue
-                git_url = self.git_service.get_remote_url(child) if self.git_service.is_repo_root(child) else ""
-                ad_hoc_entry = CatalogEntry(id="", name=f"{child.name} (not catalogued)", git_url=git_url, folder_name=child.name)
-                rows.append(_Row(entry=ad_hoc_entry, catalogued=False, status=self._local_status(ad_hoc_entry)))
-
-        self._rows = rows
+        """Fast, local-only pass over this project's own catalog entries.
+        No network calls — Check for Updates does those on demand. No
+        disk scan for un-catalogued cache/plugins/ folders anymore — an
+        entry has to be added to the catalog before it shows up here."""
+        self._rows = [_Row(entry=entry, status=self._local_status(entry)) for entry in self.catalog.list_entries()]
         self._render()
 
     def _local_status(self, entry: CatalogEntry) -> str:
         """Fast, local-only status for one row — folded in with whatever
         the background auto-sync engine (sync_engine.py) last recorded for
         this entry in sync_status_store, so a conflict/failure it hit while
-        this tab was closed still shows up the next time it's opened. An
-        ad-hoc "(not catalogued)" entry has entry.id == "" — sync_status_store
-        never has anything for that key, so these rows only ever get the
-        purely-local part of this (Not Cloned/Broken/Conflict/Pending
-        Restart), same as before this engine existed."""
+        this tab was closed still shows up the next time it's opened."""
         local_path = self.plugins_root / entry.folder_name
-        sync_status = self.sync_status_store.get(entry.id) if entry.id else None
+        sync_status = self.sync_status_store.get(entry.id)
 
         if not self.git_service.is_cloned(local_path):
             if sync_status is not None and sync_status.status == sync_engine.STATUS_ERROR:
@@ -241,22 +225,13 @@ class ExternalPluginsPage(QWidget):
             QMessageBox.information(self, "Edit", "Select an entry first.")
             return
         entry = row.entry
-        dialog = CatalogEntryDialog(
-            self,
-            name=entry.name if row.catalogued else entry.name.removesuffix(" (not catalogued)"),
-            git_url=entry.git_url,
-            folder_name=entry.folder_name,
-        )
+        dialog = CatalogEntryDialog(self, name=entry.name, git_url=entry.git_url, folder_name=entry.folder_name)
         if not dialog.exec():
             return
         try:
-            if row.catalogued:
-                self.catalog.edit_entry(
-                    entry.id, name=dialog.name(), git_url=dialog.git_url(), folder_name=dialog.folder_name()
-                )
-            else:
-                # Adopts an auto-detected, un-catalogued folder into the catalog.
-                self.catalog.add_entry(dialog.name(), dialog.git_url(), dialog.folder_name())
+            self.catalog.edit_entry(
+                entry.id, name=dialog.name(), git_url=dialog.git_url(), folder_name=dialog.folder_name()
+            )
         except UkoreHubError as exc:
             QMessageBox.warning(self, "Edit External Plugin", str(exc))
             return
@@ -267,13 +242,10 @@ class ExternalPluginsPage(QWidget):
         if row is None:
             QMessageBox.information(self, "Delete", "Select an entry first.")
             return
-        if not row.catalogued:
-            QMessageBox.information(self, "Delete", "This folder isn't in the catalog — nothing to remove.")
-            return
         confirmed = confirm_action(
             self,
             "Delete External Plugin",
-            f"Remove '{row.entry.name}' from the External Plugins catalog for EVERYONE at the studio?\n\n"
+            f"Remove '{row.entry.name}' from this project's External Plugins catalog?\n\n"
             "This only removes the catalog entry — any already-cloned folder on disk is left untouched.",
         )
         if confirmed:

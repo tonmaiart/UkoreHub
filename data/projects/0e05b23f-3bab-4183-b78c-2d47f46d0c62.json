@@ -7,7 +7,7 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-10T17:07:08.080560+00:00",
+      "last_synced": "2026-08-10T17:36:41.478253+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
@@ -31,11 +31,11 @@
       ],
       "required_plugin_ids": [
         "maya_launcher",
+        "ukore_browser",
         "maya_toolkit",
         "publish_api",
         "studio_library",
-        "ukore_reference_editor",
-        "ukore_browser"
+        "ukore_reference_editor"
       ],
       "plugin_data": {
         "project_editor": {
@@ -512,6 +512,45 @@
         "ukore_playblast": "UkorePlayblast",
         "ukore_reference_editor": "UkoreReferenceEditor"
       }
+    },
+    "external_plugins": {
+      "catalog": [
+        {
+          "id": "e6852d39-7cf4-4098-9a30-a98b6cb14a08",
+          "name": "maya_launcher",
+          "git_url": "https://github.com/tonmaiart/maya_launcher.git",
+          "folder_name": "maya_launcher",
+          "plugin_id": "maya_launcher"
+        },
+        {
+          "id": "a985ba2f-c8b5-4b88-b494-06754c2576bb",
+          "name": "UkoreReferenceEditor",
+          "git_url": "https://github.com/tonmaiart/UkoreReferenceEditor.git",
+          "folder_name": "UkoreReferenceEditor",
+          "plugin_id": "ukore_reference_editor"
+        },
+        {
+          "id": "51c7a419-2d1f-45b4-9efd-af9353bbb679",
+          "name": "PublishApi",
+          "git_url": "https://github.com/tonmaiart/PublishApi.git",
+          "folder_name": "PublishApi",
+          "plugin_id": "publish_api"
+        },
+        {
+          "id": "437f9927-15a2-4031-a539-350116359087",
+          "name": "MayaToolkit",
+          "git_url": "https://github.com/tonmaiart/MayaToolkit.git",
+          "folder_name": "MayaToolkit",
+          "plugin_id": "maya_toolkit"
+        },
+        {
+          "id": "b10d2de8-8d78-4120-be6a-efebaa9f8f91",
+          "name": "MayaFileBrowser",
+          "git_url": "https://github.com/tonmaiart/MayaFileBrowser.git",
+          "folder_name": "MayaFileBrowser",
+          "plugin_id": "ukore_browser"
+        }
+      ]
     }
   }
 }

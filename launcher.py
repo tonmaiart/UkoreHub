@@ -432,10 +432,6 @@ def main() -> None:
         system_config_store=system_config_store,
         plugin_catalog=discovery.loaded,
         plugin_load_failures=discovery.failures,
-        # Same path convention interface/plugin_api.py's
-        # plugin_config_store(shared=True) uses for this exact plugin id
-        # ("external_plugins") — see plugins/core/ExternalPlugins/README.md.
-        external_catalog_path=data_dir / "plugins" / "core" / "external_plugins.json",
         git_service=git_service,
         plugins_root=cache_plugins_root,
     )

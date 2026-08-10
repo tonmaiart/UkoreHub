@@ -1,33 +1,48 @@
 # plugins/core/ExternalPlugins/
 
-Settings > Developer > "External Plugins" — a studio-wide catalog of
-`cache/plugins/` repo plugins (each its own separate git clone, see
-`plugins/README.md`), whether already cloned or not, with Clone/Pull and
-an ahead/behind check against each one's remote. Built because
-`core/extensibility/README.md` notes there's no auto-fetch/clone
+Settings > Project > "External Plugins" — the active Project's own
+catalog of `cache/plugins/` repo plugins (each its own separate git
+clone, see `plugins/README.md`), whether already cloned or not, with
+Clone/Pull and an ahead/behind check against each one's remote. Built
+because `core/extensibility/README.md` notes there's no auto-fetch/clone
 mechanism anywhere else — every `cache/plugins/` entry today was cloned
 by hand. A background auto-sync engine (see "Auto-sync engine" below)
 now handles the common case of that by itself — this page's manual
 actions remain for everything the engine can't or shouldn't do alone
-(first-ever clone of a brand new catalog entry, adopting an
-auto-detected folder, resolving a conflict).
+(first-ever clone of a brand new catalog entry, resolving a conflict).
+
+As of 2026-08-11 the catalog itself is per-project, not studio-wide — see
+"Per-project catalog, not a studio-wide file" below. Existing entries in
+the old shared `data/plugins/core/external_plugins.json` were **not**
+migrated (an explicit choice, not an oversight — every project starts
+with an empty catalog and each entry has to be re-added per project it's
+actually used in); that old file is left on disk, unread by anything now.
 
 - `manifest.json` — plugin id `external_plugins`.
 - `catalog_store.py` — `CatalogEntry` (`id, name, git_url, folder_name,
-  plugin_id`) + `ExternalPluginCatalog`, a thin wrapper around a shared
-  (`shared=True`) `PluginConfigStore` (`data/plugins/core/external_plugins.json`,
-  git-tracked so every machine sees the same catalog after a self-update
-  pull) — `list_entries()/add_entry()/edit_entry()/delete_entry()/
-  update_plugin_id()`. `folder_name` must be a single safe path segment:
+  plugin_id`) + `ExternalPluginCatalog`, a thin wrapper around a
+  `ProjectPluginConfigStore` (`core/extensibility/config_store.py`) —
+  i.e. the active Project's own
+  `Project.plugin_data["external_plugins"]["catalog"]`
+  (`core/models.py`), synced the same way the rest of that project's data
+  is (`MetadataStore`'s per-project cloud sync, see the
+  `ukorehub-cloud-sync` skill) — `list_entries()/add_entry()/edit_entry()/
+  delete_entry()/update_plugin_id()`. `config_store` is `None` when no
+  project is active yet; every method degrades to a no-op/empty list
+  rather than crashing. `folder_name` must be a single safe path segment:
   it's used directly as `cache/plugins/<folder_name>`. `plugin_id` is a
   cache of "what `PluginManifest.id` does this entry produce once cloned",
   unknown until some machine's auto-sync engine or the Requirements &
   Plugins manual clone-on-check flow backfills it — see "Auto-sync engine"
   below for why this exists.
-- `catalog_entry_dialog.py` — `CatalogEntryDialog`: Name / Git URL /
+- `catalog_entry_dialog.py` — `CatalogEntryDialog`: Git URL / Name /
   Folder Name fields for Add/Edit, same shape as `interface/settings/
-  program_dialog.py`'s `ProgramDialog`. Never exposes `plugin_id` — it's
-  derived/cached, not something a human sets.
+  program_dialog.py`'s `ProgramDialog`. Name and Folder Name auto-fill
+  from the Git URL (`core/vcs/paths.py`'s `extract_git_repo_name`) the
+  moment a URL is typed, as long as the user hasn't already typed
+  something into that field themselves — so adding an entry is usually
+  just pasting a Git URL. Never exposes `plugin_id` — it's derived/cached,
+  not something a human sets.
 - `sync_engine.py` — Qt-free sync logic: `resolve_required_entries()`
   (which catalog entries the active repo's `Repo.required_plugin_ids`
   resolves to, via each entry's `plugin_id`) and `sync_entry()`
@@ -40,21 +55,21 @@ auto-detected folder, resolving a conflict).
   (`shared=False`) record of the sync engine's last conflict/error result
   per entry, so it survives until someone opens this tab.
 - `external_plugins_page.py` — `ExternalPluginsPage`: the tab itself.
-  Lists every catalog entry plus any `cache/plugins/*` folder that's
-  already cloned but not yet in the catalog (auto-detected via
-  `GitService.is_cloned`/`get_remote_url`, labeled "(not catalogued)" —
-  Edit on one of these adopts it into the catalog instead of editing an
-  existing entry). A folder with a `.git` directory that exists but isn't
-  actually a valid repo root (`GitService.is_repo_root` returns False —
-  e.g. an interrupted/broken clone) shows as its own distinct status
-  instead of being treated as usable — see "Why `is_repo_root`, not just
-  `is_cloned`" below. Every row's status (`_local_status`) also folds in
-  the auto-sync engine's last result for that entry — `Update Conflict`,
-  `Pending Restart`, or a failed auto-clone/-update message — see
-  "Auto-sync engine" below. Add/Edit/Delete manage the catalog itself;
-  Clone/Pull act on the selected row via `GitService.clone`/`pull` (a
-  successful manual Pull also clears any stale conflict/error the engine
-  had recorded for that entry); "Check for
+  Lists only the active Project's own catalog entries — no disk scan for
+  an already-cloned `cache/plugins/*` folder the catalog doesn't mention;
+  an entry has to be added here explicitly before it exists anywhere else
+  in the app (Requirements & Plugins, the auto-sync engine). A folder with
+  a `.git` directory that exists but isn't actually a valid repo root
+  (`GitService.is_repo_root` returns False — e.g. an interrupted/broken
+  clone) shows as its own distinct status instead of being treated as
+  usable — see "Why `is_repo_root`, not just `is_cloned`" below. Every
+  row's status (`_local_status`) also folds in the auto-sync engine's last
+  result for that entry — `Update Conflict`, `Pending Restart`, or a
+  failed auto-clone/-update message — see "Auto-sync engine" below.
+  Add/Edit/Delete manage the catalog itself; Clone/Pull act on the
+  selected row via `GitService.clone`/`pull` (a successful manual Pull
+  also clears any stale conflict/error the engine had recorded for that
+  entry); "Check for
   Updates" runs `GitService.fetch` + the new `get_ahead_behind` (see
   `core/README.md`) against every cloned row and updates its status text
   (`Up to date` / `N commit(s) behind` / `N commit(s) ahead (not pushed)`
@@ -73,13 +88,17 @@ auto-detected folder, resolving a conflict).
   into the remote" action, not a real commit-review workflow (that's
   Submit's job, for a repo, not a repo plugin).
 - `plugin.py` — `register(api)`: registers the settings tab
-  (`CATEGORY_DEVELOPER`, key `external_plugins`), building a fresh
+  (`CATEGORY_PROJECT`, key `external_plugins`), building a fresh
   `ExternalPluginsPage` per `page_factory` call — same "no long-lived page,
   a new one every time Settings is opened" convention every Settings tab
   uses (see `interface/settings/settings_view.py`'s `SettingsView`
   docstring). Also builds `_SyncController` once per app session — see
   "Auto-sync engine" below — which is the one long-lived thing in this
-  plugin.
+  plugin; its `ExternalPluginCatalog` is built once too
+  (`api.project_plugin_config_store(PLUGIN_ID)`), safe to hold for the
+  whole session because the active project never changes mid-session
+  (switching projects means a full app restart — see
+  `core/storage/config_store.py`'s `LocalConfigStore.set_active_project`).
 
 ## Auto-sync engine
 
@@ -136,34 +155,42 @@ needed to change.
   re-detected (not re-attempted) on every later sync until a dev resolves
   it by hand via "Open Git Directory".
 
-## Every catalogued entry is a choice for every project
+## Per-project catalog, not a studio-wide file
 
 `interface/repo_settings/requirements_and_plugins_page.py`'s External column
 (Settings > Repo Setting (Dev) > Requirements & Plugins) lists every
 `cache/plugins/` repo plugin `discover_plugins()` finds cloned on this
-machine, plus every catalog entry here that isn't cloned/discovered yet
-(reading this catalog's raw JSON directly rather than importing
-`CatalogEntry` — see that file's own comments). There's no per-project
-pre-filter on top of this catalog.
+machine, plus every catalog entry the *active project* has that isn't
+cloned/discovered yet (`RequirementsAndPluginsPage._read_external_catalog()`
+reads `self.store.get_project_plugin_data(project_id, "external_plugins")`
+directly — same `MetadataStore` instance this plugin's own
+`ProjectPluginConfigStore` reads/writes through, so an edit made on the
+External Plugins tab is visible here immediately, no caching on either
+side).
 
-There briefly was one (2026-08-10, same day, reverted before end of day):
-each catalogued row got a "Used by this Project" checkbox, persisted to
-`Project.plugin_data["external_plugins"]["selected_entry_ids"]`, that
-Requirements & Plugins filtered against — the idea being a repo plugin
-cloned for one project shouldn't show up as a choice for an unrelated one.
-That got replaced hours later with an auto-select-on-add/adopt version (no
-manual checkbox — marking an entry "used" happened automatically right
-after `_on_add`/`_on_edit` added it to the catalog) after feedback that the
-manual click was redundant. Both versions shared the same flaw: entries
-already in the catalog before either version existed had no `selected_entry_ids`
-entry for a given project and no way to gain one — auto-select only fires
-on *new* Add/Edit-adopt, not on already-catalogued rows — so an existing
-project's Requirements & Plugins > External list could go silently empty
-even though the catalog itself was full. Reverted back to no filter at all
-rather than adding a third mechanism (e.g. an explicit "Use in this
-Project" button) to fix that gap, per the same feedback that started this:
-the studio's actual usage pattern is closer to "every catalogued entry is
-relevant to every project" anyway.
+Before 2026-08-11 this was one studio-wide catalog
+(`data/plugins/core/external_plugins.json`, `shared=True`
+`PluginConfigStore`) shown identically to every project, plus a same-day,
+twice-reverted attempt at a per-project *selection filter* layered on top
+of that one shared file (a "Used by this Project" checkbox, then an
+auto-select-on-add version — see prior git history for the full story if
+needed). Both filter attempts shared the same flaw: entries already in the
+catalog before the filter existed had no way to gain a selection record,
+so an existing project's External list could go silently empty even
+though the shared catalog itself was full.
+
+Moving the catalog itself into `Project.plugin_data` (this file's own
+`ExternalPluginCatalog`, see above) removes that whole bug class rather
+than fixing it a third time: there is no filter sitting on top of a shared
+list anymore, so there's nothing for a pre-existing record to fail to
+match against — each project's catalog **is** its own list, empty by
+default. The cost is the flip side of the same design: nothing carries
+over from the old shared file automatically. That old file
+(`data/plugins/core/external_plugins.json`) is left on disk untouched but
+unread — the 5 entries it had (`maya_launcher`, `UkoreReferenceEditor`,
+`PublishApi`, `MayaToolkit`, `MayaFileBrowser`) need re-adding by hand to
+whichever project(s) actually use them, an explicit choice made when this
+migration shipped (2026-08-11), not an oversight.
 
 A selected-but-not-yet-cloned entry doesn't require a separate trip to this
 page to clone it: its row on Requirements & Plugins is itself checkable,
