@@ -43,8 +43,8 @@ composed on top of these in `interface/plugin_api.py`, which is the actual
   file is opened through Repo Browser (double-click in the file table) —
   never for files opened outside UkoreHub entirely.
 
-The hook registry (`hooks.py`) and the two in-memory event buses
-(`debug_log.py`, `notification_bus.py`) that used to live in this folder
+The hook registry (`hooks.py`) and the in-memory event bus
+(`debug_log.py`) that used to live in this folder
 moved to `core/events/` (2026-08-09 reorg) — see `core/events/README.md`.
 
 ## Plugins

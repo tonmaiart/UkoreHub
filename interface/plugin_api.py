@@ -174,13 +174,6 @@ class PluginAPI:
         return self._core.debug_bus
 
     @property
-    def notification_bus(self):
-        """The shared notification bus (core/events/notification_bus.py's
-        NotificationBus) — call .push(source, project_id, repo_id, label, ...)
-        to publish a card, consumed live by plugins/core/Notification/'s tab."""
-        return self._core.notification_bus
-
-    @property
     def google_tokens(self):
         """The shared Google refresh-token store (core/auth/token_store.py's
         SecureTokenStore) — the same instance launcher.py used to build the

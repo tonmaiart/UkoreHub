@@ -12,7 +12,8 @@ plugin would.
   `api.metadata`/`api.local_config`/`api.git`, registers it as the
   `SectionSpec(key="repo_git_status", order=20, ...)` section. Also wires
   `background_threads` (reaches into `page._git_worker`/`_status_worker`/
-  `_stream_worker` for `MainWindow.closeEvent`'s shutdown cleanup) and
+  `_stream_worker`/`_commit_log_worker` for `MainWindow.closeEvent`'s
+  shutdown cleanup) and
   `wire` — connects `sync_started`/`sync_finished`/`sync_failed` to
   `UICommandService.set_status_message` (the sidebar status line) and
   `browse_file_requested` to `UICommandService.navigate_and_focus` (jumps to
@@ -34,13 +35,14 @@ plugin would.
   list to checked, or back to unchecked if all were already checked. The
   Sync/Refresh Status buttons
   live under the log panel inside a "Git Log" `QGroupBox`, matching the
-  Modified/Staged panel styling. Implements the optional
+  Modified/Staged panel styling. Below that, a "Commit History" `QGroupBox`
+  shows the whole repo's recent commits (every teammate's pushes, not just
+  this machine's own) — see "Commit history panel" below. Implements the
+  optional
   `sync_active_repo(...)` protocol method —
   `interface/main_window.py`'s `_start_auto_sync` calls this generically
-  on launch/repo-switch, combining `set_repo()` + `start_sync()`. There is
-  no commit-history UI on this tab anymore — see
-  `plugins/core/Notification/README.md`'s "Team activity feed" for where
-  that moved. Before the very first clone of a repo (`start_sync` sees
+  on launch/repo-switch, combining `set_repo()` + `start_sync()`. Before the
+  very first clone of a repo (`start_sync` sees
   `git_service.is_cloned(dest_path)` is False) and only when the remote is
   a github.com URL, `start_sync` runs `core.github.repo_access.
   check_repo_access` in a `GitStreamWorker` first
@@ -67,13 +69,50 @@ plugin would.
 - `status_dot.py` — `RepoStatusDot(QLabel)`: the small colored circle shown
   at the right edge of Submit's own sidebar row — see "Sidebar status dot"
   below.
+- `commit_log_worker.py` — `CommitLogWorker(QThread)`: fetches the whole
+  repo's most recent commits off the UI thread (GitHub-API-first,
+  local-git-fallback via `interface/shared/commit_history.py`'s
+  `fetch_entries_via_github`) — see "Commit history panel" below.
+
+## Commit history panel
+
+`RepoGitStatusPage` renders a whole-repo commit history directly on this
+tab, through the same shared `CommitCard` template (icon/avatar, author,
+date, message, expandable "Files" button) `plugins/core/explorer/`'s
+per-path panel uses (`interface/shared/commit_history.py`). Unlike
+Explorer's panel (scoped to whichever path is selected in Repo Browser),
+this one always shows the active repo's history as a whole, and passes
+`git_service`/`repo_path`/`on_browse_file` to `CommitCard` so each entry's
+"Files" button can jump straight to Explorer via the same
+`browse_file_requested` signal the Modified/Staged lists' "Inspect in
+Explorer" context menu already uses.
+
+- **When it polls**: `_poll_commit_log` runs on every `refresh_status()`
+  call (repo switch, the Refresh Status button, and auto-sync on
+  launch/repo-switch — `_on_push_finished` already calls `refresh_status()`
+  too, so a just-pushed commit shows up immediately), plus a background
+  `QTimer` every `COMMIT_LOG_POLL_INTERVAL_MS` (30 minutes) so it stays
+  current while the tab just sits open.
+- **How it fetches**: `CommitLogWorker` (a `QThread`) runs
+  `GitService.fetch()` first — remote-tracking refs only, never the working
+  tree, so it's safe to run silently in the background — then reads recent
+  commits the same GitHub-API-first/local-git-fallback way
+  `interface/shared/commit_history.py`'s other callers do (`origin/<branch>`
+  when falling back to local, so commits nobody has pulled into this clone
+  yet still show up).
+- **No dedup/unread tracking**: unlike the old Notification-tab team
+  activity feed this replaced, the panel just re-renders whatever the
+  latest fetch returns (newest first, capped at 20) — there's no
+  persisted "last seen commit" bookkeeping, since this is a plain
+  browse-the-history panel, not a notification stream.
 
 ## Sidebar status dot
 
-`interface/section_registry.py`'s `SectionSpec.trailing_widget_factory` (the
-same general-purpose slot `plugins/core/Notification/`'s unread badge uses)
-is handed `page.status_dot` in `plugin.py`. `RepoGitStatusPage` owns/updates
-it directly — `SectionTabList` only lays it out.
+`interface/section_registry.py`'s `SectionSpec.trailing_widget_factory` (a
+general-purpose slot any section can use for a small status widget at the
+right edge of its own sidebar row) is handed `page.status_dot` in
+`plugin.py`. `RepoGitStatusPage` owns/updates it directly — `SectionTabList`
+only lays it out.
 
 Three states, driven entirely by the existing `refresh_status()` call (Sync,
 Refresh Status, and the auto-sync on launch/repo-switch — no extra polling
@@ -94,14 +133,6 @@ or network calls added for this):
 There is deliberately no "would conflict on push" state — detecting that
 would need a new `git fetch` this page doesn't otherwise do; left out of
 scope for now.
-
-`RepoGitStatusPage._on_push_finished` used to push a
-`core.extensibility.notification_bus` entry itself on a successful push;
-that's gone now — `plugins/core/Notification/`'s own commit-log poll
-(`CommitFeedWorker`) picks up every push (this machine's and every
-teammate's) as part of its regular team-activity-feed diff, so a
-second, submit-local "I just pushed" notification would only be a
-near-duplicate. See that plugin's own README for the feed's contract.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `interface/shared/` addition, or touches

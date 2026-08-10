@@ -8,18 +8,18 @@ from core.exceptions import GitOperationError
 from core.vcs.git_service import GitService
 from interface.shared.commit_history import CommitHistoryEntry, fetch_entries_via_github
 
-_POLL_LIMIT = 20
+_FETCH_LIMIT = 20
 
 
-class CommitFeedWorker(QThread):
-    """Background poll for Notification's team activity feed — refetches the
-    active repo's most recent commits (GitHub-API-first, local-git-fallback,
-    same GitHub-API-first/local-git-fallback approach
-    interface/shared/commit_history.py's other callers use) so commits pushed by
-    teammates from their own machines show up too, not just this machine's
-    own pushes. A best-effort `git fetch` (remote-tracking refs only, never
-    the working tree — see GitService.fetch) runs first so the local
-    fallback path can see commits nobody has pulled into this clone yet."""
+class CommitLogWorker(QThread):
+    """Background fetch for Submit's whole-repo commit history panel —
+    refetches the active repo's most recent commits (GitHub-API-first,
+    local-git-fallback, same approach interface/shared/commit_history.py's
+    other callers use) so commits pushed by teammates from their own
+    machines show up too, not just this machine's own pushes. A best-effort
+    `git fetch` (remote-tracking refs only, never the working tree — see
+    GitService.fetch) runs first so the local fallback path can see commits
+    nobody has pulled into this clone yet."""
 
     entries_ready = Signal(list)
 
@@ -36,12 +36,12 @@ class CommitFeedWorker(QThread):
             pass  # offline/auth hiccup — fall back to whatever's already local
 
         entries = fetch_entries_via_github(
-            self.git_service, self.repo_path, "", self.github_token, _POLL_LIMIT, 1, {}
+            self.git_service, self.repo_path, "", self.github_token, _FETCH_LIMIT, 1, {}
         )
         if entries is None:
             try:
                 branch = self.git_service.get_current_branch(self.repo_path)
-                commits = self.git_service.get_commit_log(self.repo_path, limit=_POLL_LIMIT, ref=f"origin/{branch}")
+                commits = self.git_service.get_commit_log(self.repo_path, limit=_FETCH_LIMIT, ref=f"origin/{branch}")
             except GitOperationError:
                 commits = []
             entries = [

@@ -232,7 +232,7 @@ class GitService:
     def fetch(self, repo_path: Path) -> None:
         """Updates remote-tracking refs (origin/<branch>) only — unlike
         pull(), never touches the working tree or local branch, so it's safe
-        to run silently in the background (Notification's periodic commit
+        to run silently in the background (Submit's commit history panel
         poll) without risking a merge into whatever the user currently has
         checked out or in progress."""
         repo_path = Path(repo_path)

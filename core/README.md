@@ -18,7 +18,7 @@ one:
 - **`vcs/`** — git subprocess wrapper, GCS cloud sync, GitHub REST helpers,
   repo path resolution. See `core/vcs/README.md`.
 - **`events/`** — the hook registry and the two in-memory event buses
-  (debug log, notifications). See `core/events/README.md`.
+  (debug log). See `core/events/README.md`.
 - **`extensibility/`** — plugin discovery, per-plugin config storage, file
   opener registration. See `core/extensibility/README.md`.
 

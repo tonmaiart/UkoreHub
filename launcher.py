@@ -176,7 +176,6 @@ def main() -> None:
     from core.app_core import UkoreCore
     from core.auth.token_store import SecureTokenStore
     from core.events.debug_log import DebugLogBus
-    from core.events.notification_bus import NotificationBus
     from core.exceptions import ConflictError
     from core.extensibility.file_opener import FileOpenerRegistry
     from core.extensibility.loader import apply_plugins, discover_plugins, plugin_source
@@ -219,7 +218,7 @@ def main() -> None:
     cache_dir = CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # debug_bus/notification_bus/google_tokens are built here, before
+    # debug_bus/google_tokens are built here, before
     # UkoreCore exists, because the cloud-bootstrap block right below
     # already needs to log to the debug bus and read the cached Google
     # refresh token — UkoreCore itself can't be constructed yet at this
@@ -227,7 +226,6 @@ def main() -> None:
     # cloud pull completes). Passed into UkoreCore(...) further down so
     # nothing is built twice.
     debug_bus = DebugLogBus(max_entries=1000)
-    notification_bus = NotificationBus(max_entries=500)
     google_tokens = SecureTokenStore(
         "UkoreHub", "gcs_refresh_token", cache_dir / "gcs_refresh_token.json", token_label="Google"
     )
@@ -313,7 +311,6 @@ def main() -> None:
         on_metadata_delete=_delete_shared_blob,
         on_system_config_save=lambda: _push_shared_blob("system_config.json"),
         debug_bus=debug_bus,
-        notification_bus=notification_bus,
         google_tokens=google_tokens,
     )
     store = core.metadata

@@ -34,7 +34,7 @@ class SectionTabList(QListWidget):
     composite QWidget installed via setItemWidget — not native
     QListWidgetItem icon/text — so every row looks identical whether or not
     it uses SectionSpec.trailing_widget_factory (e.g.
-    plugins/core/Notification/'s unread badge). Qt still paints the
+    plugins/core/submit/'s RepoStatusDot). Qt still paints the
     item's own selection/hover background underneath a transparent
     itemWidget, so interface/theme.py's ::item/::item:hover/::item:selected rules
     keep working unchanged; only the *text* color/weight on selection can't

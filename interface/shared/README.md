@@ -35,16 +35,12 @@ consumer's own folder instead, not here.
 - `commit_history.py` — `CommitCard` widget, `CommitHistoryEntry`,
   `format_commit_date`, and `fetch_entries_via_github` (GitHub-API-first,
   local-git-fallback). Used by `plugins/core/explorer/`'s per-path commit
-  panel (`path_commit_history_panel.py`/`path_commit_history_worker.py`)
-  and `plugins/core/Notification/`'s team activity feed
-  (`commit_feed_worker.py`, via `fetch_entries_via_github` only — it
-  doesn't use `CommitCard` itself, see that plugin's README). Submit used
-  to render a whole-repo commit log through this module too
-  (`repo_git_status_page.py`/`commit_log_worker.py`) but that's been
-  removed now that Notification's feed covers it — see
-  `plugins/core/submit/README.md`. Stays in `interface/shared/` rather than
-  moving into either plugin since it's imported the same normal way from
-  more than one `plugins/core/` plugin.
+  panel (`path_commit_history_panel.py`/`path_commit_history_worker.py`,
+  plain cards) and `plugins/core/submit/`'s whole-repo commit history panel
+  (`repo_git_status_page.py`/`commit_log_worker.py`, expandable cards — see
+  `plugins/core/submit/README.md`'s "Commit history panel"). Stays in
+  `interface/shared/` rather than moving into either plugin since it's
+  imported the same normal way from more than one `plugins/core/` plugin.
 - `image_asset.py` — `pick_image_file` (the `QFileDialog.getOpenFileName`
   wrapper every icon/thumbnail chooser uses) and `save_image_asset` (copy
   the chosen file into an `assets/*_icons`/`assets/thumbnails`-style dir as

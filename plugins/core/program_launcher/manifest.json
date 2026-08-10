@@ -1,9 +1,0 @@
-{
-  "id": "program_launcher",
-  "name": "Program Launcher",
-  "version": "0.2.0",
-  "api_version": 1,
-  "entry_point": "plugin.py",
-  "description": "Adds a sidebar tab listing every Program the active repo requires, with a launch button for each linked one and a shortcut to Software Linker for each unlinked one.",
-  "requires": ["software_linker"]
-}

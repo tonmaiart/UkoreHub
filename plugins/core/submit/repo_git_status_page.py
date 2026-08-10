@@ -26,8 +26,10 @@ from core.storage.metadata_store import MetadataStore
 from core.vcs.git_service import GitService
 from core.vcs.paths import resolve_repo_path
 from core.vcs.repo_access import check_repo_access
-from interface.shared.widget_helpers import confirm_action, show_exclusive
+from interface.shared.commit_history import CommitCard, CommitHistoryEntry
+from interface.shared.widget_helpers import confirm_action, show_exclusive, wrap_scrollable
 from plugins.core.submit.commit_dialog import CommitDialog
+from plugins.core.submit.commit_log_worker import CommitLogWorker
 from plugins.core.submit.conflict_dialog import ConflictResolutionDialog
 from plugins.core.submit.git_stream_worker import GitStreamWorker
 from plugins.core.submit.log_panel import LogPanel
@@ -38,6 +40,10 @@ from plugins.core.submit.status_worker import RepoStatusWorker
 # reverts RepoStatusDot to "loading" (no icon), pending the next
 # refresh_status() call.
 FRESHNESS_WINDOW_MS = 10 * 60 * 1000
+# Background repoll of the commit history panel while the app just sits
+# open on this tab — set_repo/refresh_status/push already trigger an
+# immediate poll, this just catches teammates' pushes in between.
+COMMIT_LOG_POLL_INTERVAL_MS = 30 * 60 * 1000
 
 
 class RepoGitStatusPage(QWidget):
@@ -59,13 +65,14 @@ class RepoGitStatusPage(QWidget):
         self._status_worker: RepoStatusWorker | None = None
         self._stream_worker: GitStreamWorker | None = None
         self._stage_worker: GitStreamWorker | None = None
+        self._commit_log_worker: CommitLogWorker | None = None
         self._pending_commit_message = ""
         self._pending_amend = False
         self._last_status: RepoStatus | None = None
 
         # Sidebar-row status indicator (SectionSpec.trailing_widget_factory —
-        # see plugin.py) — this page owns/updates it directly, same
-        # convention as Notification's badge_label. _freshness_timer flips a
+        # see plugin.py) — this page owns/updates it directly.
+        # _freshness_timer flips a
         # "fresh" (clean, just-verified) dot back to "loading" once that
         # verification is more than FRESHNESS_WINDOW_MS old; every call to
         # refresh_status() restarts it.
@@ -165,10 +172,34 @@ class RepoGitStatusPage(QWidget):
         git_log_layout.addWidget(self.log_panel)
         git_log_layout.addLayout(button_row)
 
+        # Whole-repo commit history — every teammate's pushes, not just this
+        # machine's own. Polled on repo switch, Refresh Status, and after a
+        # push (all funneled through refresh_status()/_poll_commit_log), plus
+        # a background QTimer so it stays current while the tab just sits
+        # open. See CommitCard (interface/shared/commit_history.py) — passing
+        # git_service/repo_path/on_browse_file makes each card expandable via
+        # a "Files" button.
+        self.commit_log_status_label = QLabel("")
+        self.commit_log_status_label.setWordWrap(True)
+        self._commit_log_cards_container = QWidget()
+        self._commit_log_cards_layout = QVBoxLayout(self._commit_log_cards_container)
+        self._commit_log_cards_layout.addStretch()
+        commit_log_scroll = wrap_scrollable(self._commit_log_cards_container, object_name="commitHistoryScroll")
+        commit_log_group = QGroupBox("Commit History")
+        commit_log_layout = QVBoxLayout(commit_log_group)
+        commit_log_layout.addWidget(self.commit_log_status_label)
+        commit_log_layout.addWidget(commit_log_scroll)
+
+        self._commit_log_timer = QTimer(self)
+        self._commit_log_timer.setInterval(COMMIT_LOG_POLL_INTERVAL_MS)
+        self._commit_log_timer.timeout.connect(self._poll_commit_log)
+        self._commit_log_timer.start()
+
         self.content_widget = QWidget()
         content_layout = QVBoxLayout(self.content_widget)
         content_layout.addLayout(lists_row)
         content_layout.addWidget(git_log_group)
+        content_layout.addWidget(commit_log_group, 1)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.empty_label)
@@ -211,6 +242,7 @@ class RepoGitStatusPage(QWidget):
             self.modified_list.clear()
             self.staged_list.clear()
             return
+        self._poll_commit_log()
         if self._status_worker is not None and self._status_worker.isRunning():
             # A previous refresh is still in flight (e.g. rapid clicks on
             # Refresh Status/tab switches) — don't orphan it mid-run, which
@@ -244,6 +276,41 @@ class RepoGitStatusPage(QWidget):
 
     def _on_status_failed(self, message: str) -> None:
         self.log_panel.append_line(f"--- Failed to read status: {message} ---")
+
+    # -- commit history panel ------------------------------------------------
+
+    def _poll_commit_log(self) -> None:
+        if self._repo is None or self._workspace_root is None:
+            return
+        if self._commit_log_worker is not None and self._commit_log_worker.isRunning():
+            # A previous poll is still in flight — don't orphan it mid-run
+            # (same guard every other worker on this page uses); the next
+            # trigger (timer/refresh/push) will pick up whatever changed.
+            return
+        dest_path = self._dest_path()
+        if not self.git_service.is_cloned(dest_path):
+            return
+        self.commit_log_status_label.setText("Loading...")
+        self._commit_log_worker = CommitLogWorker(self.git_service, dest_path, self.git_service.get_github_token())
+        self._commit_log_worker.entries_ready.connect(self._on_commit_log_ready)
+        self._commit_log_worker.start()
+
+    def _on_commit_log_ready(self, entries: list[CommitHistoryEntry]) -> None:
+        while self._commit_log_cards_layout.count() > 1:  # keep the trailing stretch
+            item = self._commit_log_cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.commit_log_status_label.setText("No commit history found." if not entries else "")
+        dest_path = self._dest_path()
+        for entry in entries:
+            card = CommitCard(
+                entry,
+                git_service=self.git_service,
+                repo_path=dest_path,
+                on_browse_file=self.browse_file_requested.emit,
+            )
+            self._commit_log_cards_layout.insertWidget(self._commit_log_cards_layout.count() - 1, card)
 
     def _on_gitweb_clicked(self) -> None:
         if self._repo is None:

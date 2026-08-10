@@ -94,7 +94,8 @@ class CommitCard(QFrame):
     """Shared visual template for a single commit: avatar (or a generic
     person glyph when none is available), author + human-readable date,
     and message. Used by both the Explorer tab's per-path commit history
-    panel and the Submit tab's whole-repo commit log.
+    panel (plain, no git_service/repo_path) and the Submit tab's whole-repo
+    commit log (plugins/core/submit/repo_git_status_page.py, expandable).
 
     Passing git_service + repo_path makes the card expandable — a "Files"
     button pops open a separate window listing the files changed in that

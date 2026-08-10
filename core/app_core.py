@@ -2,7 +2,7 @@
 
 Collects the objects launcher.py used to construct one at a time
 (MetadataStore, SystemConfigStore, LocalConfigStore, AppLifecycleHooks,
-GitService, SecureTokenStore x2, DebugLogBus, NotificationBus) behind a
+GitService, SecureTokenStore x2, DebugLogBus) behind a
 single object, so MainWindow/PluginAPI each take one `core` param instead
 of wiring each service individually.
 
@@ -22,9 +22,9 @@ need to run before this class can be constructed (the bucket name has to
 come from somewhere before SystemConfigStore exists) or are Qt-bound,
 which core/ never is.
 
-debug_bus/notification_bus/google_tokens are accepted as optional
+debug_bus/google_tokens are accepted as optional
 constructor params rather than always built internally, because
-launcher.py needs a debug/notification bus and the Google refresh token
+launcher.py needs a debug bus and the Google refresh token
 *before* UkoreCore can be constructed (the cloud-bootstrap pull sequence
 that determines system_config's bucket name runs first, and already logs
 to the debug bus and reads the Google token while doing so). When not
@@ -41,7 +41,6 @@ from core.auth.token_store import SecureTokenStore
 from core.events.bus import InMemoryEventBus
 from core.events.debug_log import DebugLogBus
 from core.events.hooks import AppLifecycleHooks
-from core.events.notification_bus import NotificationBus
 from core.models import Project, Repo
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore
@@ -59,7 +58,6 @@ class UkoreCore:
         on_metadata_delete: Callable[[str], None] | None = None,
         on_system_config_save: Callable[[], None] | None = None,
         debug_bus: DebugLogBus | None = None,
-        notification_bus: NotificationBus | None = None,
         google_tokens: SecureTokenStore | None = None,
     ):
         self.data_dir = Path(data_dir)
@@ -83,7 +81,6 @@ class UkoreCore:
             "UkoreHub", "gcs_refresh_token", self.cache_dir / "gcs_refresh_token.json", token_label="Google"
         )
         self.debug_bus: InMemoryEventBus = debug_bus or DebugLogBus(max_entries=1000)
-        self.notification_bus: InMemoryEventBus = notification_bus or NotificationBus(max_entries=500)
 
     def get_active_workspace(self) -> tuple[Project | None, Repo | None]:
         """The Project/Repo local_config currently points at, or (None, None)

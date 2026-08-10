@@ -59,13 +59,13 @@ class SectionSpec:
     # a plugin that hasn't supplied an icon yet).
     icon_path: Path | None = None
     # Optional: a small widget shown at the right edge of this section's own
-    # row in Sidebar's SectionTabList (e.g. plugins/core/Notification/'s
-    # unread-count badge) — built once, alongside page_factory, and never
+    # row in Sidebar's SectionTabList (e.g. plugins/core/submit/'s
+    # RepoStatusDot) — built once, alongside page_factory, and never
     # rebuilt by SectionTabList. The plugin that supplies the factory keeps
     # its own reference to the returned widget and updates it directly
     # (text/visibility/whatever) — SectionTabList only lays it out, it does
     # not manage its content. A general "status widget" slot any current or
-    # future section can use, not Notification-specific — added 2026-08-03.
+    # future section can use — added 2026-08-03.
     trailing_widget_factory: Callable[[], QWidget] | None = None
     # Optional: given the constructed page and a UICommandService, connect
     # whatever signals the page needs wired to app-level services (sidebar

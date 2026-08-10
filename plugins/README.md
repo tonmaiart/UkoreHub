@@ -180,10 +180,9 @@ another plugin" below instead.
   removed as part of folding everything into one view stack.
   `trailing_widget_factory` is a further optional field — a small widget
   built once and shown at the right edge of this section's own sidebar row
-  (e.g. `plugins/core/Notification/`'s unread-count badge); the plugin
+  (e.g. `plugins/core/submit/`'s `RepoStatusDot`); the plugin
   keeps its own reference to the returned widget and updates it directly,
-  `SectionTabList` only lays it out. A general status-widget slot, not
-  Notification-specific.
+  `SectionTabList` only lays it out. A general status-widget slot.
 - `api.register_settings_tab`, `api.register_file_opener` — the remaining
   registries.
 - `api.on_app_start(handler)`, `api.on_repo_changed(handler)`,

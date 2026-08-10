@@ -120,14 +120,6 @@ def build_stylesheet(colors: ThemeColors) -> str:
         color: white;
         font-weight: bold;
     }}
-    QLabel#sectionTabBadge {{
-        background-color: {colors.error};
-        color: white;
-        border-radius: 8px;
-        padding: 1px 6px;
-        font-size: 11px;
-        font-weight: bold;
-    }}
     QLabel#submitStatusDot[state="dirty"] {{
         background-color: {colors.warning};
         border-radius: 5px;
@@ -180,16 +172,6 @@ def build_stylesheet(colors: ThemeColors) -> str:
         background-color: {colors.surface_alt};
         border: 1px solid {colors.border};
         border-radius: 4px;
-    }}
-    QFrame#notificationCard {{
-        background-color: {colors.surface};
-        border: 1px solid {colors.border};
-        border-radius: 6px;
-        padding: 8px 10px;
-        margin-bottom: 6px;
-    }}
-    QFrame#notificationCard[clickable="true"]:hover {{
-        background-color: {colors.hover};
     }}
     QFrame#softwareLinkCard {{
         background-color: {colors.surface};

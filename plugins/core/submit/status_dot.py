@@ -8,8 +8,7 @@ _DOT_SIZE = 10
 class RepoStatusDot(QLabel):
     """Small colored circle shown at the right edge of the Submit tab's own
     sidebar row (see SectionSpec.trailing_widget_factory in
-    interface/section_registry.py — plugin.py hands this widget to it, same
-    convention as plugins/core/Notification/'s badge_label). Hidden
+    interface/section_registry.py — plugin.py hands this widget to it). Hidden
     ("loading") while no verified status is currently known; RepoGitStatusPage
     updates the color directly via set_state, SectionTabList only lays it out.
 
