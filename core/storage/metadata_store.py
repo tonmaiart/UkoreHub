@@ -175,7 +175,7 @@ class MetadataStore:
         project = self.get_project(project_id)
         if any(r.name.lower() == name.lower() for r in project.repos):
             raise ValidationError(f"A repo named '{name}' already exists in '{project.name}'.")
-        local_path = resolve_repo_path(workspace_root, project.name, name)
+        local_path = resolve_repo_path(workspace_root, project.name, git_url)
         try:
             relative_local_path = local_path.relative_to(workspace_root)
         except ValueError:

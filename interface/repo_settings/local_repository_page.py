@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton, QVBoxLayout
 
 from core.storage.config_store import LocalConfigStore
 from core.storage.metadata_store import MetadataStore
-from core.vcs.paths import resolve_repo_path
 from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.widget_helpers import confirm_action
 
@@ -37,7 +37,7 @@ class LocalRepositoryPage(BaseRepoSettingsPage):
         self.refresh()
 
     def _local_path(self):
-        return resolve_repo_path(self.local_config_store.workspace_root, self._project.name, self._repo.name)
+        return Path(self.local_config_store.workspace_root) / self._repo.local_path
 
     def _on_refresh_content(self) -> None:
         if not self.local_config_store.workspace_root:

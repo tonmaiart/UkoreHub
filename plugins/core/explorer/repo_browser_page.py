@@ -9,7 +9,6 @@ from core.vcs.git_service import GitService
 from core.models import Project, Repo
 from core.os_utils import open_with_default_app
 from core.storage.config_store import LocalConfigStore
-from core.vcs.paths import resolve_repo_path
 from interface.shared.widget_helpers import show_exclusive
 from plugins.core.explorer.browser_widget import RepoBrowserWidget
 
@@ -59,7 +58,7 @@ class RepoBrowserPage(QWidget):
             self._last_repo_id = None
             show_exclusive(self.empty_label, self.not_cloned_label, self.browser)
             return
-        abs_path = resolve_repo_path(workspace_root, project.name, repo.name)
+        abs_path = Path(workspace_root) / repo.local_path
         if not (abs_path / ".git").exists():
             self._last_repo_id = None
             show_exclusive(self.not_cloned_label, self.empty_label, self.browser)

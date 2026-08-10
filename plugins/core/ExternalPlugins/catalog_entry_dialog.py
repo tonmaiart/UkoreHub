@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QVBoxLayout
 
+from core.vcs.paths import extract_git_repo_name
+
 
 class CatalogEntryDialog(QDialog):
     """Add/Edit form for one External Plugins catalog entry — same shape as
@@ -14,6 +16,7 @@ class CatalogEntryDialog(QDialog):
         self.name_edit = QLineEdit(name)
         self.git_url_edit = QLineEdit(git_url)
         self.git_url_edit.setPlaceholderText("https://github.com/tonmaiart/YourRepo.git")
+        self.git_url_edit.textChanged.connect(self._on_git_url_changed)
         self.folder_name_edit = QLineEdit(folder_name)
         self.folder_name_edit.setPlaceholderText("Folder under cache/plugins/, e.g. YourRepo")
 
@@ -30,9 +33,26 @@ class CatalogEntryDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
 
-    def _on_accept(self) -> None:
-        if not self.name_edit.text().strip() or not self.git_url_edit.text().strip() or not self.folder_name_edit.text().strip():
+    def _on_git_url_changed(self, git_url: str) -> None:
+        # Only auto-fill fields the user hasn't already typed something
+        # into themselves — never overwrite an explicit Name/Folder Name.
+        git_url = git_url.strip()
+        if not git_url:
             return
+        derived = extract_git_repo_name(git_url)
+        if not self.name_edit.text().strip():
+            self.name_edit.setText(derived)
+        if not self.folder_name_edit.text().strip():
+            self.folder_name_edit.setText(derived)
+
+    def _on_accept(self) -> None:
+        git_url = self.git_url_edit.text().strip()
+        if not git_url:
+            return
+        if not self.name_edit.text().strip():
+            self.name_edit.setText(extract_git_repo_name(git_url))
+        if not self.folder_name_edit.text().strip():
+            self.folder_name_edit.setText(extract_git_repo_name(git_url))
         self.accept()
 
     def name(self) -> str:

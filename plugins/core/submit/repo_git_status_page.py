@@ -24,7 +24,6 @@ from core.models import Project, Repo, RepoStatus
 from core.storage.config_store import LocalConfigStore
 from core.storage.metadata_store import MetadataStore
 from core.vcs.git_service import GitService
-from core.vcs.paths import resolve_repo_path
 from core.vcs.repo_access import check_repo_access
 from interface.shared.commit_history import CommitCard, CommitHistoryEntry
 from interface.shared.widget_helpers import confirm_action, show_exclusive, wrap_scrollable
@@ -226,7 +225,7 @@ class RepoGitStatusPage(QWidget):
         self.start_sync()
 
     def _dest_path(self):
-        return resolve_repo_path(self._workspace_root, self._project.name, self._repo.name)
+        return Path(self._workspace_root) / self._repo.local_path
 
     def refresh_status(self) -> None:
         if self._repo is None or self._workspace_root is None:

@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
 from core.app_core import UkoreCore
 from core.exceptions import NotFoundError
 from core.events.hooks import AppLifecycleContext
-from core.vcs.paths import resolve_repo_path
 from core.relaunch import relaunch_ukorehub_exe
 from core.version import APP_NAME, APP_VERSION
 from interface import builtin_settings_tabs
@@ -327,9 +326,7 @@ class MainWindow(QMainWindow):
     def _fire_repo_selected(self) -> None:
         if not self.local_config_store.workspace_root:
             return
-        repo_path = resolve_repo_path(
-            self.local_config_store.workspace_root, self._active_project.name, self._active_repo.name
-        )
+        repo_path = Path(self.local_config_store.workspace_root) / self._active_repo.local_path
         self.hook_registry.fire_repo_changed(
             AppLifecycleContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path)
         )
