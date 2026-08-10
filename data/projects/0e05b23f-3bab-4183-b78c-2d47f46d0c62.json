@@ -7,7 +7,7 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-10T08:48:42.900301+00:00",
+      "last_synced": "2026-08-10T09:12:00.054023+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
@@ -478,8 +478,13 @@
         "ukore_browser": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Users\\natch\\Downloads\\UkoreHubLauncher-main\\UkoreHubLauncher-main\\app\\plugins\\repo_internal\\UkoreBrowser\\maya-scripts",
-              "C:\\Users\\natch\\Downloads\\UkoreHubLauncher-main\\UkoreHubLauncher-main\\app"
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-scripts",
+              "C:\\Tonmai\\UkoreHubDev\\app"
+            ]
+          },
+          "MAYA_PLUG_IN_PATH": {
+            "*": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-plug-ins"
             ]
           }
         },
@@ -503,7 +508,7 @@
         "maya_publisher": "MayaPublisher",
         "maya_toolkit": "MayaToolkit",
         "publish_api": "PublishApi",
-        "ukore_browser": "Ukore Browser",
+        "ukore_browser": "Maya File Browser",
         "ukore_playblast": "UkorePlayblast",
         "ukore_reference_editor": "UkoreReferenceEditor"
       }
