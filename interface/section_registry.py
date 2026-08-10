@@ -26,9 +26,8 @@ class UICommandService:
     # holding a MainWindow reference — wraps MainWindow._set_active_repo.
     set_active_repo: Callable[[str, str], None]
     # Lets a section jump straight to one SettingsTabSpec's tab inside the
-    # Setting popup (e.g. plugins/core/program_launcher/'s "Open Setting"
-    # button for an unlinked Program, landing on Software Linker) without
-    # holding a MainWindow reference. Wraps
+    # Setting popup (e.g. plugins/core/project_editor/'s "Local
+    # Repository" shortcut) without holding a MainWindow reference. Wraps
     # MainWindow._on_settings_requested(select_key=...) ->
     # SettingsDialog.select_tab. A key with no matching tab is a no-op —
     # the dialog still opens, just on its normal default tab.

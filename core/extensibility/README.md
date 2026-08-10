@@ -7,11 +7,11 @@ composed on top of these in `interface/plugin_api.py`, which is the actual
 
 - `loader.py` — `discover_plugins(roots, api_version)` scans manifest.json +
   entry-point Python files under a list of root directories (`plugins/core`,
-  `plugins/repo_internal`, `cache/plugins`) and imports each one;
+  `cache/plugins`) and imports each one;
   `apply_plugins(discovered, api)` calls each one's `register(api)`. Never
   raises — a broken plugin is recorded as a `PluginLoadFailure` and
-  skipped, not a crash. Also has `plugin_source()`, returning `"core"`/
-  `"repo_internal"` for the two bundled roots, or `"repo"` for a
+  skipped, not a crash. Also has `plugin_source()`, returning `"core"` for
+  the bundled root, or `"repo"` for a
   `cache/plugins/` entry (its own separate git clone). `launcher.py`
   collects `core_plugin_ids` (every plugin `plugin_source()` returns
   `"core"` for) and passes it to `MainWindow`, whose
@@ -22,7 +22,7 @@ composed on top of these in `interface/plugin_api.py`, which is the actual
   always-visible treatment was extended to the whole `plugins/core/` root,
   making the flag redundant). Separately, `launcher.py` also collects
   `opt_in_plugin_ids` (every plugin `plugin_source()` returns
-  `"repo_internal"`/`"repo"` for) and passes it to `MainWindow` too —
+  `"repo"` for) and passes it to `MainWindow` too —
   `_apply_plugin_visibility` uses it for the opposite (opt-in) gating,
   keyed off `Repo.required_plugin_ids`. See "Plugins" below for the full
   two-way visibility split.
@@ -49,10 +49,10 @@ moved to `core/events/` (2026-08-09 reorg) — see `core/events/README.md`.
 
 ## Plugins
 
-`plugins/core/`, `plugins/repo_internal/`, and `cache/plugins/` are
+`plugins/core/` and `cache/plugins/` are
 UkoreHub's own sub-systems — implemented once, loaded (or not, on
 failure) once at app startup for every project alike (`cache/plugins/`
-entries too, once cloned — see `plugins/README.md`). Which of the three
+entries too, once cloned — see `plugins/README.md`). Which of the two
 a plugin lives in decides its per-repo sidebar-section visibility
 (`interface/repo_settings/requirements_and_plugins_page.py`,
 `interface/main_window.py`'s `_apply_plugin_visibility`) — a per-repo
@@ -60,7 +60,9 @@ a plugin lives in decides its per-repo sidebar-section visibility
 - `core/` — always visible, no per-repo opt-out at all (2026-08-04).
   Reserve this root for universal app-level functionality only —
   anything a repo might reasonably want turned off belongs in
-  `repo_internal/` instead.
-- `repo_internal/` and `cache/plugins/` — hidden by default; a repo must
-  opt **in** via `Repo.required_plugin_ids` for the section to show at
-  all.
+  `cache/plugins/` instead.
+- `cache/plugins/` — hidden by default; a repo must
+  opt **in** via `Repo.required_plugin_ids` (further filtered against the
+  active Project's own selection over the studio-wide External Plugins
+  catalog, see `plugins/core/ExternalPlugins/README.md`) for the section
+  to show at all.

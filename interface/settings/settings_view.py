@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from interface.theme import DEFAULT_THEME_NAME, get_theme
-from interface.builtin_settings_tabs import BROWSER_LINKS, LOCAL_REPOSITORY, REQUIREMENTS_AND_PLUGINS
+from interface.builtin_settings_tabs import LOCAL_REPOSITORY, REQUIREMENTS_AND_PLUGINS
 from interface.settings_tab_registry import (
     CATEGORY_DEVELOPER,
     CATEGORY_GENERAL,
@@ -48,11 +48,11 @@ _CUSTOM_PATHS_SETTINGS_KEY = "project_editor_custom_paths"
 # The built-in CATEGORY_REPO tabs that make up "Repository" under the
 # Repo Setting (Dev) top tab — everything else registered under
 # CATEGORY_REPO (a plugin's own settings tab, e.g. Maya Launcher,
-# MayaPublisher, ...) falls under "Plugins" instead.
+# MayaPublisher, UkoreBrowser, ...) falls under "Plugins" instead.
 # Hardcoded rather than a new SettingsTabSpec field since there are only
-# ever these four built-ins to name — same convention the now-retired
+# ever these three built-ins to name — same convention the now-retired
 # RepoSettingsPanel used.
-_REPOSITORY_KEYS = {LOCAL_REPOSITORY, _CUSTOM_PATHS_SETTINGS_KEY, REQUIREMENTS_AND_PLUGINS, BROWSER_LINKS}
+_REPOSITORY_KEYS = {LOCAL_REPOSITORY, _CUSTOM_PATHS_SETTINGS_KEY, REQUIREMENTS_AND_PLUGINS}
 
 
 class _CategoryPage(QWidget):

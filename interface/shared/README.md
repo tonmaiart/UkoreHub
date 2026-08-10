@@ -19,13 +19,11 @@ consumer's own folder instead, not here.
   Settings tab scoped to a single repo — the `empty_label`/`content_widget`
   scaffolding and `refresh()` preamble (resolve active project/repo from
   `local_config_store`, catch `NotFoundError`, `show_exclusive`) that
-  `interface/repo_settings/local_repository_page.py`,
-  `interface/repo_settings/requirements_and_plugins_page.py`, and
-  `interface/browser_links/browser_links_settings_page.py` each had
+  `interface/repo_settings/local_repository_page.py` and
+  `interface/repo_settings/requirements_and_plugins_page.py` each had
   independently, byte-for-byte identical, before 2026-07-20. A subclass
-  adds its own layout onto `content_widget` (left layout-less on purpose —
-  `BrowserLinksSettingsPage` wraps it in a scroll area, the other two
-  don't) and overrides `_on_refresh_content()`.
+  adds its own layout onto `content_widget` (left layout-less on purpose)
+  and overrides `_on_refresh_content()`.
 - `requirements_tree_widget.py` — `RequirementsTreeWidget`: each Program is
   a checkable top-level node (check = required), with a checkable child per
   version for a multi-version Program (pin, radio-style). Used by
@@ -46,8 +44,7 @@ consumer's own folder instead, not here.
   the chosen file into an `assets/*_icons`/`assets/thumbnails`-style dir as
   `f"{asset_id}{ext}"`, returning the filename or `None` + a warning on
   failure). Used by `plugins/core/project_editor/`'s node context menu
-  (repo thumbnail and `RepoDialog`), `browser_links/browser_links_settings_page.py`
-  (Browser Link icon), and `settings/program_dialog.py`/
+  (repo thumbnail and `RepoDialog`), and `settings/program_dialog.py`/
   `settings/program_database_page.py` — every place in the app that lets
   you pick and persist an image asset.
 - `widget_helpers.py` — three small Qt boilerplate extractions used across

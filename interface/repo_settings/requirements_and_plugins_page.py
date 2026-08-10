@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QGroupBox,
@@ -19,14 +22,24 @@ from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 from interface.shared.widget_helpers import wrap_scrollable
 
+# Matches plugins/core/ExternalPlugins/external_plugins_page.py's own
+# _PLUGIN_DATA_KEY/_SELECTED_ENTRY_IDS_KEY and catalog_store.py's
+# _CATALOG_KEY by convention (agreeing on a string + JSON shape), not by
+# importing that plugin's source — see plugins/README.md's "Sharing data
+# with another plugin".
+_EXTERNAL_PLUGINS_DATA_KEY = "external_plugins"
+_SELECTED_ENTRY_IDS_KEY = "selected_entry_ids"
+_EXTERNAL_CATALOG_KEY = "catalog"
+_NOT_INSTALLED_SUFFIX = " (not installed — clone via Settings > Developer > External Plugins)"
+_NOT_SELECTED_SUFFIX = " (not selected for this project)"
+
 _PLUGIN_DESCRIPTION = (
     "Choose which plugins actually apply to this repo. Core plugins are "
     "always on — hiding them would remove functionality this app needs "
     "everywhere (e.g. switching the active repo at all), not just an "
-    "optional feature — so there's nothing to toggle. Internal and "
-    "External plugins are opt-in: off by default, check one only if this "
-    "repo actually needs it. Saved to the shared Project/Repo registry "
-    "(Studio)."
+    "optional feature — so there's nothing to toggle. External plugins "
+    "are opt-in: off by default, check one only if this repo actually "
+    "needs it. Saved to the shared Project/Repo registry (Studio)."
 )
 
 
@@ -43,19 +56,28 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
       hosted here so an *existing* repo's required Programs (+ pinned
       version for a multi-version Program) can be edited too.
     - Enable Plugin — every discovered plugin's sidebar section visibility,
-      split into three lists by core.extensibility.loader.plugin_source()
+      split into two lists by core.extensibility.loader.plugin_source()
       instead of one flat checklist (see MainWindow._apply_plugin_visibility
-      for the full precedence this mirrors), laid out as three columns in
-      one QHBoxLayout row (2026-08-05, was stacked vertically) rather than
-      one column each:
+      for the full precedence this mirrors), laid out as two columns in
+      one QHBoxLayout row:
       - Core (plugins/core/) — always on for every repo, no checkbox and no
         per-repo opt-out (2026-08-04): anything left in plugins/core/ is
         meant to be universal app-level functionality now that anything
-        repo-specific (Maya tools, ...) lives under repo_internal/ instead.
-      - Internal (plugins/repo_internal/) — opt-in, unchecked by default,
-        persisted to Repo.required_plugin_ids.
+        repo-specific (Maya tools, ...) lives under cache/plugins/ instead.
       - External (cache/plugins/, its own separate git clone) — opt-in,
-        same as Internal, same Repo.required_plugin_ids list.
+        unchecked by default, persisted to Repo.required_plugin_ids, but
+        further filtered (2026-08-10) against the active Project's own selection
+        over plugins/core/ExternalPlugins/'s studio-wide catalog
+        (Project.plugin_data["external_plugins"]["selected_entry_ids"] —
+        see that plugin's own README) instead of unconditionally listing
+        every "repo"-source plugin discover_plugins() happens to find
+        cloned on this machine: a repo plugin cloned for one project
+        shouldn't show up as a choice for every other project on a shared
+        studio machine. A selected-but-not-yet-cloned entry still shows,
+        disabled, labeled "(not installed — ...)"; an already-required
+        plugin the project no longer has selected still shows too, labeled
+        "(not selected for this project)" rather than silently disappearing
+        — see _rebuild_plugin_lists.
     Self-persists on every check-state change, same convention as every
     other repo-settings tab — no separate Save button. Active-repo
     resolution + refresh() preamble live in BaseRepoSettingsPage
@@ -76,9 +98,11 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         store: MetadataStore,
         local_config_store: LocalConfigStore,
         plugin_catalog: list[DiscoveredPlugin],
+        external_catalog_path: Path,
     ):
         super().__init__(parent, store=store, local_config_store=local_config_store)
         self._plugin_catalog = plugin_catalog
+        self._external_catalog_path = Path(external_catalog_path)
         self._plugin_by_id = {plugin.manifest.id: plugin for plugin in plugin_catalog}
         self._item_by_plugin_id: dict[str, QListWidgetItem] = {}
         self._requirements_tree: RequirementsTreeWidget | None = None
@@ -91,8 +115,6 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         plugin_description.setWordWrap(True)
 
         self._core_list = QListWidget()
-        self._internal_list = QListWidget()
-        self._internal_list.itemChanged.connect(self._on_plugin_item_changed)
         self._external_list = QListWidget()
         self._external_list.itemChanged.connect(self._on_plugin_item_changed)
 
@@ -100,17 +122,12 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         core_layout = QVBoxLayout(core_group)
         core_layout.addWidget(self._core_list)
 
-        internal_group = QGroupBox("Internal Plugin")
-        internal_layout = QVBoxLayout(internal_group)
-        internal_layout.addWidget(self._internal_list)
-
         external_group = QGroupBox("External Plugin")
         external_layout = QVBoxLayout(external_group)
         external_layout.addWidget(self._external_list)
 
         plugin_columns = QHBoxLayout()
         plugin_columns.addWidget(core_group)
-        plugin_columns.addWidget(internal_group)
         plugin_columns.addWidget(external_group)
 
         plugin_group = QGroupBox("Enable Plugin")
@@ -168,24 +185,99 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         # half-built list on every single addItem call).
         self._loading_plugins = True
         self._core_list.clear()
-        self._internal_list.clear()
         self._external_list.clear()
         self._item_by_plugin_id = {}
         if self._repo is not None:
             required_ids = self._repo.required_plugin_ids
+            selected_entries = self._selected_external_catalog_entries()
+            selected_folder_names = {entry["folder_name"] for entry in selected_entries}
+            discovered_repo_folders: set[str] = set()
             for plugin in self._plugin_catalog:
                 source = plugin_source(plugin)
                 if source == "core":
                     self._core_list.addItem(QListWidgetItem(plugin.manifest.name))
                     continue
-                target_list = self._internal_list if source == "repo_internal" else self._external_list
-                item = QListWidgetItem(plugin.manifest.name)
-                item.setData(Qt.UserRole, plugin.manifest.id)
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked if plugin.manifest.id in required_ids else Qt.Unchecked)
-                target_list.addItem(item)
-                self._item_by_plugin_id[plugin.manifest.id] = item
+                # source == "repo" (External) — only offer it if the active
+                # project has selected it from the studio-wide External
+                # Plugins catalog, or it's already required (never silently
+                # drop an existing requirement just because the project's
+                # selection changed later).
+                discovered_repo_folders.add(plugin.dir_path.name)
+                is_selected = plugin.dir_path.name in selected_folder_names
+                is_required = plugin.manifest.id in required_ids
+                if not is_selected and not is_required:
+                    continue
+                suffix = "" if is_selected else _NOT_SELECTED_SUFFIX
+                self._add_plugin_item(self._external_list, plugin, required_ids, label_suffix=suffix)
+            self._add_not_installed_external_items(selected_entries, discovered_repo_folders)
         self._loading_plugins = False
+
+    def _add_plugin_item(
+        self, target_list: QListWidget, plugin: DiscoveredPlugin, required_ids: list[str], *, label_suffix: str = ""
+    ) -> None:
+        item = QListWidgetItem(plugin.manifest.name + self._requires_label(plugin) + label_suffix)
+        item.setData(Qt.UserRole, plugin.manifest.id)
+        item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+        item.setCheckState(Qt.Checked if plugin.manifest.id in required_ids else Qt.Unchecked)
+        target_list.addItem(item)
+        self._item_by_plugin_id[plugin.manifest.id] = item
+
+    def _requires_label(self, plugin: DiscoveredPlugin) -> str:
+        """' — requires: X, Y', resolving each required id to its
+        discovered manifest name via self._plugin_by_id (built from the
+        full plugin_catalog at construction, so this covers Core/External
+        requirements alike) — '' if plugin.manifest.requires is
+        empty. Always visible (not just on check, unlike the
+        _confirm_and_enable_requirements prompt below) so a dependency is
+        known before you check anything."""
+        if not plugin.manifest.requires:
+            return ""
+        names = [
+            self._plugin_by_id[req_id].manifest.name if req_id in self._plugin_by_id else req_id
+            for req_id in plugin.manifest.requires
+        ]
+        return f" — requires: {', '.join(names)}"
+
+    def _add_not_installed_external_items(self, selected_entries: list[dict], discovered_repo_folders: set[str]) -> None:
+        """A catalog entry the active project has selected but that isn't
+        actually cloned into this machine's cache/plugins/ yet — shown
+        disabled/informational only, nothing to check since there's no
+        discovered manifest.id to reference until it's cloned (Settings >
+        Developer > External Plugins) and the app restarted."""
+        for entry in sorted(selected_entries, key=lambda e: e["name"]):
+            if entry["folder_name"] in discovered_repo_folders:
+                continue
+            item = QListWidgetItem(entry["name"] + _NOT_INSTALLED_SUFFIX)
+            item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+            self._external_list.addItem(item)
+
+    def _selected_external_catalog_entries(self) -> list[dict]:
+        """Studio-wide External Plugins catalog entries (see
+        plugins/core/ExternalPlugins/catalog_store.py) the active Project has
+        opted into (Project.plugin_data["external_plugins"]
+        ["selected_entry_ids"]). Re-reads both stores fresh on every call —
+        no caching — so an edit made on the External Plugins settings tab
+        earlier in the same session, or a cloud pull landing mid-session, is
+        picked up the next time this tab is opened."""
+        if self._project is None:
+            return []
+        selected_ids = set(
+            self.store.get_project_plugin_data(self._project.id, _EXTERNAL_PLUGINS_DATA_KEY).get(
+                _SELECTED_ENTRY_IDS_KEY, []
+            )
+        )
+        if not selected_ids:
+            return []
+        return [entry for entry in self._read_external_catalog() if entry.get("id") in selected_ids]
+
+    def _read_external_catalog(self) -> list[dict]:
+        if not self._external_catalog_path.exists():
+            return []
+        try:
+            data = json.loads(self._external_catalog_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return data.get(_EXTERNAL_CATALOG_KEY, [])
 
     def _on_plugin_item_changed(self, item: QListWidgetItem) -> None:
         if self._loading_plugins or self._project is None or self._repo is None:
@@ -214,13 +306,12 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
 
     def _enabled_plugin_ids(self) -> set[str]:
         """Plugin ids currently in effect for the repo being edited: every
-        always-on Core plugin plus every checked Internal/External item."""
+        always-on Core plugin plus every checked External item."""
         enabled = {plugin.manifest.id for plugin in self._plugin_catalog if plugin_source(plugin) == "core"}
         enabled.update(
             item.data(Qt.UserRole)
-            for lst in (self._internal_list, self._external_list)
-            for row in range(lst.count())
-            if (item := lst.item(row)).checkState() == Qt.Checked
+            for row in range(self._external_list.count())
+            if (item := self._external_list.item(row)).checkState() == Qt.Checked
         )
         return enabled
 
@@ -298,13 +389,9 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
 
     def _persist_required_plugin_ids(self) -> None:
         required_ids = [
-            self._internal_list.item(row).data(Qt.UserRole)
-            for row in range(self._internal_list.count())
-            if self._internal_list.item(row).checkState() == Qt.Checked
-        ] + [
-            self._external_list.item(row).data(Qt.UserRole)
+            item.data(Qt.UserRole)
             for row in range(self._external_list.count())
-            if self._external_list.item(row).checkState() == Qt.Checked
+            if (item := self._external_list.item(row)).checkState() == Qt.Checked and item.data(Qt.UserRole)
         ]
         self.store.set_repo_required_plugin_ids(self._project.id, self._repo.id, required_ids)
         self._repo.required_plugin_ids = required_ids

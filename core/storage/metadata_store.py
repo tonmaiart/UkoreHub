@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from core.exceptions import NotFoundError, ValidationError
-from core.models import BrowserLink, Program, Project, Repo
+from core.models import Program, Project, Repo
 from core.storage.atomic_file import atomic_write, utc_now_iso
 from core.vcs.git_service import GitService
 from core.vcs.paths import resolve_repo_path
@@ -264,20 +264,6 @@ class MetadataStore:
         repo.required_plugin_ids = list(plugin_ids)
         self._save_project(project)
 
-    def set_repo_browser_links(self, project_id: str, repo_id: str, links: list[BrowserLink]) -> None:
-        project = self.get_project(project_id)
-        repo = self.get_repo(project_id, repo_id)
-        repo.browser_links = list(links)
-        self._save_project(project)
-
-    def set_browser_link_icon(self, project_id: str, repo_id: str, link_index: int, filename: str | None) -> None:
-        project = self.get_project(project_id)
-        repo = self.get_repo(project_id, repo_id)
-        if not (0 <= link_index < len(repo.browser_links)):
-            raise NotFoundError(f"Browser link index out of range: {link_index}")
-        repo.browser_links[link_index].icon_filename = filename
-        self._save_project(project)
-
     def get_repo_plugin_data(self, project_id: str, repo_id: str, plugin_id: str) -> dict:
         return self.get_repo(project_id, repo_id).plugin_data.get(plugin_id, {})
 
@@ -303,15 +289,6 @@ class MetadataStore:
         if not repo.thumbnail_filename:
             return None
         return self.thumbnails_dir / repo.thumbnail_filename
-
-    @property
-    def browser_link_icons_dir(self) -> Path:
-        return self.assets_dir / "browser_link_icons"
-
-    def resolve_browser_link_icon_path(self, link: BrowserLink) -> Path | None:
-        if not link.icon_filename:
-            return None
-        return self.browser_link_icons_dir / link.icon_filename
 
     def refresh_statuses_from_disk(self, project_id: str, workspace_root: str, git_service: GitService) -> None:
         """Reconciles Repo.status against what's actually on disk, for the

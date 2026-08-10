@@ -4,8 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -79,14 +78,10 @@ class MainWindow(QMainWindow):
         # stays visible in _apply_plugin_visibility, no per-repo opt-out
         # (see that method below). Built in launcher.py.
         self._core_plugin_ids = core_plugin_ids or set()
-        # Plugin ids discovered under plugins/repo_internal/ or cache/plugins/
-        # (plugin_source() returns "repo_internal"/"repo" — see
-        # core.extensibility.loader) — gated opt-in per repo via
-        # Repo.required_plugin_ids. repo_internal ships bundled with the
-        # app like core; a "repo" plugin is its own separate git clone under
-        # cache/plugins/ — different in kind, but the same "hidden until a
-        # repo requires it" visibility rule applies to both. Built in
-        # launcher.py.
+        # Plugin ids discovered under cache/plugins/ (plugin_source() returns
+        # "repo" — see core.extensibility.loader) — gated opt-in per repo via
+        # Repo.required_plugin_ids. Each entry is its own separate git clone,
+        # never on by default. Built in launcher.py.
         self._opt_in_plugin_ids = opt_in_plugin_ids or set()
 
         self._active_project = None
@@ -146,7 +141,6 @@ class MainWindow(QMainWindow):
             section_registry=section_registry, sidebar_footer_action_registry=self.sidebar_footer_action_registry
         )
         self.sidebar.navigation_changed.connect(self._on_navigation_changed)
-        self.sidebar.external_link_activated.connect(self._on_external_link_activated)
         self.sidebar.settings_requested.connect(self._on_settings_requested)
 
         # Every section (including Project Editor, folded into this stack
@@ -165,12 +159,6 @@ class MainWindow(QMainWindow):
         # open. A repo node's "Repository Setting..." right-click opens this
         # same dialog (via UICommandService.open_settings_tab) rather than a
         # popup of its own.
-
-        # One dynamic Sidebar row per Browser Link on the active repo —
-        # rebuilt from scratch on every repo switch and whenever it changes,
-        # see _rebuild_dynamic_tabs. Opens externally on click (no
-        # view_stack page of its own), so there's no view-index to track
-        # here.
 
         central = QWidget()
         central_layout = QHBoxLayout(central)
@@ -200,7 +188,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._start_auto_sync)
         self._fire_app_started()
 
-    # -- navigation (Explorer / Submit / About / Setting / Browser Links) ---
+    # -- navigation (Explorer / Submit / About / Setting) --
 
     def _on_navigation_changed(self, key: str) -> None:
         index = self._section_view_index.get(key)
@@ -208,12 +196,6 @@ class MainWindow(QMainWindow):
             return
         self.view_stack.setCurrentIndex(index)
         self._apply_to_current_page()
-
-    def _on_external_link_activated(self, url: str) -> None:
-        """A Browser Link row (Sidebar.external_link_activated) — opens in
-        the OS's default browser instead of an embedded page, see
-        interface/sidebar/section_tab_list.py's class docstring."""
-        QDesktopServices.openUrl(QUrl(url))
 
     def _on_settings_requested(self, select_key: str | None = None) -> None:
         # Setting is its own icon button in Sidebar's footer, opened as a
@@ -234,9 +216,6 @@ class MainWindow(QMainWindow):
             # over nothing.
             common_settings_page.logout_requested.connect(dialog.accept)
             common_settings_page.restart_requested.connect(self._on_restart_requested)
-        browser_links_page = dialog.view.get_tab_widget(builtin_settings_tabs.BROWSER_LINKS)
-        if browser_links_page is not None:
-            browser_links_page.browser_links_changed.connect(self._rebuild_dynamic_tabs)
         if select_key is not None:
             dialog.select_tab(select_key)
         dialog.exec()
@@ -256,21 +235,6 @@ class MainWindow(QMainWindow):
         if isinstance(page, PathFocusablePage):
             page.browse_to_path(path)
 
-    def _rebuild_dynamic_tabs(self) -> None:
-        """Rebuilds every dynamic (non-fixed) sidebar row — one per
-        active-repo Browser Link. Called on every repo switch and whenever
-        browser_links_changed fires. Each row just opens its link in the
-        OS's default browser on click (see
-        interface/sidebar/section_tab_list.py) rather than switching to an
-        embedded view_stack page, so there's no page teardown or "was this
-        the currently-showing page" fallback needed here anymore."""
-        self.sidebar.tab_list.clear_dynamic_tabs()
-        if self._active_repo is not None:
-            for link_index, link in enumerate(self._active_repo.browser_links):
-                key = f"browser_link:{link_index}"
-                icon_path = self.store.resolve_browser_link_icon_path(link)
-                self.sidebar.tab_list.add_dynamic_tab(key, link.name, icon_path, url=link.url)
-
     def _apply_plugin_visibility(self) -> None:
         """Hides the sidebar row of any plugins/ section the active repo
         doesn't currently want shown. A section with no entry in
@@ -280,17 +244,14 @@ class MainWindow(QMainWindow):
         discovered from (core.extensibility.loader.plugin_source):
         - plugins/core/ (self._core_plugin_ids) — always visible, no matter
           what (2026-08-04: no more per-repo opt-out here at all — anything
-          repo-specific belongs under plugins/repo_internal/ instead, so
+          repo-specific belongs under cache/plugins/ instead, so
           plugins/core/ is meant to be universal app-level functionality,
           e.g. Project Editor, where switching the active repo has no other
           entry point).
-        - plugins/repo_internal/ or cache/plugins/ (self._opt_in_plugin_ids,
-          plugin_source() "repo_internal"/"repo") — opt-in: hidden unless the
-          plugin id is in Repo.required_plugin_ids. A repo_internal plugin is
-          bundled with the app like core but stays off until a repo declares
-          it needed; a "repo" plugin is its own separate git clone under
-          cache/plugins/ and is never on by default either. Same "off until
-          required" shape as a Program requirement either way."""
+        - cache/plugins/ (self._opt_in_plugin_ids, plugin_source() "repo") —
+          opt-in: hidden unless the plugin id is in Repo.required_plugin_ids.
+          Each entry is its own separate git clone and never on by default.
+          Same "off until required" shape as a Program requirement."""
         required_ids = self._active_repo.required_plugin_ids if self._active_repo is not None else []
         visible_keys = set()
         for key in self._section_view_index:
@@ -330,7 +291,6 @@ class MainWindow(QMainWindow):
         self._active_repo = repo
         self.sidebar.active_repo_widget.set_active_labels(repo.name, project.name)
         self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(repo))
-        self._rebuild_dynamic_tabs()
         self._apply_plugin_visibility()
 
     def _current_page(self):
@@ -359,7 +319,6 @@ class MainWindow(QMainWindow):
         self._active_repo = self.store.get_repo(project_id, repo_id)
         self.sidebar.active_repo_widget.set_active_labels(self._active_repo.name, self._active_project.name)
         self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
-        self._rebuild_dynamic_tabs()
         self._apply_plugin_visibility()
         self._apply_to_current_page()
         self._fire_repo_selected()

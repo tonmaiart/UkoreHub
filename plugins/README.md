@@ -5,7 +5,7 @@ discovery/loading mechanism if you haven't read it yet — this file is the
 "how do I write one" guide; that one is the "how does discovery/loading
 work" reference.
 
-Three roots, all scanned by the same `discover_plugins()` (see
+Two roots, both scanned by the same `discover_plugins()` (see
 `launcher.py`) — they differ along two independent axes: whether the
 plugin ships bundled with the app vs. is fetched separately, and whether
 it's on by default per repo vs. opt-in:
@@ -18,13 +18,7 @@ it's on by default per repo vs. opt-in:
   handful that were already flagged load-bearing). Explorer, Submit, and
   Software Linker all live here — reserve this root for functionality
   every repo genuinely needs; anything repo-specific belongs in
-  `repo_internal/` instead. See `core/extensibility/README.md`.
-- `repo_internal/` — also git-tracked and bundled with the app, but
-  **opt-in**: hidden for a repo until that repo explicitly requires it
-  (`Repo.required_plugin_ids`, same page as above), the same "off until
-  required" shape as a Program requirement. Use this for a bundled plugin
-  that only some repos actually need — unlike `core/`, adding one here
-  doesn't turn it on for every existing repo.
+  `cache/plugins/` instead. See `core/extensibility/README.md`.
 - `cache/plugins/` (outside this folder, at the repo root, gitignored) —
   **repo plugins**: each one is its own separate git clone (its own
   remote/history, not part of this repo at all), fetched/updated on demand
@@ -44,14 +38,18 @@ it's on by default per repo vs. opt-in:
   dotted path — see its own `plugin.py` and top-level `README.md`.
 
 There is no more `plugins/local/` — the old gitignored/per-machine
-prototyping root was removed 2026-08-04 (unused). Prototype a new plugin
-directly under `core/` or `repo_internal/` instead.
+prototyping root was removed 2026-08-04 (unused). There is also no more
+`plugins/repo_internal/` — it was removed once every plugin it held was
+moved out to its own standalone git repo (cloned under `cache/plugins/`
+instead), the same move `UkoreShot`/`MayaNgSkin` made earlier. Prototype a
+new plugin directly under `core/` (if genuinely universal) or as its own
+`cache/plugins/` clone (if repo-specific) instead.
 
 ## Working on a single plugin — stay inside its folder
 
 When a task names a specific plugin (or the target path is under
-`plugins/core/<Name>/`, `plugins/repo_internal/<Name>/`, or
-`cache/plugins/<Name>/`), read and edit **only that folder**. Don't open a
+`plugins/core/<Name>/` or `cache/plugins/<Name>/`), read and edit **only
+that folder**. Don't open a
 sibling plugin "just in case" — each one is
 independent, and reading one has zero information value for working on a
 different one. Check the plugin's own `README.md` first if it has one
@@ -90,7 +88,7 @@ the app's current `PLUGIN_API_VERSION` (`interface/plugin_api.py`) or your
 plugin is skipped with a `PluginLoadFailure`, not a crash.
 
 `requires` (optional, defaults to `[]`) lists the plugin `id`s this plugin
-can't function without — for a `repo_internal`/`cache/plugins` plugin that
+can't function without — for a `cache/plugins` plugin that
 depends on another opt-in plugin also being enabled for the repo, not for
 declaring a load-order dependency (there is none — see above). It's only
 enforced at the UI layer, in Settings > Requirements & Plugins
@@ -124,7 +122,7 @@ The loader only ever imports the `entry_point` file directly (via
 entry file's own `import` statements are resolved normally, so a
 multi-file plugin folder is set up as a **real,
 plain Python package**: an empty `__init__.py` in the plugin's own folder
-(plus one in `plugins/`, `plugins/core/`, and `plugins/repo_internal/`
+(plus one in `plugins/` and `plugins/core/`
 themselves, already present), so sibling files import each other with
 ordinary absolute imports — `from plugins.core.explorer.browser_widget
 import RepoBrowserWidget`, not a relative import (the entry file's own
@@ -152,7 +150,7 @@ another plugin" below instead.
 - `api.git` — `GitService`.
 - `api.repo_context` — a read-only `RepoContextDTO` snapshot of the active
   project/repo (id/name, resolved repo path, workspace_root,
-  browser_links, required_plugin_ids), or `None` if no repo is active yet.
+  required_plugin_ids), or `None` if no repo is active yet.
   For a plugin that only needs this identity/path info — not a
   replacement for `api.metadata`/`api.git` above, which stay the way to
   write to the registry or run a git operation; see that property's own
@@ -200,10 +198,10 @@ unrelated plugins that independently construct a store with the **same
 `plugin_id` string** share the same file — no coupling, no import, just
 agreeing on a string and a JSON shape in advance. `shared=True` writes to
 the git-tracked studio config dir; `shared=False` writes to the gitignored
-per-machine dir. `plugins/repo_internal/maya_launcher/plugin.py` reading
-`plugins/core/software_linker`'s per-machine `maya.exe` path via
-`api.plugin_config_store("software_linker", shared=False)` is the real
-worked example, without importing SoftwareLinker's code at all.
+per-machine dir. `maya_launcher`'s `plugin.py` (now its own `cache/plugins/`
+clone) reading `plugins/core/software_linker`'s per-machine `maya.exe`
+path via `api.plugin_config_store("software_linker", shared=False)` is the
+real worked example, without importing SoftwareLinker's code at all.
 
 **Project/repo-scoped data belongs on the Repo itself, not here.** If what
 you're storing is always keyed by exactly one `(project_id, repo_id)` pair
@@ -231,9 +229,10 @@ store always exists.
 
 Reserve `plugin_config_store(shared=True)` for data that's genuinely
 studio-wide or spans projects (a global catalog, ...) —
-`plugins/core/project_editor/pipeline_store.py` and
-`plugins/repo_internal/MayaPublisher/interface/publish_mode_store.py` are
-the worked examples of the former.
+`plugins/core/project_editor/pipeline_store.py` is the worked example of
+the former (`MayaPublisher`'s `publish_mode_store.py` and `UkoreBrowser`'s
+`settings_page.py` used to be two more before both moved out to their own
+`cache/plugins/` clones).
 
 ## `SectionSpec.wire`/`UICommandService`: cross-plugin UI coordination, not imports
 

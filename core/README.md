@@ -36,9 +36,7 @@ beyond "core infrastructure":
 - `models.py` — dataclasses for `Project` (including `programs:
   list[Program]`, that Project's own Program Database — pipeline software
   like "Autodesk Maya" a repo can list as a requirement, **not** shared
-  with other Projects), `Repo` (including `browser_links:
-  list[BrowserLink]`, repo-scoped bookmarks rendered as dynamic Sidebar
-  rows that open externally — see `interface/browser_links/README.md`),
+  with other Projects), `Repo`,
   `RepoStatus`, etc.
 - `os_utils.py` — OS-level helpers (open in file explorer, open with default
   app).
@@ -62,22 +60,15 @@ unconditionally visible for every repo now, see
 `interface/main_window.py`'s `_apply_plugin_visibility`); the field is
 kept purely so existing persisted JSON with this key still round-trips
 cleanly. `Repo.required_plugin_ids` (`set_repo_required_plugin_ids`) is
-the real UI-visibility gate now, for `plugins/repo_internal/` and
-`cache/plugins/` entries — hides a plugin's sidebar section unless the
+the real UI-visibility gate now, for `cache/plugins/` entries — hides a
+plugin's sidebar section unless the
 repo's `required_plugin_ids` lists that plugin's id. Edited via
 Settings > (repo) > Requirements & Plugins
 (`interface/repo_settings/requirements_and_plugins_page.py`).
 
-A second field, `Repo.browser_links` (`set_repo_browser_links`,
-`core/models.py`'s `BrowserLink`) is a different shape again: each entry
-becomes its own **dynamic sidebar row** while the owning repo is active,
-rebuilt from scratch on every repo switch by `interface/main_window.py`'s
-`_rebuild_dynamic_tabs` — clicking one opens the link in the OS's default
-browser (`QDesktopServices.openUrl`), not an embedded page (see
-`interface/browser_links/README.md`). Edited via Settings > Repo Setting
-(Dev) > Browser. Unlike
-`active_plugin_ids`, this doesn't hide anything that exists elsewhere — it
-*adds* tabs that only exist because the link record does. (A sibling
+The Browser Links feature (a per-repo dynamic sidebar row per bookmark)
+used to live here as a second field the same shape as the above — removed
+entirely 2026-08-10; see git history if it needs to come back. (A sibling
 Explorer-pin mechanism used to work the same way — `Repo.explorer_pins`/
-`ExplorerPin` — but Add-Pinned-Repo was removed as no longer needed; see
-git history if it needs to come back.)
+`ExplorerPin` — but Add-Pinned-Repo was removed as no longer needed too;
+see git history if it needs to come back.)

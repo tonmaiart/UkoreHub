@@ -54,8 +54,8 @@ class PluginDiscoveryResult:
 def discover_plugins(roots: list[Path], api_version: int) -> PluginDiscoveryResult:
     """Scans each root's immediate subdirectories for a manifest.json + entry
     point module, in the order `roots` is given (so passing [core,
-    repo_internal] means a duplicate plugin id in `repo_internal` loses to
-    `core`). Never raises —
+    cache/plugins] means a duplicate plugin id under cache/plugins loses to
+    core). Never raises —
     any problem with a single plugin directory is recorded as a
     PluginLoadFailure and skipped, so one broken plugin can't stop the app
     from starting."""
@@ -113,9 +113,9 @@ def _load_one(plugin_dir: Path, api_version: int, seen_ids: set[str]) -> Discove
 
 
 def plugin_source(discovered: DiscoveredPlugin) -> str:
-    """'core' or 'repo_internal' (plugins_root subdirectory, see
-    discover_plugins' `roots` order) — or 'repo' for a plugin discovered
-    under cache/plugins/ (its own git clone, not bundled with the app)."""
+    """'core' (plugins_root subdirectory, see discover_plugins' `roots`
+    order) — or 'repo' for a plugin discovered under cache/plugins/ (its
+    own git clone, not bundled with the app)."""
     parent = discovered.dir_path.parent
     if parent.name == "plugins" and parent.parent.name == "cache":
         return "repo"

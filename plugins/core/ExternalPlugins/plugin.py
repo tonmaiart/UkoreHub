@@ -24,6 +24,9 @@ def register(api) -> None:
                 git_service=api.git,
                 plugins_root=api.app_root / "cache" / "plugins",
                 catalog=catalog,
+                store=api.metadata,
+                local_config_store=api.local_config,
+                plugin_catalog=api.plugin_catalog,
             ),
             category=CATEGORY_DEVELOPER,
         )

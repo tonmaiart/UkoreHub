@@ -223,8 +223,9 @@ anymore.
     — fixed 2026-07-20 to read the stored `local_path` instead of
     recomputing the folder from the repo's current name via
     `core.paths.resolve_repo_path`, which resolved to the wrong folder for
-    any repo renamed after creation; same fix as
-    `plugins/repo_internal/PublishApi/maya-scripts/PublishApi/repo_paths.py`'s
+    any repo renamed after creation; same fix as `PublishApi`'s (now its
+    own `cache/plugins/` clone)
+    `maya-scripts/PublishApi/repo_paths.py`'s
     `get_active_repo`/`resolve_ref`) first and shows a one-time "hasn't
     been cloned yet, clone and switch now?" confirmation before the very
     first clone — an already-cloned repo switches immediately with no
@@ -412,9 +413,9 @@ anymore.
   A target
   repo with zero declared custom paths shows an inline hint instead of a
   separate `QMessageBox` interruption. Same self-resolving-active-repo
-  `refresh()` pattern as
-  `interface/settings/browser_links_settings_page.py`'s
-  `BrowserLinksSettingsPage`. Shows up in `repo_settings_panel.py`'s
+  `refresh()` pattern
+  `interface/shared/base_repo_settings_page.py`'s
+  `BaseRepoSettingsPage` provides. Shows up in `repo_settings_panel.py`'s
   Repository Setting popup automatically (it renders every `CATEGORY_REPO`
   tab generically) — no wiring needed there. A repo with zero entries in
   "Create Input Path" can't be connected to via "Connect Input Path" at
@@ -430,11 +431,12 @@ in a separate `PluginConfigStore` file anymore. Read it via
 `api.metadata.get_repo_plugin_data(project_id, repo_id, "project_editor")`
 (same "agree on the `plugin_id` string, don't import this folder"
 convention as before, just backed by `MetadataStore` now instead of a
-standalone blob). `plugins/repo_internal/PublishApi/`'s `repo_paths.py`
-(Maya-side, reads `repo.plugin_data` straight off the `Repo` object it
-already constructs — no `PluginAPI` instance inside Maya's Python),
-consumed in turn by `MayaPublisher`'s tickets, is the current real
-consumer — read it for a live example. Since a `RepoRef.custom_path_id` is
+standalone blob). `PublishApi`'s `repo_paths.py` (now its own
+`cache/plugins/` clone; Maya-side, reads `repo.plugin_data` straight off
+the `Repo` object it already constructs — no `PluginAPI` instance inside
+Maya's Python), consumed in turn by `MayaPublisher`'s tickets, is the
+current real consumer — read it for a live example. Since a
+`RepoRef.custom_path_id` is
 only meaningful against the **target** repo's own `custom_paths` entry,
 resolving a pipeline connection all the way to an actual filesystem path
 takes two lookups, not one:

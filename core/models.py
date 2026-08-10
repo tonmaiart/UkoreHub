@@ -4,25 +4,6 @@ from dataclasses import dataclass, field, asdict
 
 
 @dataclass
-class BrowserLink:
-    """A repo-scoped bookmark (e.g. a Google Sheet, a Canva board) shown as
-    its own dynamic Sidebar row that opens the URL in the OS's default
-    browser on click — configured under Settings > Repo Setting (Dev) >
-    Browser, see interface/browser_links/README.md."""
-
-    name: str
-    url: str
-    icon_filename: str | None = None
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "BrowserLink":
-        return cls(name=data["name"], url=data["url"], icon_filename=data.get("icon_filename"))
-
-
-@dataclass
 class Repo:
     id: str
     name: str
@@ -35,7 +16,8 @@ class Repo:
     required_program_ids: list[str] = field(default_factory=list)
     # Which specific version this repo launches for a multi-version Program
     # in required_program_ids (e.g. {"<maya_program_id>": "2024"}) — see
-    # plugins/repo_internal/maya_launcher/link_resolution.py's pinned_version().
+    # maya_launcher's link_resolution.py's pinned_version() (now its own
+    # cache/plugins/ clone, see plugins/README.md).
     # A Program with 0/1 versions needs no entry here.
     program_version_pins: dict[str, str] = field(default_factory=dict)
     # Formerly an opt-out list over plugins/core entries. No longer read
@@ -44,16 +26,14 @@ class Repo:
     # _apply_plugin_visibility and plugins/README.md); kept as a field
     # purely so existing persisted JSON with this key still round-trips
     # cleanly. See required_plugin_ids below for the opt-in model actually
-    # in use, for plugins/repo_internal and cache/plugins.
+    # in use, for cache/plugins entries.
     active_plugin_ids: list[str] = field(default_factory=list)
-    # Which plugins/repo_internal entries this repo has opted into. Unlike
-    # active_plugin_ids above, empty here means "none" — a repo_internal
-    # plugin is bundled with the app (no separate git fetch, unlike a
-    # cache/plugins/ repo plugin) but stays hidden for a repo until that
-    # repo explicitly requires it, same opt-in shape as required_program_ids.
-    # See interface/main_window.py's _apply_plugin_visibility.
+    # Which cache/plugins/ entries (each its own separate git clone) this
+    # repo has opted into. Empty here means "none" — a cache/plugins/ entry
+    # stays hidden for a repo until that repo explicitly requires it, same
+    # opt-in shape as required_program_ids. See interface/main_window.py's
+    # _apply_plugin_visibility.
     required_plugin_ids: list[str] = field(default_factory=list)
-    browser_links: list[BrowserLink] = field(default_factory=list)
     # Free-form per-plugin data genuinely scoped to this one repo, keyed by
     # plugin_id — e.g. project_editor's pipeline_inputs/custom_paths,
     # maya_publisher's publish_mode. core/ never interprets the value, same
@@ -84,7 +64,6 @@ class Repo:
             program_version_pins=data.get("program_version_pins", {}),
             active_plugin_ids=data.get("active_plugin_ids", []),
             required_plugin_ids=data.get("required_plugin_ids", []),
-            browser_links=[BrowserLink.from_dict(bl) for bl in data.get("browser_links", [])],
             plugin_data=data.get("plugin_data", {}),
         )
 

@@ -32,22 +32,21 @@ for the type-specific rebuild.
   separate `CATEGORY_REPO` tabs — Requirements, formerly owned by
   `plugins/core/project_editor/`, and this folder's own Enable Plugin).
   Two stacked sections inside a `wrap_scrollable()` scroll area
-  (2026-08-05, so the tree plus three plugin lists don't cram into
+  (2026-08-05, so the tree plus plugin lists don't cram into
   whatever height the "Repository Setting..." popup has): Program
   Requirements (embeds
   `interface/shared/requirements_tree_widget.py`'s `RequirementsTreeWidget`
   — the same checkable Program tree `RepoDialog` shows at Add-Repo time,
   here editing an *existing* repo's `required_program_ids`/
   `program_version_pins`), and Enable Plugin — every discovered plugin,
-  split into three lists by `core.extensibility.loader.plugin_source()`
-  instead of one flat checklist, laid out as three columns in one row:
+  split into two lists by `core.extensibility.loader.plugin_source()`
+  instead of one flat checklist, laid out as two columns in one row:
   **Core** (`plugins/core/`) — always on,
-  no checkbox, no per-repo opt-out at all; **Internal**
-  (`plugins/repo_internal/`) and **External** (`cache/plugins/`) — both
-  opt-in, unchecked by default, both persisted to the same
-  `Repo.required_plugin_ids` list. (Un)checking an Internal/External
-  plugin actually flips its sidebar section's visibility for this repo
-  (enforced in `interface/main_window.py`'s `_apply_plugin_visibility`,
+  no checkbox, no per-repo opt-out at all; **External**
+  (`cache/plugins/`, its own separate git clone) — opt-in, unchecked by
+  default, persisted to `Repo.required_plugin_ids`. (Un)checking an
+  External plugin actually flips its sidebar section's visibility for this
+  repo (enforced in `interface/main_window.py`'s `_apply_plugin_visibility`,
   wired via a plugin-id-to-section-key map built in `launcher.py`).
 
 **Working here:** stay inside this folder unless the change needs a new

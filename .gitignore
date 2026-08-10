@@ -20,9 +20,8 @@ data/programs.json
 data/system_config.json
 data/plugins/core/*.json
 .pytest_cache/
-# plugins/core and plugins/repo_internal are both git-tracked and
-# distributed like data/programs.json — bundled with the app, no separate
-# fetch. See core/extensibility/loader.py.
+# plugins/core is git-tracked and distributed like data/programs.json —
+# bundled with the app, no separate fetch. See core/extensibility/loader.py.
 # Forced workspace_root (see launcher.py) — actual cloned target repos live
 # here, per-machine and potentially huge; never tracked. Named storage/ (not
 # projects/) specifically to avoid colliding with data/projects/ (the

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore
-from interface.browser_links.browser_links_settings_page import BrowserLinksSettingsPage
 from interface.repo_settings.local_repository_page import LocalRepositoryPage
 from interface.repo_settings.requirements_and_plugins_page import RequirementsAndPluginsPage
 from interface.settings.common_settings_page import CommonSettingsPage
@@ -23,7 +24,6 @@ COMMON = "common"
 PROGRAM_DATABASE = "program_database"
 PLUGINS = "plugins"
 GITHUB_OAUTH = "github_oauth"
-BROWSER_LINKS = "browser_links"
 LOCAL_REPOSITORY = "local_repository"
 REQUIREMENTS_AND_PLUGINS = "requirements_and_plugins"
 
@@ -42,6 +42,7 @@ def register_builtin_settings_tabs(
     system_config_store: SystemConfigStore,
     plugin_catalog: list[DiscoveredPlugin],
     plugin_load_failures: list[PluginLoadFailure],
+    external_catalog_path: Path,
 ) -> None:
     """Registers the built-in settings tabs the same way a plugin would.
     Each page_factory constructs a *fresh* widget on every call (not a
@@ -51,8 +52,8 @@ def register_builtin_settings_tabs(
     immediately — no on_save/on_cancel polling anymore."""
 
     # Shared on_activated for every tab whose only refresh need is
-    # "call refresh() if this page has one" — BrowserLinksSettingsPage,
-    # LocalRepositoryPage, RequirementsAndPluginsPage all just want that, so
+    # "call refresh() if this page has one" — LocalRepositoryPage,
+    # RequirementsAndPluginsPage both just want that, so
     # one duck-typed callback replaces a 1:1 wrapper per page type.
     def _trigger_refresh(widget) -> None:
         refresh = getattr(widget, "refresh", None)
@@ -66,16 +67,6 @@ def register_builtin_settings_tabs(
             order=0,
             page_factory=lambda: CommonSettingsPage(local_config_store=local_config_store),
             category=CATEGORY_GENERAL,
-        )
-    )
-    registry.register(
-        SettingsTabSpec(
-            key=BROWSER_LINKS,
-            label="Browser",
-            order=20,
-            page_factory=lambda: BrowserLinksSettingsPage(store=store, local_config_store=local_config_store),
-            on_activated=_trigger_refresh,
-            category=CATEGORY_REPO,
         )
     )
     registry.register(
@@ -97,6 +88,7 @@ def register_builtin_settings_tabs(
                 store=store,
                 local_config_store=local_config_store,
                 plugin_catalog=plugin_catalog,
+                external_catalog_path=external_catalog_path,
             ),
             on_activated=_trigger_refresh,
             category=CATEGORY_REPO,

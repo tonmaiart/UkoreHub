@@ -28,7 +28,7 @@ meant any machine with an uncommitted local edit broke the self-update
 `git pull` outright — see `developer/bug-history/` for the incident.
 
 This is a hard rule, not just the common case: a handful of Maya-side
-scripts under `plugins/repo_internal/*/maya-scripts/` (which can't import
+scripts under `cache/plugins/*/maya-scripts/` clones (which can't import
 `PluginAPI` — no `google-cloud-storage` in `mayapy`'s site-packages) build
 these same paths themselves, e.g. `root / "data" / "projects.json"` or
 `root / "data" / "plugins" / "core" / f"{tool_id}.json"`. Any file placed
@@ -74,8 +74,8 @@ two static git-tracked files that used to live here
   plugin's `register(api)` chose with `shared=True`
   (`api.plugin_config_store(plugin_id, shared=True)`). Shared/cloud-synced.
   Named after `shared=True/False`, not after which `plugins/` source root
-  the calling plugin itself lives under — a `plugins/repo_internal/` or
-  `cache/plugins/` plugin still writes here for `shared=True`. The
+  the calling plugin itself lives under — a `cache/plugins/` plugin still
+  writes here for `shared=True`. The
   `shared=False` counterpart (per-machine) writes to
   `cache/plugin_local_config/*.json` instead — see `cache/README.md`.
 
@@ -93,7 +93,7 @@ bucket — nothing git-tracked, nothing per-machine.
 ## Two other things used to live here, moved out on 2026-08-09
 
 - **Binary/image directories** (`thumbnails/`, `program_icons/`,
-  `browser_link_icons/`, `icons/`) — now under the repo-root `assets/`
+  `icons/`) — now under the repo-root `assets/`
   instead (`MetadataStore.assets_dir`, `launcher.py`'s `assets_dir`) — see
   `assets/README.md`. Git-tracked binary files, not `core/`-owned JSON data.
 - **Static git-tracked defaults** (`projects.example.json`,

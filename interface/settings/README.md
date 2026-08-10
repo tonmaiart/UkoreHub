@@ -36,8 +36,7 @@ that plugin's own README for why.
   `SettingsDialog.view.get_tab_widget(...)`) to connect
   `CommonSettingsPage.logout_requested` (also closing the dialog itself,
   since logout closes the whole app — see `common_settings_page.py` below)
-  and `BrowserLinksSettingsPage.browser_links_changed` without this view
-  needing to know what those pages are.
+  without this view needing to know what that page is.
 - `common_settings_page.py` — account info (avatar, GitHub username, login
   date — `LocalConfigStore.github_username`/`github_login_at`, the latter
   set in `updater.py (UkoreHubLauncher repo)`'s `_start_login_flow` on every
@@ -78,14 +77,14 @@ that plugin's own README for why.
 
 **Moved out 2026-07-20** (domain-based reorg — grouped by "kind of Settings
 tab" here even though each is really its own feature domain):
-`browser_links_settings_page.py` → `interface/browser_links/` (alongside
-the Browser Link runtime tab it configures — see that folder's `README.md`);
 `local_repository_page.py`/`requirements_and_plugins_page.py` →
 `interface/repo_settings/` (the repo-configuration domain, distinct from
 this folder's remaining app/machine-level tabs — see that folder's
-`README.md`). Both are still registered into the same
+`README.md`). Still registered into the same
 `SettingsTabRegistry` from `interface/builtin_settings_tabs.py`, still
-`CATEGORY_REPO` — only where their source files live changed.
+`CATEGORY_REPO` — only where its source files live changed. (Browser
+Links, the other tab that used to be listed alongside these two here, was
+removed entirely 2026-08-10.)
 
 **Rendering history:** from 2026-07-15 through this refactor,
 `SettingsView` didn't render `CATEGORY_REPO` at all — every `CATEGORY_REPO`

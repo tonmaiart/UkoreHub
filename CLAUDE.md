@@ -45,14 +45,14 @@ does and how they relate).
 ## Scoped editing — stay inside the folder the task names
 
 When a task is about one specific area — a single `plugins/core/<Name>/`,
-`plugins/repo_internal/<Name>/`, or `cache/plugins/<Name>/`, `core/`, or
+`cache/plugins/<Name>/`, `core/`, or
 `interface/` — read and edit only that folder. Don't open sibling folders
 "just in case" unless the task genuinely crosses the boundary (e.g. a
 `core/` change whose call sites in `interface/` also need updating).
 Concretely:
 - Told to fix/change a plugin (Explorer, Submit, SoftwareLinker,
   MayaLauncher, or a new one) → touch only its own
-  `plugins/core/<Name>/`, `plugins/repo_internal/<Name>/`, or
+  `plugins/core/<Name>/` or
   `cache/plugins/<Name>/` folder. See the `ukorehub-plugin` skill and
   `plugins/README.md` — never
   open a sibling plugin's source, and cross-plugin data/UI coordination
@@ -120,22 +120,23 @@ same way, not join `cache/`/`storage/` as a sibling under the app folder.
   real payload in `projects/<id>.json` per project, each with its own
   Program Database — `system_config.json`, `plugins/core/*.json`, and a
   retired `programs.json`, see `data/README.md`), no exceptions — several
-  Maya-side scripts under `plugins/repo_internal/` hardcode these exact
+  Maya-side scripts under `cache/plugins/` clones hardcode these exact
   `data/` paths directly (they can't import `PluginAPI`), so nothing else
   belongs here. See [data/README.md](data/README.md) — don't open these
   unless the task needs a concrete current value.
 - `assets/` — git-tracked binary images (`thumbnails/`, `program_icons/`,
-  `browser_link_icons/`, `icons/`), never cloud-synced. See
+  `icons/`), never cloud-synced. See
   [assets/README.md](assets/README.md) — never open an image file in here.
 - `appdata/` — static git-tracked bootstrap defaults/examples
   (`system_config.default.json`, `projects.example.json`), never
   cloud-synced and never written by the running app. See
   [appdata/README.md](appdata/README.md).
 - `plugins/` — UkoreHub's own sub-systems: `plugins/core/` (bundled,
-  on-by-default, opt-out per repo) and `plugins/repo_internal/` (bundled,
-  off-by-default, opt-in per repo). See `core/extensibility/README.md` for
-  the discovery mechanism and `plugins/README.md` plus the `ukorehub-plugin`
-  skill for the "stay inside one folder" editing discipline it uses.
+  always-on for every repo) and `cache/plugins/` (each its own separate git
+  clone, off-by-default, opt-in per repo). See `core/extensibility/README.md`
+  for the discovery mechanism and `plugins/README.md` plus the
+  `ukorehub-plugin` skill for the "stay inside one folder" editing
+  discipline it uses.
 - `cache/` — every per-machine, gitignored file UkoreHub owns (actual
   on-disk location is `CACHE_DIR`, set by `launcher.py` — see "Program
   folder stays program-only" above, **not** necessarily under `REPO_ROOT`):

@@ -5,7 +5,7 @@ operations — widgets here handle layout, user interaction, and background
 `QThread` workers so the UI doesn't block on git/network calls.
 
 Organized by domain rather than by suffix convention: each of `sidebar/`,
-`browser_links/`, `repo_settings/`, `settings/` owns one feature
+`repo_settings/`, `settings/` owns one feature
 area end-to-end (page + its dialogs + its workers), the same discipline
 `plugins/` already enforces for its own folders. GitHub login used to be
 its own domain here too (`login/`) but moved out entirely — see the
@@ -17,8 +17,9 @@ other plugin, not special-cased by `interface/` — see their own
 `README.md`s and `core/extensibility/README.md` for how plugin discovery
 works.
 `about/` was dissolved 2026-07-20 the same way, once its one remaining
-file turned out to belong to the Browser Links domain, not an "about"
-concept — see `browser_links/README.md`. `shared/` holds the handful of
+file turned out to belong to what was then the Browser Links domain
+(`browser_links/`, itself removed entirely 2026-08-10 — no longer
+replaced by anything). `shared/` holds the handful of
 files genuinely used by 2+ consumers, `interface/` domains and plugins
 alike (checked repo-wide before this split, and re-checked whenever a
 domain folder is split out — a file with only one real consumer moves into
@@ -37,11 +38,8 @@ a new top-level section that needs `section_registry.py`).
 - `main_window.py` — top-level `QMainWindow`: constructs every window's
   page from `SectionRegistry`, wires `sidebar/`'s `Sidebar` (the left-hand
   navigation column — display-only repo thumbnail/name label,
-  `SectionTabList`, a `SidebarFooterActionRegistry`-driven footer), drives
-  active-repo restore + auto-sync on launch, and rebuilds the dynamic
-  Browser Link sidebar rows on every repo switch (opened externally via
-  `QDesktopServices.openUrl`, no embedded browser tab — see
-  `browser_links/README.md`). GitHub login happens
+  `SectionTabList`, a `SidebarFooterActionRegistry`-driven footer), and
+  drives active-repo restore + auto-sync on launch. GitHub login happens
   entirely before this process is even spawned now (see the "GitHub login"
   note below), so `MainWindow` builds the real UI immediately on
   construction — no gate to show/teardown. Every section (Explorer/Submit/
@@ -79,7 +77,7 @@ a new top-level section that needs `section_registry.py`).
   how a plugin registers anything (`api.register_section(...)` etc. are
   unchanged).
 - `builtin_settings_tabs.py` — constructs the built-in Settings tabs
-  (pulling from `settings/`, `browser_links/`, `repo_settings/` —
+  (pulling from `settings/`, `repo_settings/` —
   Explorer and Submit register themselves from `plugins/core/`, not from
   here) and registers them into `settings_tab_registry.py`, exactly as a
   plugin would register its own.
@@ -122,15 +120,9 @@ a new top-level section that needs `section_registry.py`).
   repo thumbnail + name label — no click-to-open picker; clicking a node in
   Project Editor's graph panel is the only way to change the active repo
   now), `SectionTabList` (a vertical list of section tabs, including
-  Project Editor, plus dynamic Browser Link rows and a trailing Setting
+  Project Editor, plus a trailing Setting
   row), and a footer built from
   `sidebar_footer_action_registry.py`. See `sidebar/README.md`.
-- `browser_links/` — the Browser Link feature end-to-end: its Settings tab
-  and its dynamic Sidebar row, opened via `QDesktopServices.openUrl` in the
-  OS's default browser rather than an embedded `QWebEngineView` tab (see
-  that folder's `README.md`) — previously split across `settings/`/`about/`
-  by UI-kind rather than domain (`about/` itself was dissolved once
-  nothing else was left in it).
 - `repo_settings/` — the repo-configuration domain (Local Repository,
   Requirements & Plugins) — split out of `settings/` since these two are
   per-repo `CATEGORY_REPO` tabs, a different concern from `settings/`'s

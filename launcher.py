@@ -101,7 +101,7 @@ def _build_cloud_sync(data_dir: Path, appdata_dir: Path, google_tokens):
     the real one lives inside it. appdata/system_config.default.json
     (tracked in git, see appdata/README.md — deliberately kept out of
     data/, which is reserved for cloud-synced files only, including by the
-    Maya-side scripts under plugins/repo_internal/ that hardcode data/
+    Maya-side scripts under cache/plugins/ clones that hardcode data/
     paths directly) breaks that cycle — same "not meaningfully secret for
     a distributed desktop app" reasoning already applied to
     google_oauth_client_id/secret and github_client_id. Only consulted
@@ -204,7 +204,7 @@ def main() -> None:
     # bootstrap defaults and examples that are never cloud-synced and never
     # written by the running app. Kept out of data/ so data/ is unambiguously
     # "cloud-synced JSON only", matching what the Maya-side scripts under
-    # plugins/repo_internal/ already assume when they hardcode data/ paths
+    # cache/plugins/ clones already assume when they hardcode data/ paths
     # directly (they can't import PluginAPI, so they duplicate this
     # assumption rather than reading it from anywhere). See appdata/README.md.
     appdata_dir = REPO_ROOT / "appdata"
@@ -399,26 +399,25 @@ def main() -> None:
             local_config_store.active_project_id, local_config_store.workspace_root, git_service
         )
 
-    # plugins/core and plugins/repo_internal are both git-tracked and
-    # distributed to everyone via self_update.py's whole-tree `git pull`,
-    # mirroring how data/programs.json is shared today — both ship bundled
-    # with the app, no separate fetch. core is always visible per repo, no
-    # per-repo opt-out; repo_internal is hidden per repo unless the repo
-    # opts in via Repo.required_plugin_ids
-    # (see interface/main_window.py's _apply_plugin_visibility). cache/plugins
-    # is different in kind, not just visibility — each entry is its own git
-    # clone (own remote/history), gitignored and per-user, fetched/updated on
-    # demand only for a repo that requires it; see plugins/README.md.
+    # plugins/core is git-tracked and distributed to everyone via
+    # self_update.py's whole-tree `git pull`, mirroring how
+    # data/programs.json is shared today — ships bundled with the app, no
+    # separate fetch, always visible per repo, no per-repo opt-out.
+    # cache/plugins is different in kind, not just visibility — each entry
+    # is its own git clone (own remote/history), gitignored and per-user,
+    # fetched/updated on demand only for a repo that requires it (opts in
+    # via Repo.required_plugin_ids, see
+    # interface/main_window.py's _apply_plugin_visibility); see
+    # plugins/README.md.
     # Discovery runs before registry construction so its result (the plugin
     # catalog) can be threaded into the builtin registrations below (Plugins
     # settings tab, repo editor's plugin picker).
     plugins_root = REPO_ROOT / "plugins"
     cache_plugins_root = cache_dir / "plugins"
     (plugins_root / "core").mkdir(parents=True, exist_ok=True)
-    (plugins_root / "repo_internal").mkdir(parents=True, exist_ok=True)
     cache_plugins_root.mkdir(parents=True, exist_ok=True)
     discovery = discover_plugins(
-        [plugins_root / "core", plugins_root / "repo_internal", cache_plugins_root],
+        [plugins_root / "core", cache_plugins_root],
         api_version=PLUGIN_API_VERSION,
     )
 
@@ -436,6 +435,10 @@ def main() -> None:
         system_config_store=system_config_store,
         plugin_catalog=discovery.loaded,
         plugin_load_failures=discovery.failures,
+        # Same path convention interface/plugin_api.py's
+        # plugin_config_store(shared=True) uses for this exact plugin id
+        # ("external_plugins") — see plugins/core/ExternalPlugins/README.md.
+        external_catalog_path=data_dir / "plugins" / "core" / "external_plugins.json",
     )
 
     plugin_api = PluginAPI(
@@ -446,6 +449,7 @@ def main() -> None:
         cache_dir=cache_dir,
         app_root=REPO_ROOT,
         cloud_sync=cloud_sync,
+        plugin_catalog=discovery.loaded,
     )
     # Applied one plugin at a time (rather than one bulk apply_plugins(discovery.loaded, ...)
     # call) so registries.sections.keys() can be diffed before/after each
@@ -463,16 +467,16 @@ def main() -> None:
 
     # Every plugins/core/ plugin is always visible for every repo, no
     # per-repo opt-out (2026-08-04) — anything repo-specific (Maya tools,
-    # ...) belongs under plugins/repo_internal/ instead, so what's left in
+    # ...) belongs under cache/plugins/ instead, so what's left in
     # plugins/core/ is meant to be universal app-level functionality (e.g.
     # Project Editor — switching the active repo has no other entry point).
     # See MainWindow._apply_plugin_visibility.
     core_plugin_ids = {plugin.manifest.id for plugin in discovery.loaded if plugin_source(plugin) == "core"}
-    # Plugins discovered under plugins/repo_internal/ (bundled with the app)
-    # or cache/plugins/ (its own separate git clone) — both opt-in per repo
-    # (Repo.required_plugin_ids), see MainWindow._apply_plugin_visibility.
+    # Plugins discovered under cache/plugins/ (each its own separate git
+    # clone) — opt-in per repo (Repo.required_plugin_ids), see
+    # MainWindow._apply_plugin_visibility.
     opt_in_plugin_ids = {
-        plugin.manifest.id for plugin in discovery.loaded if plugin_source(plugin) in ("repo_internal", "repo")
+        plugin.manifest.id for plugin in discovery.loaded if plugin_source(plugin) == "repo"
     }
 
     plugin_failures = discovery.failures + plugin_apply_failures

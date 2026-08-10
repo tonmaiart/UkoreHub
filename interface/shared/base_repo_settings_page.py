@@ -13,18 +13,16 @@ class BaseRepoSettingsPage(QWidget):
     """Shared base for a Settings tab that's scoped to a single repo and
     resolves the active project/repo itself from local_config_store, rather
     than waiting for a set_repo() call MainWindow never makes for Settings
-    pages (see interface/repo_settings/README.md and
-    interface/browser_links/README.md — both domains have a tab built on
-    this). Collapses the empty_label/content_widget scaffolding and
-    refresh() preamble that LocalRepositoryPage, RequirementsAndPluginsPage,
-    and BrowserLinksSettingsPage each had independently, byte-for-byte
+    pages (see interface/repo_settings/README.md — that domain has a tab
+    built on this). Collapses the empty_label/content_widget scaffolding and
+    refresh() preamble that LocalRepositoryPage and RequirementsAndPluginsPage
+    each had independently, byte-for-byte
     identical, before 2026-07-20.
 
     This __init__ leaves content_widget layout-less on purpose — a
-    subclass adds exactly one layout onto it in its own __init__ (even a
-    scroll-wrapped one, like BrowserLinksSettingsPage's), after calling
-    super().__init__(), then calls self.refresh() itself once its content
-    widgets actually exist. Override _on_refresh_content() for the
+    subclass adds exactly one layout onto it in its own __init__, after
+    calling super().__init__(), then calls self.refresh() itself once its
+    content widgets actually exist. Override _on_refresh_content() for the
     type-specific rebuild; refresh() itself (the resolve-active-repo +
     NotFoundError + show_exclusive part) should not need overriding."""
 

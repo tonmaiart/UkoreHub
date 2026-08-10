@@ -8,8 +8,9 @@ from core.app_core import UkoreCore
 from core.events.hooks import AppLifecycleHandler
 from core.exceptions import ConflictError, NotFoundError
 from core.extensibility.config_store import PluginConfigStore, ProjectPluginConfigStore
+from core.extensibility.loader import DiscoveredPlugin
 from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
-from core.models import BrowserLink, Repo
+from core.models import Repo
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore
 from core.vcs.cloud_sync import GcsJsonSync
@@ -42,7 +43,6 @@ class RepoContextDTO:
     repo_name: str
     repo_path: Path | None
     workspace_root: Path | None
-    browser_links: tuple[BrowserLink, ...]
     required_plugin_ids: tuple[str, ...]
 
 
@@ -76,6 +76,7 @@ class PluginAPI:
         cache_dir: Path,
         app_root: Path,
         cloud_sync: GcsJsonSync | None = None,
+        plugin_catalog: list[DiscoveredPlugin] = (),
     ):
         self._core = core
         self._section_registry = registries.sections
@@ -88,6 +89,7 @@ class PluginAPI:
         self._cache_dir = Path(cache_dir)
         self._app_root = Path(app_root)
         self._cloud_sync = cloud_sync
+        self._plugin_catalog = list(plugin_catalog)
 
     @property
     def metadata(self) -> MetadataStore:
@@ -96,6 +98,17 @@ class PluginAPI:
     @property
     def local_config(self) -> LocalConfigStore:
         return self._core.local_config
+
+    @property
+    def plugin_catalog(self) -> list[DiscoveredPlugin]:
+        """Every plugin discover_plugins() loaded this launch (Core,
+        Internal, and External/cache-plugins alike), the same list
+        launcher.py threads into register_builtin_settings_tabs/the
+        "Plugins" Developer tab. Read-only snapshot — for a plugin that
+        needs to resolve another plugin's id to its manifest (name,
+        requires, ...), e.g. plugins/core/ExternalPlugins/
+        external_plugins_page.py showing a catalog entry's own requires."""
+        return list(self._plugin_catalog)
 
     @property
     def system_config_store(self) -> SystemConfigStore:
@@ -133,7 +146,7 @@ class PluginAPI:
     def repo_context(self) -> RepoContextDTO | None:
         """Read-only snapshot of the active project/repo — project/repo
         id/name, the repo's resolved on-disk path, workspace_root,
-        browser_links, and required_plugin_ids. None when no repo is
+        and required_plugin_ids. None when no repo is
         active yet (e.g. very first launch, before any repo has ever been
         selected).
 
@@ -162,7 +175,6 @@ class PluginAPI:
             repo_name=repo.name,
             repo_path=(workspace_root / repo.local_path) if workspace_root is not None else None,
             workspace_root=workspace_root,
-            browser_links=tuple(repo.browser_links),
             required_plugin_ids=tuple(repo.required_plugin_ids),
         )
 
@@ -191,10 +203,10 @@ class PluginAPI:
     @property
     def program_launch_registry(self) -> ProgramLaunchRegistry:
         """Read access to the same registry register_program_launcher()
-        writes into — for plugins/core/program_launcher/'s card grid to
-        look up a plugin-contributed launch behavior (e.g. maya_launcher's
-        setProject/env-merge wiring) for a given Program, rather than
-        always subprocess.Popen-ing the raw linked exe itself."""
+        writes into — for plugins/core/software_linker/'s Program Launcher
+        tab to look up a plugin-contributed launch behavior (e.g.
+        maya_launcher's setProject/env-merge wiring) for a given Program,
+        rather than always subprocess.Popen-ing the raw linked exe itself."""
         return self._program_launch_registry
 
     @property

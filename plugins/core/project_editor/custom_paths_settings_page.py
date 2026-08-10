@@ -181,9 +181,9 @@ class CustomPathsSettingsPage(QWidget):
       non-interactive); Edit reopens the same dialog pre-filled via
       ConnectInputPathDialog's initial_ref (added 2026-07-19).
 
-    Same self-resolving-active-repo `refresh()` pattern as
-    interface/settings/browser_links_settings_page.py's
-    BrowserLinksSettingsPage — scoped to a single repo, so it reads
+    Same self-resolving-active-repo `refresh()` pattern
+    interface/shared/base_repo_settings_page.py's BaseRepoSettingsPage
+    provides — scoped to a single repo, so it reads
     local_config_store itself rather than waiting for a set_repo() call
     MainWindow never makes for Settings pages."""
 
