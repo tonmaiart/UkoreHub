@@ -11,8 +11,9 @@ class NotFoundError(UkoreHubError):
 
 
 class ConflictError(UkoreHubError):
-    """Raised when a shared cloud-synced store (core/cloud_sync.py) detects
-    that another machine wrote a newer version of the same blob first."""
+    """Raised when a shared cloud-synced store (core/vcs/cloud_sync.py)
+    detects that another machine wrote a newer version of the same blob
+    first."""
 
     pass
 
@@ -22,8 +23,4 @@ class GitOperationError(UkoreHubError):
 
 
 class GitHubAuthError(UkoreHubError):
-    pass
-
-
-class GoogleAuthError(UkoreHubError):
     pass

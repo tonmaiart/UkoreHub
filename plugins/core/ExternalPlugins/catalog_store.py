@@ -49,9 +49,9 @@ class ExternalPluginCatalog:
         # whenever something else changes the file without going through
         # this exact object: another machine pushing a newer catalog, or a
         # push conflict on this machine (core/vcs/cloud_sync.py's
-        # GcsJsonSync.push() reloads the *file* on a 412 but has no way to
-        # reach back into this in-memory PluginConfigStore to refresh it
-        # too). Without this, a stuck-stale catalog here would keep
+        # R2JsonSync.push() reloads the *file* on a conflicting write but
+        # has no way to reach back into this in-memory PluginConfigStore to
+        # refresh it too). Without this, a stuck-stale catalog here would keep
         # disagreeing with anything that reads the file fresh (e.g.
         # interface/repo_settings/requirements_and_plugins_page.py's
         # _read_external_catalog()) for the rest of the session.

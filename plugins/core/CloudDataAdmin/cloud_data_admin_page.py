@@ -32,7 +32,7 @@ class CloudDataAdminPage(QWidget):
     the shared bucket" case that just restoring data/ locally and
     reopening UkoreHub can't solve: launcher.py always pulls the cloud
     copy over data/*.json before anything gets a chance to read it (see
-    core/cloud_sync.py's GcsJsonSync.pull — unconditional overwrite, no
+    core/vcs/cloud_sync.py's R2JsonSync.pull — unconditional overwrite, no
     timestamp check, no confirmation), so a locally-restored file gets
     silently clobbered before it's ever pushed back up. Pull and Push here
     both work on a file the artist explicitly chooses via a file dialog,
@@ -113,12 +113,8 @@ class CloudDataAdminPage(QWidget):
             self._status_label.setText(
                 "Cloud sync isn't available this run (not configured, or the last pull failed at startup)."
             )
-        elif not cloud_sync.can_push:
-            self._status_label.setText(
-                "Read-only this run — not logged in with Google (see the \"Studio\" button). Pull still works."
-            )
         else:
-            self._status_label.setText("Logged in — pull and push both available.")
+            self._status_label.setText("Cloud sync available — pull and push both work.")
 
     def _on_pull(self) -> None:
         blob_name = self._blob_combo.currentText().strip()
@@ -133,11 +129,11 @@ class CloudDataAdminPage(QWidget):
         if not save_path:
             return
         try:
-            generation = cloud_sync.pull(blob_name, Path(save_path))
+            etag = cloud_sync.pull(blob_name, Path(save_path))
         except Exception as exc:
             QMessageBox.critical(self, "Pull from Cloud", f"Pull failed: {exc}")
             return
-        if generation == 0:
+        if etag is None:
             QMessageBox.information(
                 self, "Pull from Cloud", f"'{blob_name}' doesn't exist on the cloud bucket yet — nothing saved."
             )
@@ -150,7 +146,7 @@ class CloudDataAdminPage(QWidget):
         blob_name = self._blob_combo.currentText().strip()
         if not blob_name:
             return
-        # blob_name is always "/"-separated (see _known_blob_names/GcsJsonSync
+        # blob_name is always "/"-separated (see _known_blob_names/R2JsonSync
         # convention) — Path() normalizes that to the OS separator, and this
         # mirrors data_dir / blob_name exactly as launcher.py/plugin_api.py
         # already build it, so it's always this blob's real local cache path.
@@ -171,10 +167,8 @@ class CloudDataAdminPage(QWidget):
         if not blob_name:
             return
         cloud_sync = self._api.cloud_sync
-        if cloud_sync is None or not cloud_sync.can_push:
-            QMessageBox.warning(
-                self, "Push to Cloud", "Not logged in with Google — sign in via the Studio Setting window first."
-            )
+        if cloud_sync is None:
+            QMessageBox.warning(self, "Push to Cloud", "Cloud sync isn't available this run.")
             return
         file_path, _filter = QFileDialog.getOpenFileName(self, "Choose file to push", "", "JSON (*.json)")
         if not file_path:
@@ -191,14 +185,14 @@ class CloudDataAdminPage(QWidget):
             return
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
-                # Refresh this blob's known generation first. push() sends
-                # whatever generation the last pull() on *this* GcsJsonSync
-                # instance saw for this blob_name — 0 if this session never
-                # pulled it — and a generation of 0 means "must not exist
-                # yet". Without this, pushing a blob nothing in this
-                # session has touched would look like a false conflict
-                # against the real, already-existing blob.
-                cloud_sync.pull(blob_name, Path(tmp_dir) / "_generation_check.json")
+                # Refresh this blob's known ETag first. push() conditions its
+                # write on whatever ETag the last pull() on *this*
+                # R2JsonSync instance saw for this blob_name — None if this
+                # session never pulled it, which push() treats as
+                # "must not exist yet". Without this, pushing a blob nothing
+                # in this session has touched would look like a false
+                # conflict against the real, already-existing blob.
+                cloud_sync.pull(blob_name, Path(tmp_dir) / "_etag_check.json")
             cloud_sync.push(blob_name, Path(file_path))
         except ConflictError as exc:
             QMessageBox.warning(self, "Push to Cloud", f"Someone else updated '{blob_name}' first: {exc}\nTry again.")

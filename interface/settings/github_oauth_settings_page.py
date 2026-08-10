@@ -8,13 +8,11 @@ from core.storage.config_store import SystemConfigStore
 class GithubOAuthSettingsPage(QWidget):
     """The GitHub OAuth Client ID field, split out of CommonSettingsPage
     into its own Developer-category tab — most users never need to touch
-    this, only whoever registered the studio's GitHub OAuth App. The
-    Google Cloud Storage sync settings that used to live on this same page
-    moved to their own gated window — see
-    plugins/core/CloudConfig/studio_settings_dialog.py's StudioSettingsDialog,
-    opened via that plugin's "Studio Setting" footer button — since
-    that config needs a real login gate and an explicit Save step, unlike
-    this page's plain self-persisting field."""
+    this, only whoever registered the studio's GitHub OAuth App. Cloud
+    sync config used to live on this same page (later moved to its own
+    gated `StudioSettingsDialog` window); it has no settings UI at all now
+    — a single shared R2 key is baked into `UkoreHubLauncher.exe`, see the
+    `ukorehub-cloud-sync` skill."""
 
     def __init__(self, parent=None, *, system_config_store: SystemConfigStore):
         super().__init__(parent)

@@ -41,8 +41,7 @@ STORAGE_DIR = (
 REQUIRED_PACKAGES = [
     ("PySide6", "PySide6>=6.7,<7.0"),
     ("keyring", "keyring>=24.0"),
-    ("google.cloud.storage", "google-cloud-storage>=2.16"),
-    ("google_auth_oauthlib", "google-auth-oauthlib>=1.2"),
+    ("boto3", "boto3>=1.36.0"),
 ]
 
 GIT_DOWNLOAD_URL = "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe"
@@ -51,10 +50,10 @@ GIT_DOWNLOAD_URL = "https://github.com/git-for-windows/git/releases/download/v2.
 def ensure_dependencies() -> None:
     for import_name, pip_spec in REQUIRED_PACKAGES:
         try:
-            # find_spec on a dotted name (e.g. "google.cloud.storage") tries
-            # to import the parent package first — if that parent isn't
-            # installed at all yet, it raises ModuleNotFoundError instead of
-            # just returning None, so that case needs its own catch too.
+            # find_spec on a dotted name tries to import the parent package
+            # first — if that parent isn't installed at all yet, it raises
+            # ModuleNotFoundError instead of just returning None, so that
+            # case needs its own catch too.
             found = importlib.util.find_spec(import_name) is not None
         except ModuleNotFoundError:
             found = False
@@ -78,21 +77,18 @@ def check_git_lfs_prerequisite() -> bool:
     return shutil.which("git-lfs") is not None
 
 
-def _build_cloud_sync(data_dir: Path, appdata_dir: Path, google_tokens):
+def _build_cloud_sync(data_dir: Path, appdata_dir: Path):
     """Best-effort: returns None (cloud sync disabled, the shared stores
-    stay purely local — the pre-migration behavior) only if no bucket name
-    can be found at all, from either source below. The bucket is
-    public-read, so a machine with no cached Google refresh token (see
-    core/auth/token_store.py's SecureTokenStore — obtained via the "Studio"
-    button, contributed by plugins/core/CloudConfig/'s plugin.py via the
-    sidebar footer registry) still gets a real GcsJsonSync that can pull()
-    anonymously; it just can't push() (see GcsJsonSync.can_push) until
-    that artist logs in. google_tokens is constructed by the caller
-    (main()) before UkoreCore exists, since this function needs to read the
-    cached refresh token before SystemConfigStore's bucket name is even
-    known.
+    stay purely local) whenever the shared R2 credentials aren't available
+    on this machine — either the UKOREHUB_R2_* env vars are missing
+    (always true for the `python launcher.py` direct-invocation dev path,
+    which bypasses UkoreHubLauncher.exe and its env-var injection — see
+    developer/launcher/launcher_build/updater.py's _launch()) or no bucket
+    name can be found. There is no per-user login step anymore — a single
+    shared key means an artist either has full read/write access or the
+    app falls back to local-only, nothing in between.
 
-    Reads config fields off the raw local system_config.json rather than
+    Reads the bucket name off the raw local system_config.json rather than
     through SystemConfigStore, since that store is itself one of the
     things this function ends up syncing — which creates a bootstrap
     problem on a machine that has never run UkoreHub before:
@@ -104,32 +100,33 @@ def _build_cloud_sync(data_dir: Path, appdata_dir: Path, google_tokens):
     Maya-side scripts under cache/plugins/ clones that hardcode data/
     paths directly) breaks that cycle — same "not meaningfully secret for
     a distributed desktop app" reasoning already applied to
-    google_oauth_client_id/secret and github_client_id. Only consulted
-    when the local file is missing/incomplete; the pull() below then
-    overwrites data/system_config.json with the real cloud copy, so later
-    runs never need the fallback again."""
+    github_client_id. Only consulted when the local file is
+    missing/incomplete; the pull() below then overwrites
+    data/system_config.json with the real cloud copy, so later runs never
+    need the fallback again."""
+    account_id = os.environ.get("UKOREHUB_R2_ACCOUNT_ID")
+    access_key_id = os.environ.get("UKOREHUB_R2_ACCESS_KEY_ID")
+    secret_access_key = os.environ.get("UKOREHUB_R2_SECRET_ACCESS_KEY")
+    if not all([account_id, access_key_id, secret_access_key]):
+        return None
+
     system_config_path = data_dir / "system_config.json"
     config = {}
     if system_config_path.exists():
         config = json.loads(system_config_path.read_text(encoding="utf-8"))
-    bucket_name = config.get("gcs_bucket_name")
+    bucket_name = config.get("r2_bucket_name") or os.environ.get("UKOREHUB_R2_BUCKET_NAME")
     if not bucket_name:
         default_path = appdata_dir / "system_config.default.json"
         if not default_path.exists():
             return None
         config = json.loads(default_path.read_text(encoding="utf-8"))
-        bucket_name = config.get("gcs_bucket_name")
+        bucket_name = config.get("r2_bucket_name")
         if not bucket_name:
             return None
-    project_id = config.get("gcs_project_id")
-    client_id = config.get("google_oauth_client_id")
-    client_secret = config.get("google_oauth_client_secret")
 
-    refresh_token = google_tokens.load_token()
+    from core.vcs.cloud_sync import R2JsonSync
 
-    from core.vcs.cloud_sync import GcsJsonSync
-
-    return GcsJsonSync(bucket_name, project_id, client_id, client_secret, refresh_token)
+    return R2JsonSync(account_id, access_key_id, secret_access_key, bucket_name)
 
 
 def main() -> None:
@@ -181,7 +178,6 @@ def main() -> None:
         )
 
     from core.app_core import UkoreCore
-    from core.auth.token_store import SecureTokenStore
     from core.events.debug_log import DebugLogBus
     from core.exceptions import ConflictError
     from core.extensibility.file_opener import FileOpenerRegistry
@@ -203,7 +199,7 @@ def main() -> None:
     # assets/ holds the git-tracked binary images (thumbnails, program
     # icons, browser link icon overrides, static app-chrome icons) — never
     # cloud-synced, so deliberately kept out of data/ (which is now either
-    # a GCS blob cache or a git-tracked JSON default) to keep that
+    # an R2 blob cache or a git-tracked JSON default) to keep that
     # separation obvious on disk. See assets/README.md.
     assets_dir = REPO_ROOT / "assets"
     assets_dir.mkdir(exist_ok=True)
@@ -225,20 +221,16 @@ def main() -> None:
     cache_dir = CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # debug_bus/google_tokens are built here, before
-    # UkoreCore exists, because the cloud-bootstrap block right below
-    # already needs to log to the debug bus and read the cached Google
-    # refresh token — UkoreCore itself can't be constructed yet at this
-    # point (SystemConfigStore's bucket name isn't known until after the
-    # cloud pull completes). Passed into UkoreCore(...) further down so
-    # nothing is built twice.
+    # debug_bus is built here, before UkoreCore exists, because the
+    # cloud-bootstrap block right below already needs to log to it —
+    # UkoreCore itself can't be constructed yet at this point
+    # (SystemConfigStore's bucket name isn't known until after the cloud
+    # pull completes). Passed into UkoreCore(...) further down so it isn't
+    # built twice.
     debug_bus = DebugLogBus(max_entries=1000)
-    google_tokens = SecureTokenStore(
-        "UkoreHub", "gcs_refresh_token", cache_dir / "gcs_refresh_token.json", token_label="Google"
-    )
 
     # projects.json, system_config.json, and programs.json are shared
-    # studio-wide via Google Cloud Storage (core/vcs/cloud_sync.py), not git —
+    # studio-wide via Cloudflare R2 (core/vcs/cloud_sync.py), not git —
     # pull whatever's newest before constructing the stores that read them,
     # and wire on_save so every local edit pushes straight back up.
     #
@@ -251,7 +243,7 @@ def main() -> None:
     # there's nothing per-project to pull — MetadataStore.load()'s one-time
     # migration handles that locally and pushes the new blobs itself once
     # constructed below.
-    cloud_sync = _build_cloud_sync(data_dir, appdata_dir, google_tokens)
+    cloud_sync = _build_cloud_sync(data_dir, appdata_dir)
     if cloud_sync is None:
         print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
         debug_bus.log("CloudSync", "not configured on this machine — shared data stays local-only")
@@ -267,11 +259,10 @@ def main() -> None:
                     cloud_sync.pull(blob_name, data_dir / "projects" / f"{project_id}.json")
                     debug_bus.log("CloudSync", f"pulled '{blob_name}'")
         except Exception as exc:
-            # Revoked/expired Google login, no network, IAM not granted yet,
+            # Revoked/rotated R2 key, no network, bucket not reachable,
             # etc. — never block the app from opening over a cloud problem;
             # fall back to local-only for this run, same as "not configured
-            # at all". The artist can re-run "Login with Google" in Setting
-            # > Developer if this keeps happening.
+            # at all".
             print(f"UkoreHub: cloud sync unavailable this run ({exc}) — shared data stays local-only.")
             debug_bus.log("CloudSync", f"unavailable this run ({exc}) — shared data stays local-only")
             cloud_sync = None
@@ -318,7 +309,6 @@ def main() -> None:
         on_metadata_delete=_delete_shared_blob,
         on_system_config_save=lambda: _push_shared_blob("system_config.json"),
         debug_bus=debug_bus,
-        google_tokens=google_tokens,
     )
     store = core.metadata
     system_config_store = core.system_config

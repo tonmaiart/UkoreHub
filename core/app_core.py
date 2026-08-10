@@ -12,22 +12,22 @@ from launcher.py, the same DI pattern MetadataStore/SystemConfigStore
 already used before this facade existed. This is load-bearing, not a style
 choice: see core/README.md's cloud_sync.py entry — only launcher.py and
 interface/plugin_api.py may import core.vcs.cloud_sync, never
-core/storage/*.py (and by extension, never this module), so
-google-cloud-storage never ends up in updater.py (UkoreHubLauncher repo)'s
-frozen-exe import graph.
+core/storage/*.py (and by extension, never this module), so boto3 never
+ends up in updater.py (UkoreHubLauncher repo)'s frozen-exe import graph.
 
-Cloud pull/push orchestration, the mandatory GitHub-login gate (Qt
-dialogs), and Google-login state all stay in launcher.py — they either
-need to run before this class can be constructed (the bucket name has to
-come from somewhere before SystemConfigStore exists) or are Qt-bound,
-which core/ never is.
+Cloud pull/push orchestration and the mandatory GitHub-login gate (Qt
+dialogs) stay in launcher.py — they either need to run before this class
+can be constructed (the bucket name has to come from somewhere before
+SystemConfigStore exists) or are Qt-bound, which core/ never is. There is
+no per-user cloud login anymore (a single shared R2 key, injected via
+UKOREHUB_R2_* env vars, replaces the old per-artist Google OAuth token),
+so unlike GitHub's SecureTokenStore below, no analogous token store exists
+for cloud sync at all.
 
-debug_bus/google_tokens are accepted as optional
-constructor params rather than always built internally, because
-launcher.py needs a debug bus and the Google refresh token
-*before* UkoreCore can be constructed (the cloud-bootstrap pull sequence
-that determines system_config's bucket name runs first, and already logs
-to the debug bus and reads the Google token while doing so). When not
+debug_bus is accepted as an optional constructor param rather than always
+built internally, because launcher.py needs a debug bus *before* UkoreCore
+can be constructed (the cloud-bootstrap pull sequence that determines
+system_config's bucket name runs first, and already logs to it). When not
 supplied (the common case, and every case in tests), a fresh instance is
 built here instead — same optional-injection shape `on_save` already
 uses.
@@ -58,7 +58,6 @@ class UkoreCore:
         on_metadata_delete: Callable[[str], None] | None = None,
         on_system_config_save: Callable[[], None] | None = None,
         debug_bus: DebugLogBus | None = None,
-        google_tokens: SecureTokenStore | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.cache_dir = Path(cache_dir)
@@ -76,9 +75,6 @@ class UkoreCore:
         self.git = GitService()
         self.github_tokens = SecureTokenStore(
             "UkoreHub", "github_access_token", self.cache_dir / "github_token.json", token_label="GitHub"
-        )
-        self.google_tokens = google_tokens or SecureTokenStore(
-            "UkoreHub", "gcs_refresh_token", self.cache_dir / "gcs_refresh_token.json", token_label="Google"
         )
         self.debug_bus: InMemoryEventBus = debug_bus or DebugLogBus(max_entries=1000)
 

@@ -4,13 +4,12 @@ Mostly the "Setting" popup — opened via the icon-only Setting button in
 Sidebar's footer (app-level, not one of the repo-scoped `SectionTabList`
 rows). Every `SettingsTabSpec` page in that popup **self-persists on every
 change** — there is no Save/Cancel step; `SettingsTabSpec` has no
-`on_save`/`on_cancel` hooks. The one exception to that self-persisting
-convention — `StudioSettingsDialog`, its own separate window with a real
-login gate and an explicit Save button — no longer lives in this folder:
-it moved to `plugins/core/CloudConfig/studio_settings_dialog.py`, opened
-via a "Studio" footer button that plugin contributes through
-`SidebarFooterActionRegistry` rather than a hardcoded Sidebar button. See
-that plugin's own README for why.
+`on_save`/`on_cancel` hooks. Cloud sync no longer has a settings window at
+all — the old `StudioSettingsDialog` (a real login gate + explicit Save
+button, for per-artist Google OAuth config) was deleted along with
+`plugins/core/CloudConfig/` once cloud sync moved to a single shared R2
+key baked into `UkoreHubLauncher.exe` — see the `ukorehub-cloud-sync`
+skill.
 
 - `settings_view.py` — `SettingsView` (a top-level `QTabWidget` with three
   categories) + `SettingsDialog` (the popup wrapper around it, reverted

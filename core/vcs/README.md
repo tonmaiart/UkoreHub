@@ -1,7 +1,7 @@
 # core/vcs/
 
-Version control and sync — everything that talks to git, GitHub, or Google
-Cloud Storage on the wire. No PySide6/Qt imports here.
+Version control and sync — everything that talks to git, GitHub, or
+Cloudflare R2 on the wire. No PySide6/Qt imports here.
 
 - `git_service.py` — `GitService`: wraps `git`/`git-lfs` as subprocess calls
   (clone, pull, push, fetch, commit, stage/unstage, revert, status,
@@ -10,18 +10,21 @@ Cloud Storage on the wire. No PySide6/Qt imports here.
   gate a mutating call on). Fires hooks from `core/events/hooks.py` around
   each operation. Every subprocess call passes `CREATE_NO_WINDOW`
   (Windows-only) so git never flashes a console behind the GUI.
-- `cloud_sync.py` — `GcsJsonSync`: pulls/pushes the shared JSON stores
+- `cloud_sync.py` — `R2JsonSync`: pulls/pushes the shared JSON stores
   (`core/storage/`'s `MetadataStore`/`SystemConfigStore`, and `shared=True`
-  `PluginConfigStore` instances) to/from Google Cloud Storage. Uses GCS
-  object-generation preconditions for optimistic-concurrency conflict
+  `PluginConfigStore` instances) to/from Cloudflare R2, authenticated with a
+  single shared static API key (no per-artist login). Uses R2/S3 conditional
+  writes (`If-Match`/`If-None-Match`) for optimistic-concurrency conflict
   detection (raises `ConflictError` on a losing race). **Deliberately
   isolated — only `launcher.py` and `interface/plugin_api.py` import it,
   never anything in `core/storage/` or `core/extensibility/config_store.py`
-  themselves, so `google-cloud-storage` never ends up in `updater.py`
+  themselves, so `boto3` never ends up in `updater.py`
   (UkoreHubLauncher repo)'s frozen-exe import graph.** Those stores instead
   gain an optional `on_save`/`on_delete` constructor callback that
   `launcher.py`/`plugin_api.py` wire up to `push`/`delete`. `core/app_core.py`'s
   `UkoreCore` follows the same rule — it never imports this module either.
+  See the `ukorehub-cloud-sync` skill for the full credential/distribution
+  model.
 - `paths.py` — `resolve_repo_path(workspace_root, project_name, repo_name)`
   and `sanitize_folder_name(name)`. **Read
   `developer/bug-history/2026-07-20-repo-path-resolved-from-stale-name.md`

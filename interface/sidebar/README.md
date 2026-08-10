@@ -11,11 +11,12 @@ Qt's `QMenuBar`/dropdown-menu widget.
   sync status, one widget per `interface/sidebar_footer_action_registry.py`
   entry (built via `spec.widget_factory()`, stored in
   `self.footer_action_widgets` keyed by `spec.key`; nothing here is
-  hardcoded, Sidebar just renders whatever's registered — e.g.
-  `plugins/core/CloudConfig/`'s "Studio" button, opening
-  `StudioSettingsDialog`, the gated Google Cloud Storage sync config, see
-  that plugin's own README; each footer-action widget renders as its own
-  full-width row, above the account row), then an account row —
+  hardcoded, Sidebar just renders whatever's registered — currently no
+  plugin contributes a footer action (cloud sync moved to a zero-config
+  shared R2 key, see the `ukorehub-cloud-sync` skill, so there's no more
+  per-artist login/settings window to open from here); each footer-action
+  widget would render as its own full-width row, above the account row),
+  then an account row —
   `account_label` (display-only GitHub username, pushed in by
   `MainWindow._start_app` from `local_config_store.github_username`; no
   login/logout control of its own — actual GitHub login now happens

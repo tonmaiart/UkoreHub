@@ -23,9 +23,8 @@ class Sidebar(QWidget):
     Project Editor — stretched to fill
     the remaining height), and a footer
     strip for sync status, SidebarFooterActionRegistry-provided widgets
-    (e.g. plugins/core/CloudConfig/'s "Studio" button, opening its own
-    StudioSettingsDialog — the gated Google Cloud Storage sync config,
-    deliberately its own window rather than a Setting tab), a
+    (currently unused — cloud sync is a zero-config shared R2 key now, no
+    per-artist login/settings window to open from here), a
     display-only account_label (the GitHub username — actual login/logout happens in
     the launcher exe, see updater.py (UkoreHubLauncher repo); MainWindow just
     pushes local_config_store.github_username in here, and Settings >

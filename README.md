@@ -112,18 +112,18 @@ Settings are split into two files with different sharing behavior:
   plus one `data/projects/<id>.json` per project (each project's repos,
   including thumbnail filenames and required Program IDs, plus that
   project's own Program Database — not shared with other projects), and
-  `data/system_config.json` (GitHub OAuth Client ID, GCS Bucket Name) are
-  synced to/from a shared Google Cloud Storage bucket
-  (`core/cloud_sync.py`) — pulled fresh on every launch, pushed automatically
+  `data/system_config.json` (GitHub OAuth Client ID, R2 Bucket Name) are
+  synced to/from a shared Cloudflare R2 bucket
+  (`core/vcs/cloud_sync.py`) — pulled fresh on every launch, pushed automatically
   on every edit, no manual commit/push step needed. `assets/thumbnails/` and
   `assets/program_icons/` (repo thumbnails / program icons) are still **tracked
   in this git repo** instead, since they're binary images rather than the
   live-edited registries — a manager adding one still needs to
   `git add`/`commit`/`push`, and other artists get it via **Update and
-  Restart** like before. Every artist needs to click **Login with
-  Google** (the "Studio" button in the sidebar footer, next to Setting)
-  once for the cloud-synced files to work — see "Google Cloud Sync Setup"
-  below; without it, those stores just stay local-only on that machine.
+  Restart** like before. Cloud sync needs no per-artist setup at all — a
+  single shared R2 key is baked into `UkoreHubLauncher.exe` (see the
+  `ukorehub-cloud-sync` skill), so every artist gets it working the moment
+  they launch, no login step.
 - **Local config** — `local_config.json` (workspace folder, color theme,
   which repo you currently have selected, cached GitHub username) and
   `github_token.json` (GitHub token, only if the OS keyring isn't
@@ -152,7 +152,7 @@ does two things:
 The token is stored via your OS keyring (or a gitignored local file if the
 keyring isn't available) — never in `data/system_config.json` or
 `data/projects.json`, since those are shared with the whole studio via
-Google Cloud Storage.
+Cloudflare R2.
 
 To enable Login, register a public GitHub OAuth App (free, no approval needed):
 
@@ -166,50 +166,37 @@ To enable Login, register a public GitHub OAuth App (free, no approval needed):
 Until this is configured, clicking Login shows a message pointing you to that
 setting instead of attempting to log in.
 
-## Google Cloud Sync Setup (needed for the shared registries to sync)
+## Cloud sync (Cloudflare R2, zero per-artist setup)
 
 `data/projects.json`, every `data/projects/<id>.json`, `data/system_config.json`, and
-each `shared=True` `PluginConfigStore` file sync through a shared Google
-Cloud Storage bucket instead of git (see "System config vs. local config"
-above). Each artist authenticates as their own Google identity via an
-OAuth browser login (opens automatically, same idea as GitHub Login above)
-— because the studio's GCP organization enforces
-`iam.disableServiceAccountKeyCreation`, so a shared service-account key
-file isn't an option.
+each `shared=True` `PluginConfigStore` file sync through a shared Cloudflare
+R2 bucket instead of git (see "System config vs. local config" above).
+Unlike the old Google Cloud Storage setup this replaced, there is no
+per-artist login step — every artist authenticates with the same single
+shared static API key, baked into `UkoreHubLauncher.exe` at build time and
+passed to `app/launcher.py` purely via `UKOREHUB_R2_*` environment
+variables (never written to any JSON file). Everyone gets equal read/write
+access the moment they launch the app.
 
-A studio admin sets this up once (see `data/README.md` for the exact
-fields):
+A studio admin sets this up once (see the `ukorehub-cloud-sync` skill for
+the full mechanics):
 
-1. Create a GCS bucket and note its name + the GCP project ID it lives in.
-2. In Google Cloud Console, set the OAuth consent screen's User Type —
-   **Internal** if every artist is inside the same Google Workspace org
-   (skips Google's verification review entirely); **External** if login
-   needs to work for personal Google accounts outside the org too, which
-   requires extra care around Google's unverified-app refresh-token expiry
-   — see the note in `core/google_auth.py`'s module docstring before
-   choosing this.
-3. Create an OAuth client of type **"Desktop app"** and note its Client
-   ID/Secret.
-4. Create a Google Group with every artist's Google account as a member,
-   and grant it the **Storage Object Admin** role on the bucket's own
-   Permissions tab (not project-wide IAM).
+1. Create an R2 bucket and an API token (Account ID + Access Key ID +
+   Secret Access Key) scoped to it.
+2. Note the bucket name in `data/system_config.json`'s `r2_bucket_name`
+   (or `appdata/system_config.default.json` for the studio-wide default —
+   this is non-secret, safe to commit).
+3. Copy `developer/launcher/launcher_build/r2_credentials.example.py` to
+   `r2_credentials.py` (gitignored, same folder) and fill in the real
+   Account ID/Access Key ID/Secret Access Key/bucket name.
+4. Run `build_exe.py` (or `git release-launcher`) to bake the key into
+   `UkoreHubLauncher.exe` and publish it — every artist's next
+   self-update picks it up automatically, no action needed on their end.
 
-Each artist then opens the **"Studio" button in the sidebar footer**
-(next to the gear-icon Setting button — a separate window, not a Settings
-tab) — the first time, this shows a login gate: paste in the Client
-ID/Secret from step 3 (or use **Import from JSON...** to read them
-straight from the `client_secret_*.json` Google Cloud Console offers to
-download, which also fills in GCS Project ID) and click **Login with
-Google**. That opens a browser to approve access, same idea as GitHub
-Login above, and caches a refresh token via your OS keyring (or a
-gitignored local file if the keyring isn't available). Once logged in,
-the same window goes straight to the full form — GCS Bucket Name/Project
-ID/Client ID/Secret, with an explicit **Save** button (not self-saving
-per field, unlike every other Settings tab — a mistaken edit here would
-repoint the whole studio's shared registry sync) — every time it's
-reopened afterward, no gate shown again. Until an artist logs in, the
-shared registries just stay local-only on their machine — nothing
-crashes or blocks the app.
+If cloud sync isn't configured on a given machine (e.g. running
+`python launcher.py` directly, bypassing the exe entirely), the shared
+registries just stay local-only for that run — nothing crashes or blocks
+the app.
 
 ## Project layout
 
@@ -217,10 +204,10 @@ crashes or blocks the app.
 - `interface/` — PySide6 GUI (sidebar, content pages, settings dialog, repo browser).
 - `data/` — `projects.json` (index) plus `projects/<id>.json` per project
   (each with its own Program Database), `system_config.json` (shared,
-  synced via Google Cloud Storage), `thumbnails/`, `program_icons/` (shared,
+  synced via Cloudflare R2), `thumbnails/`, `program_icons/` (shared,
   still git-tracked).
 - `cache/` — `local_config.json`, `github_token.json`,
-  `gcs_refresh_token.json`, `webengine_profile/`, `plugin_local_config/`
+  `webengine_profile/`, `plugin_local_config/`
   (gitignored, per-machine — see `cache/README.md`), plus `plugins/`,
   per-repo plugin git clones. Default location only — actual location
   comes from `UKOREHUB_CACHE_DIR`, see "Overriding cache/storage location"

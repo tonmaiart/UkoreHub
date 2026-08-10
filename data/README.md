@@ -18,19 +18,22 @@ to keep these two unambiguous.)
 ## JSON stores — cloud-synced only, nothing else belongs here
 
 Every file directly under `data/` (and `data/projects/*.json`,
-`data/plugins/core/*.json`) is a **local cache of a Google Cloud Storage
-blob**, synced by
-`core/cloud_sync.py`'s `GcsJsonSync`: pulled fresh on every launch, pushed
+`data/plugins/core/*.json`) is a **local cache of a Cloudflare R2 blob**,
+synced by
+`core/vcs/cloud_sync.py`'s `R2JsonSync`: pulled fresh on every launch, pushed
 back up on every save (see `launcher.py` and `interface/plugin_api.py`'s
 `plugin_config_store(shared=True)`). This replaced the old model (tracked
 in this repo, distributed via `git pull`/Update and Restart) because that
 meant any machine with an uncommitted local edit broke the self-update
 `git pull` outright — see `developer/bug-history/` for the incident.
+(Briefly synced via Google Cloud Storage instead of R2, with each artist
+logging in with their own Google identity — replaced by a single shared R2
+key with no per-artist login step; see the `ukorehub-cloud-sync` skill.)
 
 This is a hard rule, not just the common case: a handful of Maya-side
 scripts under `cache/plugins/*/maya-scripts/` clones (which can't import
-`PluginAPI` — no `google-cloud-storage` in `mayapy`'s site-packages) build
-these same paths themselves, e.g. `root / "data" / "projects.json"` or
+`PluginAPI` — no `boto3` in `mayapy`'s site-packages) build these same
+paths themselves, e.g. `root / "data" / "projects.json"` or
 `root / "data" / "plugins" / "core" / f"{tool_id}.json"`. Any file placed
 directly under `data/` that *isn't* one of these cloud-synced blobs risks
 being mistaken by a future reader (human or not) for one — that's why the
@@ -52,7 +55,7 @@ two static git-tracked files that used to live here
   just need "an example of the shape".
 - `projects/<project_id>.json` — one file per project (see above), named
   after the `Project.id` listed in `projects.json`'s index. **Shared/
-  cloud-synced**, one GCS blob per file (`projects/<id>.json`).
+  cloud-synced**, one R2 blob per file (`projects/<id>.json`).
 - `programs.json` — **retired**, no longer read/written by the running app
   except a one-time migration (`core/store.py`'s `migrate_legacy_programs`,
   called once from `launcher.py`). Used to be the shared, studio-wide
@@ -64,12 +67,12 @@ two static git-tracked files that used to live here
   automatically re-home it to) — openable via Settings > Developer >
   Cloud Data.
 - `system_config.json` — `SystemConfigStore`, studio-wide settings: GitHub
-  OAuth client id, plus `gcs_bucket_name`/`gcs_project_id`/
-  `google_oauth_client_id`/`google_oauth_client_secret` for
-  `core/cloud_sync.py`. All non-secret identifiers safe to keep here — the
-  Google OAuth client is a "Desktop app" type, whose
-  secret isn't meaningfully confidential for a distributed app (same
-  reasoning as the GitHub Client ID). Shared/cloud-synced, tiny.
+  OAuth client id, plus `r2_bucket_name` for `core/vcs/cloud_sync.py`. Both
+  non-secret identifiers, safe to keep here — the actual R2 account id/
+  access key/secret never live in this file at all (would be circular,
+  since this file is itself one of the things they sync); see
+  `core/vcs/cloud_sync.py`'s module docstring and the `ukorehub-cloud-sync`
+  skill. Shared/cloud-synced, tiny.
 - `plugins/core/*.json` — `PluginConfigStore` files, one per `plugin_id` a
   plugin's `register(api)` chose with `shared=True`
   (`api.plugin_config_store(plugin_id, shared=True)`). Shared/cloud-synced.
@@ -82,11 +85,12 @@ two static git-tracked files that used to live here
 Everything per-machine/gitignored that used to live here
 (`local_config.json`, `github_token.json`, `webengine_profile/`,
 `plugins/local/*.json`) now lives under `cache/` instead — see
-`cache/README.md`. That's also where each artist's own GCS
-**credential** lives (`cache/gcs_refresh_token.json`, a per-machine Google
-OAuth refresh token obtained via "Login with Google" in Setting >
-Developer — a real secret, never `data/`, which is a cloud-synced cache
-readable by anyone with the file). This means `data/` today holds exactly
+`cache/README.md`. There's no per-artist cloud-sync credential to keep out
+of `data/` anymore either — `R2JsonSync` authenticates with a single
+shared static key baked into `UkoreHubLauncher.exe` and passed via
+environment variables, never written to any JSON file at all (see
+`developer/launcher/launcher_build/r2_credentials.py` and the
+`ukorehub-cloud-sync` skill). This means `data/` today holds exactly
 the files meant to be identical for everyone at the studio via the shared
 bucket — nothing git-tracked, nothing per-machine.
 

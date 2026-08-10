@@ -13,10 +13,10 @@ one:
 - **`storage/`** — the JSON-file stores (`MetadataStore`, `LocalConfigStore`,
   `SystemConfigStore`) and their shared atomic-write helper. See
   `core/storage/README.md`.
-- **`auth/`** — token storage and login helpers (GitHub, Google). See
+- **`auth/`** — token storage and login helpers (GitHub). See
   `core/auth/README.md`.
-- **`vcs/`** — git subprocess wrapper, GCS cloud sync, GitHub REST helpers,
-  repo path resolution. See `core/vcs/README.md`.
+- **`vcs/`** — git subprocess wrapper, Cloudflare R2 cloud sync, GitHub REST
+  helpers, repo path resolution. See `core/vcs/README.md`.
 - **`events/`** — the hook registry and the two in-memory event buses
   (debug log). See `core/events/README.md`.
 - **`extensibility/`** — plugin discovery, per-plugin config storage, file
@@ -49,8 +49,7 @@ beyond "core infrastructure":
   place that knows how to spawn `UkoreHub.exe` safely from within a
   running UkoreHub process.
 - `exceptions.py` — shared exception types (`UkoreHubError`, `ValidationError`,
-  `NotFoundError`, `ConflictError`, `GitOperationError`, `GitHubAuthError`,
-  `GoogleAuthError`).
+  `NotFoundError`, `ConflictError`, `GitOperationError`, `GitHubAuthError`).
 - `version.py` — app name/version constants.
 - `app_core.py` — see above.
 

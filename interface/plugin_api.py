@@ -13,7 +13,7 @@ from core.extensibility.file_opener import FileOpenerRegistry, FileOpenerSpec
 from core.models import Repo
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore
-from core.vcs.cloud_sync import GcsJsonSync
+from core.vcs.cloud_sync import R2JsonSync
 from core.vcs.git_service import GitService
 from interface.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
 from interface.section_registry import SectionSpec
@@ -75,7 +75,7 @@ class PluginAPI:
         plugins_local_dir: Path,
         cache_dir: Path,
         app_root: Path,
-        cloud_sync: GcsJsonSync | None = None,
+        cloud_sync: R2JsonSync | None = None,
         plugin_catalog: list[DiscoveredPlugin] = (),
     ):
         self._core = core
@@ -113,29 +113,27 @@ class PluginAPI:
     @property
     def system_config_store(self) -> SystemConfigStore:
         """Shared, cloud-synced studio config — the same object launcher.py
-        threads into register_builtin_settings_tabs. For a plugin (e.g.
-        plugins/core/CloudConfig/) that needs direct read/write access to
-        the gcs_*/google_oauth_* fields."""
+        threads into register_builtin_settings_tabs. For a plugin that
+        needs direct read/write access to fields like r2_bucket_name or
+        github_client_id."""
         return self._core.system_config
 
     @property
     def cache_dir(self) -> Path:
         """UkoreHub's own per-machine cache/ directory (gitignored) — for a
         plugin building its own per-machine state alongside
-        cache/local_config.json/cache/gcs_refresh_token.json, e.g.
-        constructing core/google_auth.py's GoogleTokenStore(api.cache_dir /
-        "gcs_refresh_token.json"). Same purpose as app_root, one directory
+        cache/local_config.json. Same purpose as app_root, one directory
         over."""
         return self._cache_dir
 
     @property
-    def cloud_sync(self) -> GcsJsonSync | None:
+    def cloud_sync(self) -> R2JsonSync | None:
         """Read-only access to the already-built cloud-sync engine — the
         same object plugin_config_store() already uses privately. None if
-        cloud sync isn't configured/logged-in for this run (see
-        launcher.py's _build_cloud_sync). Decided once at startup —
-        completing login mid-session won't flip this until UkoreHub
-        restarts."""
+        cloud sync isn't configured/reachable for this run (see
+        launcher.py's _build_cloud_sync — e.g. the shared UKOREHUB_R2_*
+        env vars aren't set, or the bucket/network is unreachable).
+        Decided once at startup."""
         return self._cloud_sync
 
     @property
@@ -184,14 +182,6 @@ class PluginAPI:
         — call .log(source, message) to publish an entry, consumed live by
         plugins/core/DebugConsole/'s viewer page."""
         return self._core.debug_bus
-
-    @property
-    def google_tokens(self):
-        """The shared Google refresh-token store (core/auth/token_store.py's
-        SecureTokenStore) — the same instance launcher.py used to build the
-        cloud-sync engine, for a plugin (plugins/core/CloudConfig/) that
-        needs to save/clear the cached Google login itself."""
-        return self._core.google_tokens
 
     @property
     def file_opener_registry(self) -> FileOpenerRegistry:
@@ -265,8 +255,8 @@ class PluginAPI:
         self._core.hooks.subscribe_app_close(handler)
 
     def plugin_config_store(self, plugin_id: str, *, shared: bool = False) -> PluginConfigStore:
-        # shared=True -> data/plugins/core/ (synced via Google Cloud Storage,
-        # core/cloud_sync.py — same for everyone, no longer git-tracked).
+        # shared=True -> data/plugins/core/ (synced via Cloudflare R2,
+        # core/vcs/cloud_sync.py — same for everyone, no longer git-tracked).
         # shared=False -> cache/plugin_local_config/ (gitignored, per-machine
         # — lives under cache/ rather than data/ so it's excluded the same
         # way UkoreHub.exe/developer/commit-main.ps1 already excludes cache/

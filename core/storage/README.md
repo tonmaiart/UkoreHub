@@ -16,13 +16,14 @@ the rest of `core/`).
   own `programs` list).
 - `config_store.py` — `LocalConfigStore` (per-machine settings — workspace
   root, theme, active project/repo, GitHub username — gitignored) and
-  `SystemConfigStore` (studio-wide settings — GitHub/Google OAuth client
-  ids, GCS bucket name — shared via Google Cloud Storage, see
-  `core/vcs/README.md`).
+  `SystemConfigStore` (studio-wide settings — GitHub OAuth client id, R2
+  bucket name — shared via Cloudflare R2, see `core/vcs/README.md`; the R2
+  account id/access key/secret themselves never live here, only the
+  non-secret bucket name — see `core/vcs/cloud_sync.py`'s module docstring).
 
 **Never import `core.vcs.cloud_sync` from anything in this folder.** These
 three stores instead gain an optional `on_save`/`on_delete` constructor
 callback that `launcher.py`/`interface/plugin_api.py` wire up to
-`GcsJsonSync.push`/`.delete` — see `core/vcs/README.md`'s cloud_sync.py
-entry for why this isolation is load-bearing (keeping `google-cloud-storage`
+`R2JsonSync.push`/`.delete` — see `core/vcs/README.md`'s cloud_sync.py
+entry for why this isolation is load-bearing (keeping `boto3`
 out of `updater.py` (UkoreHubLauncher repo)'s frozen-exe import graph).

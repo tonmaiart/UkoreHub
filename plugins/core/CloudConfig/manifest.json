@@ -1,8 +1,0 @@
-{
-  "id": "cloud_config",
-  "name": "CloudConfig",
-  "version": "0.1.0",
-  "api_version": 1,
-  "entry_point": "plugin.py",
-  "description": "Studio Setting window for configuring/logging into Google Cloud Storage sync (core/cloud_sync.py) — GCS bucket, GCP project, Google OAuth client, per-user login."
-}

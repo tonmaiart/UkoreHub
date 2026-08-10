@@ -1,144 +1,132 @@
 """Syncs shared studio JSON stores (data/projects.json, data/programs.json,
-data/system_config.json, data/plugins/core/*.json) to/from Google Cloud
-Storage — the replacement for the old "git pull carries data/ along with
-the app code" model, which broke whenever a machine had an uncommitted
-local edit (see developer/bug-history/README.md).
+data/system_config.json, data/plugins/core/*.json) to/from Cloudflare R2 —
+the replacement for the old "git pull carries data/ along with the app
+code" model, which broke whenever a machine had an uncommitted local edit
+(see developer/bug-history/README.md).
 
 Deliberately isolated in its own module: never import this from
 core/storage/metadata_store.py, core/storage/config_store.py, or
-core/extensibility/config_store.py — those are reachable from
-updater.py (UkoreHubLauncher repo)'s import graph (the frozen
-UkoreHub.exe), and google-cloud-storage has no business being bundled
-into that pre-launch exe. Only launcher.py and interface/plugin_api.py
-(the unfrozen app, run via plain python(w).exe) import this.
+core/extensibility/config_store.py — those get vendored (copy-pasted, not
+imported) into developer/launcher/launcher_build/core/ for
+UkoreHubLauncher.exe's own build, and boto3 has no business ending up in
+that PyInstaller bundle. Only launcher.py and interface/plugin_api.py (the
+unfrozen app, run via plain python(w).exe) import this.
 
-Authenticates as the logged-in artist's own Google identity (via
-core/auth/google_auth.py's OAuth device flow), not a service-account key file —
-the studio's GCP organization enforces
-iam.disableServiceAccountKeyCreation, so no downloadable key can exist at
-all. See developer/bug-history/ for context.
-
-The bucket is public-read (`allUsers` granted `Storage Object Viewer` at
-the bucket level, outside this codebase — see
-developer/bug-history/README.md for the studio's reasoning). That means
-pull() works for every artist with no Google login at all: GcsJsonSync
-falls back to an anonymous client whenever no refresh_token is available.
-push() still requires the authenticated per-user OAuth credential — the
-bucket was deliberately never made public-write, since these blobs
-(programs.json in particular) hold paths UkoreHub launches as real
-executables, so an anonymous writer could plant an arbitrary command for
-every synced machine to run.
+Authenticates with a single shared static R2 API key (Account ID + Access
+Key ID + Secret Access Key) baked into UkoreHubLauncher.exe and passed to
+launcher.py purely via UKOREHUB_R2_* environment variables — never stored
+in any JSON file (see developer/launcher/launcher_build/r2_credentials.py,
+gitignored). Every artist gets equal read/write access; there is no
+per-user login step, unlike the old Google OAuth model.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from google.api_core.exceptions import NotFound, PreconditionFailed
-from google.cloud import storage
-from google.oauth2.credentials import Credentials
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
 
-from core.auth.google_auth import GCS_SCOPE, TOKEN_URL
-from core.exceptions import ConflictError, GoogleAuthError
+from core.exceptions import ConflictError
 
 
-# Every GCS call below gets this timeout explicitly — google-cloud-storage
-# has no default timeout of its own, so a stalled connection (bad network,
-# a slow first-time credential refresh, a firewall silently dropping
-# packets) would otherwise hang forever. These calls run synchronously on
-# whatever thread calls pull()/push() — today that's the Qt UI thread
-# (launcher.py's startup pull, and every store save afterwards — e.g.
+# Every R2 call below gets an explicit timeout — a stalled connection (bad
+# network, a slow DNS resolution, a firewall silently dropping packets)
+# would otherwise hang forever. These calls run synchronously on whatever
+# thread calls pull()/push() — today that's the Qt UI thread (launcher.py's
+# startup pull, and every store save afterwards — e.g.
 # SystemConfigStore.save(), or MetadataStore's per-index/per-project saves)
 # — so an unbounded hang freezes the whole app, not just the sync.
 _TIMEOUT_SECONDS = 20
 
+# R2/S3 report a rejected conditional write (IfMatch/IfNoneMatch) under two
+# different shapes depending on which layer answers — GCS always used plain
+# HTTP 412; AWS's newer S3 conditional-write feature uses 409
+# "ConditionalRequestConflict" instead, and Cloudflare R2's exact behavior
+# isn't documented precisely enough to assume just one. Checked against
+# both the error Code and the raw HTTP status so either shape is caught.
+_CONFLICT_ERROR_CODES = {"PreconditionFailed", "ConditionalRequestConflict"}
+_CONFLICT_STATUS_CODES = {409, 412}
 
-class GcsJsonSync:
+
+class R2JsonSync:
     """One instance per app run, shared across every synced store. Tracks
-    the last-seen object generation per blob so push() can send an
-    optimistic-concurrency precondition instead of blindly overwriting
+    the last-seen ETag per blob so push() can send a conditional-write
+    precondition (If-Match/If-None-Match) instead of blindly overwriting
     whatever another machine wrote in the meantime.
 
-    refresh_token may be None — the bucket is public-read, so a machine
-    that hasn't done the Google login yet still gets a working pull() via
-    an anonymous client. can_push reflects whether this instance was built
-    with real credentials; push() raises GoogleAuthError up front instead
-    of making a doomed anonymous write request against a public-read-only
-    bucket. Needs client_id/client_secret too, not just refresh_token — on
-    a machine where launcher.py's _build_cloud_sync fell back to
-    appdata/system_config.default.json (a fresh machine with no local
-    system_config.json yet, but one that already has a cached refresh
-    token from a previous login), that file deliberately omits the OAuth
-    client fields, so refresh_token alone isn't enough to build valid
-    Credentials. Missing either falls back to the anonymous client for
-    this run; the next run picks up the real client_id/secret once the
-    first pull() has cached the full system_config.json locally."""
+    Unlike the old GCS engine, there is no separate anonymous/authenticated
+    split — a single shared key means an instance is either fully
+    read/write capable or (see launcher.py's _build_cloud_sync) never
+    constructed at all."""
 
-    def __init__(self, bucket_name: str, project_id: str | None, client_id: str | None, client_secret: str | None, refresh_token: str | None):
-        self.can_push = bool(refresh_token and client_id and client_secret)
-        if self.can_push:
-            credentials = Credentials(
-                token=None,
-                refresh_token=refresh_token,
-                token_uri=TOKEN_URL,
-                client_id=client_id,
-                client_secret=client_secret,
-                scopes=[GCS_SCOPE],
-            )
-            client = storage.Client(project=project_id, credentials=credentials)
-        else:
-            client = storage.Client.create_anonymous_client()
-        self._bucket = client.bucket(bucket_name)
-        self._generations: dict[str, int] = {}
+    def __init__(self, account_id: str, access_key_id: str, secret_access_key: str, bucket_name: str):
+        endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
+        self._client = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            config=Config(
+                signature_version="s3v4",
+                connect_timeout=_TIMEOUT_SECONDS,
+                read_timeout=_TIMEOUT_SECONDS,
+            ),
+        )
+        self._bucket = bucket_name
+        self._etags: dict[str, str | None] = {}
 
-    def pull(self, blob_name: str, local_path: Path) -> int:
-        """Downloads blob_name to local_path, returns its generation. If the
+    def pull(self, blob_name: str, local_path: Path) -> str | None:
+        """Downloads blob_name to local_path, returns its ETag. If the
         blob doesn't exist yet (fresh studio setup, nobody has pushed this
-        blob before), leaves local_path untouched and returns 0 — the next
-        push() for this blob_name will be create-only."""
-        blob = self._bucket.blob(blob_name)
+        blob before), leaves local_path untouched and returns None — the
+        next push() for this blob_name will be create-only."""
         try:
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            blob.reload(timeout=_TIMEOUT_SECONDS)
-            blob.download_to_filename(str(local_path), timeout=_TIMEOUT_SECONDS)
-        except NotFound:
-            self._generations[blob_name] = 0
-            return 0
-        self._generations[blob_name] = blob.generation
-        return blob.generation
+            response = self._client.get_object(Bucket=self._bucket, Key=blob_name)
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            if error_code in ("NoSuchKey", "404"):
+                self._etags[blob_name] = None
+                return None
+            raise
+        body = response["Body"].read()
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(body)
+        etag = response["ETag"]
+        self._etags[blob_name] = etag
+        return etag
 
     def push(self, blob_name: str, local_path: Path) -> None:
         """Uploads local_path's current bytes to blob_name, conditioned on
-        the generation last seen by pull() (or 0 — create-only — if pull()
-        never saw this blob). On a 412 Precondition Failed (someone else
-        wrote a newer generation first), re-pulls the latest into
-        local_path and raises ConflictError instead of clobbering it."""
-        if not self.can_push:
-            raise GoogleAuthError(
-                "Not logged in with Google — sign in via the Studio Setting window to save shared changes."
-            )
-        blob = self._bucket.blob(blob_name)
-        if_generation_match = self._generations.get(blob_name, 0)
+        the ETag last seen by pull() (or a create-only precondition if
+        pull() never saw this blob). On a rejected conditional write
+        (someone else wrote a newer version first), re-pulls the latest
+        into local_path and raises ConflictError instead of clobbering
+        it."""
+        last_etag = self._etags.get(blob_name)
+        put_kwargs = {"IfMatch": last_etag} if last_etag is not None else {"IfNoneMatch": "*"}
         try:
-            blob.upload_from_filename(str(local_path), if_generation_match=if_generation_match, timeout=_TIMEOUT_SECONDS)
-        except PreconditionFailed:
-            self.pull(blob_name, local_path)
-            raise ConflictError(
-                f"'{blob_name}' was updated elsewhere first — reloaded the latest version."
-            ) from None
-        self._generations[blob_name] = blob.generation
+            response = self._client.put_object(
+                Bucket=self._bucket,
+                Key=blob_name,
+                Body=local_path.read_bytes(),
+                **put_kwargs,
+            )
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if error_code in _CONFLICT_ERROR_CODES or status_code in _CONFLICT_STATUS_CODES:
+                self.pull(blob_name, local_path)
+                raise ConflictError(
+                    f"'{blob_name}' was updated elsewhere first — reloaded the latest version."
+                ) from None
+            raise
+        self._etags[blob_name] = response["ETag"]
 
     def delete(self, blob_name: str) -> None:
         """Removes blob_name from the bucket entirely — used when a project
-        is deleted, so its per-project blob doesn't linger forever. Requires
-        the same push credentials as push(); a blob that's already gone
-        (e.g. never pushed on this machine) is not an error."""
-        if not self.can_push:
-            raise GoogleAuthError(
-                "Not logged in with Google — sign in via the Studio Setting window to save shared changes."
-            )
-        blob = self._bucket.blob(blob_name)
-        try:
-            blob.delete(timeout=_TIMEOUT_SECONDS)
-        except NotFound:
-            pass
-        self._generations.pop(blob_name, None)
+        is deleted, so its per-project blob doesn't linger forever. S3-
+        compatible delete is idempotent (a blob that's already gone is not
+        an error)."""
+        self._client.delete_object(Bucket=self._bucket, Key=blob_name)
+        self._etags.pop(blob_name, None)

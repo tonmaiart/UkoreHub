@@ -99,19 +99,22 @@ class LocalConfigStore:
 
 
 class SystemConfigStore:
-    """Studio-wide settings shared to everyone via Google Cloud Storage (see
+    """Studio-wide settings shared to everyone via Cloudflare R2 (see
     core/vcs/cloud_sync.py), the same way the MetadataStore registry
     (data/projects.json) is shared. `on_save`, when provided by the caller,
     pushes the freshly-saved file up to the shared bucket.
+
+    Only the bucket *name* lives here — it isn't secret. The R2 account
+    id/access key/secret never do (see
+    developer/launcher/launcher_build/r2_credentials.py); this store is
+    itself one of the things synced through those credentials, so storing
+    them here would be circular.
     """
 
     def __init__(self, json_path: Path, *, on_save: Callable[[], None] | None = None):
         self.json_path = Path(json_path)
         self.github_client_id: str | None = None
-        self.gcs_bucket_name: str | None = None
-        self.gcs_project_id: str | None = None
-        self.google_oauth_client_id: str | None = None
-        self.google_oauth_client_secret: str | None = None
+        self.r2_bucket_name: str | None = None
         self.on_save = on_save
         self.load()
 
@@ -120,10 +123,7 @@ class SystemConfigStore:
             return
         data = json.loads(self.json_path.read_text(encoding="utf-8"))
         self.github_client_id = data.get("github_client_id")
-        self.gcs_bucket_name = data.get("gcs_bucket_name")
-        self.gcs_project_id = data.get("gcs_project_id")
-        self.google_oauth_client_id = data.get("google_oauth_client_id")
-        self.google_oauth_client_secret = data.get("google_oauth_client_secret")
+        self.r2_bucket_name = data.get("r2_bucket_name")
 
     def save(self) -> None:
         atomic_write(
@@ -131,10 +131,7 @@ class SystemConfigStore:
             {
                 "schema_version": SYSTEM_CONFIG_SCHEMA_VERSION,
                 "github_client_id": self.github_client_id,
-                "gcs_bucket_name": self.gcs_bucket_name,
-                "gcs_project_id": self.gcs_project_id,
-                "google_oauth_client_id": self.google_oauth_client_id,
-                "google_oauth_client_secret": self.google_oauth_client_secret,
+                "r2_bucket_name": self.r2_bucket_name,
             },
         )
         if self.on_save:
@@ -144,18 +141,6 @@ class SystemConfigStore:
         self.github_client_id = client_id or None
         self.save()
 
-    def set_gcs_bucket_name(self, bucket_name: str) -> None:
-        self.gcs_bucket_name = bucket_name or None
-        self.save()
-
-    def set_gcs_project_id(self, project_id: str) -> None:
-        self.gcs_project_id = project_id or None
-        self.save()
-
-    def set_google_oauth_client_id(self, client_id: str) -> None:
-        self.google_oauth_client_id = client_id or None
-        self.save()
-
-    def set_google_oauth_client_secret(self, client_secret: str) -> None:
-        self.google_oauth_client_secret = client_secret or None
+    def set_r2_bucket_name(self, bucket_name: str) -> None:
+        self.r2_bucket_name = bucket_name or None
         self.save()
