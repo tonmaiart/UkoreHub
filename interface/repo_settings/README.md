@@ -47,7 +47,15 @@ for the type-specific rebuild.
   default, persisted to `Repo.required_plugin_ids`. (Un)checking an
   External plugin actually flips its sidebar section's visibility for this
   repo (enforced in `interface/main_window.py`'s `_apply_plugin_visibility`,
-  wired via a plugin-id-to-section-key map built in `launcher.py`).
+  wired via a plugin-id-to-section-key map built in `launcher.py`). A
+  project-selected entry (see `plugins/core/ExternalPlugins/`'s "Used by
+  this Project") that isn't cloned into `cache/plugins/` yet shows as its
+  own checkable row too — checking it clones it immediately via
+  `GitService` (2026-08-10, no confirm prompt) and marks it required by
+  reading the fresh clone's `manifest.json` directly, rather than sending
+  the user to Settings > Developer > External Plugins to clone it by hand
+  first; it still needs a restart to actually load, since plugin discovery
+  is one-shot at app startup.
 
 **Working here:** stay inside this folder unless the change needs a new
 `core/` primitive, a `shared/` addition, or touches

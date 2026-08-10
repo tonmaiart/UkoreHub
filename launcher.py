@@ -439,6 +439,8 @@ def main() -> None:
         # plugin_config_store(shared=True) uses for this exact plugin id
         # ("external_plugins") — see plugins/core/ExternalPlugins/README.md.
         external_catalog_path=data_dir / "plugins" / "core" / "external_plugins.json",
+        git_service=git_service,
+        plugins_root=cache_plugins_root,
     )
 
     plugin_api = PluginAPI(

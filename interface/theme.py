@@ -178,6 +178,18 @@ def build_stylesheet(colors: ThemeColors) -> str:
         border: 1px solid {colors.border};
         border-radius: 6px;
     }}
+    QFrame#softwareLinkCard:hover {{
+        background-color: {colors.hover};
+    }}
+    QFrame#softwareLinkToast {{
+        background-color: {colors.surface_alt};
+        border: 1px solid {colors.accent};
+        border-radius: 6px;
+    }}
+    QFrame#softwareLinkToast QLabel {{
+        color: {colors.text_primary};
+        padding: 8px 14px;
+    }}
     QLabel[linkStatus="linked"] {{
         color: {colors.success};
     }}

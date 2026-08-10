@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -15,9 +16,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.extensibility.loader import DiscoveredPlugin, plugin_source
+from core.exceptions import GitOperationError
+from core.extensibility.loader import DiscoveredPlugin, PluginManifest, plugin_source
 from core.storage.config_store import LocalConfigStore
 from core.storage.metadata_store import MetadataStore
+from core.vcs.git_service import GitService
 from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 from interface.shared.widget_helpers import wrap_scrollable
@@ -30,7 +33,9 @@ from interface.shared.widget_helpers import wrap_scrollable
 _EXTERNAL_PLUGINS_DATA_KEY = "external_plugins"
 _SELECTED_ENTRY_IDS_KEY = "selected_entry_ids"
 _EXTERNAL_CATALOG_KEY = "catalog"
-_NOT_INSTALLED_SUFFIX = " (not installed — clone via Settings > Developer > External Plugins)"
+_NOT_CLONED_SUFFIX = " (not installed — check to clone)"
+_PENDING_RESTART_SUFFIX = " (installed — restart UkoreHub to activate)"
+_BROKEN_CLONE_SUFFIX = " (broken clone — fix via Settings > Developer > External Plugins)"
 _NOT_SELECTED_SUFFIX = " (not selected for this project)"
 
 _PLUGIN_DESCRIPTION = (
@@ -78,6 +83,15 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         plugin the project no longer has selected still shows too, labeled
         "(not selected for this project)" rather than silently disappearing
         — see _rebuild_plugin_lists.
+
+        A selected-but-not-yet-cloned entry is checkable — checking it
+        clones it immediately (via GitService, into plugins_root, no
+        confirmation prompt) and marks it required, rather than sending the
+        user to Settings > Developer > External Plugins to clone it by hand
+        first. Since plugin discovery/registration only ever runs once at
+        app startup, a plugin cloned mid-session still needs a restart
+        before it actually loads — see _add_pending_external_items and
+        _on_catalog_entry_checked.
     Self-persists on every check-state change, same convention as every
     other repo-settings tab — no separate Save button. Active-repo
     resolution + refresh() preamble live in BaseRepoSettingsPage
@@ -99,10 +113,14 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         local_config_store: LocalConfigStore,
         plugin_catalog: list[DiscoveredPlugin],
         external_catalog_path: Path,
+        git_service: GitService,
+        plugins_root: Path,
     ):
         super().__init__(parent, store=store, local_config_store=local_config_store)
         self._plugin_catalog = plugin_catalog
         self._external_catalog_path = Path(external_catalog_path)
+        self._git_service = git_service
+        self._plugins_root = Path(plugins_root)
         self._plugin_by_id = {plugin.manifest.id: plugin for plugin in plugin_catalog}
         self._item_by_plugin_id: dict[str, QListWidgetItem] = {}
         self._requirements_tree: RequirementsTreeWidget | None = None
@@ -209,7 +227,7 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
                     continue
                 suffix = "" if is_selected else _NOT_SELECTED_SUFFIX
                 self._add_plugin_item(self._external_list, plugin, required_ids, label_suffix=suffix)
-            self._add_not_installed_external_items(selected_entries, discovered_repo_folders)
+            self._add_pending_external_items(selected_entries, discovered_repo_folders, required_ids)
         self._loading_plugins = False
 
     def _add_plugin_item(
@@ -238,18 +256,62 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         ]
         return f" — requires: {', '.join(names)}"
 
-    def _add_not_installed_external_items(self, selected_entries: list[dict], discovered_repo_folders: set[str]) -> None:
-        """A catalog entry the active project has selected but that isn't
-        actually cloned into this machine's cache/plugins/ yet — shown
-        disabled/informational only, nothing to check since there's no
-        discovered manifest.id to reference until it's cloned (Settings >
-        Developer > External Plugins) and the app restarted."""
+    def _add_pending_external_items(
+        self, selected_entries: list[dict], discovered_repo_folders: set[str], required_ids: list[str]
+    ) -> None:
+        """A catalog entry the active project has selected but that this
+        session's plugin discovery hasn't picked up (see loader.py's
+        discover_plugins, run once at app startup) — split by actual on-disk
+        state, since "not discovered yet" covers three different situations:
+        - Not cloned at all: checkable — checking it clones it right here
+          (see _on_catalog_entry_checked) instead of sending the user to
+          Settings > Developer > External Plugins first.
+        - Cloned (by this flow or by hand) but not yet discovered this
+          session: shown disabled with its current required-for-this-repo
+          state, since there's nothing left to do but restart.
+        - A broken .git directory (GitService.is_cloned true, is_repo_root
+          false — see plugins/core/ExternalPlugins/README.md's "Why
+          is_repo_root, not just is_cloned"): shown disabled, pointing at
+          External Plugins to fix it rather than silently treating it as
+          installed."""
         for entry in sorted(selected_entries, key=lambda e: e["name"]):
             if entry["folder_name"] in discovered_repo_folders:
                 continue
-            item = QListWidgetItem(entry["name"] + _NOT_INSTALLED_SUFFIX)
-            item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+            local_path = self._plugins_root / entry["folder_name"]
+            if not self._git_service.is_cloned(local_path):
+                item = QListWidgetItem(entry["name"] + _NOT_CLONED_SUFFIX)
+                item.setData(Qt.UserRole + 1, entry["id"])
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Unchecked)
+                self._external_list.addItem(item)
+                continue
+            if not self._git_service.is_repo_root(local_path):
+                item = QListWidgetItem(entry["name"] + _BROKEN_CLONE_SUFFIX)
+                item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+                self._external_list.addItem(item)
+                continue
+            manifest = self._read_manifest_if_cloned(entry["folder_name"])
+            label = manifest.name if manifest is not None else entry["name"]
+            item = QListWidgetItem(label + _PENDING_RESTART_SUFFIX)
+            item.setFlags((item.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEnabled)
+            is_required = manifest is not None and manifest.id in required_ids
+            item.setCheckState(Qt.Checked if is_required else Qt.Unchecked)
             self._external_list.addItem(item)
+
+    def _read_manifest_if_cloned(self, folder_name: str) -> PluginManifest | None:
+        """A raw manifest.json read/parse only — never imports or executes
+        the plugin's entry_point (unlike loader.discover_plugins), since
+        running a plugin's code mid-session outside the normal one-shot
+        startup flow is out of scope here. Used right after cloning (to
+        learn the real plugin id to mark required) and for a folder cloned
+        earlier this session that's still awaiting restart."""
+        manifest_path = self._plugins_root / folder_name / "manifest.json"
+        if not manifest_path.exists():
+            return None
+        try:
+            return PluginManifest.from_dict(json.loads(manifest_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, KeyError):
+            return None
 
     def _selected_external_catalog_entries(self) -> list[dict]:
         """Studio-wide External Plugins catalog entries (see
@@ -279,9 +341,75 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
             return []
         return data.get(_EXTERNAL_CATALOG_KEY, [])
 
+    def _on_catalog_entry_checked(self, item: QListWidgetItem, entry_id: str) -> None:
+        """Handles a check-state change on a not-yet-cloned catalog entry
+        row (see _add_pending_external_items) — the only state such a row
+        can be in, so unchecking it (e.g. immediately after a failed clone
+        reverts it below) needs no persistence of its own; there was never
+        anything installed or required to undo."""
+        if item.checkState() != Qt.Checked:
+            return
+
+        entry = next((e for e in self._selected_external_catalog_entries() if e.get("id") == entry_id), None)
+        if entry is None:
+            self._set_item_checked(item, False)
+            return
+
+        git_url = entry.get("git_url", "")
+        if not git_url:
+            QMessageBox.warning(
+                self,
+                "Clone Plugin",
+                f"'{entry['name']}' has no Git URL set — edit it via "
+                "Settings > Developer > External Plugins first.",
+            )
+            self._set_item_checked(item, False)
+            return
+
+        local_path = self._plugins_root / entry["folder_name"]
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self._git_service.clone(git_url, local_path)
+        except GitOperationError as exc:
+            QMessageBox.warning(self, "Clone Plugin", str(exc))
+            self._set_item_checked(item, False)
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        manifest = self._read_manifest_if_cloned(entry["folder_name"])
+        if manifest is None:
+            QMessageBox.warning(
+                self,
+                "Clone Plugin",
+                f"Cloned '{entry['name']}', but its manifest.json is missing or invalid.",
+            )
+            self._rebuild_plugin_lists()
+            return
+
+        required_ids = list(self._repo.required_plugin_ids)
+        if manifest.id not in required_ids:
+            required_ids.append(manifest.id)
+            self.store.set_repo_required_plugin_ids(self._project.id, self._repo.id, required_ids)
+            self._repo.required_plugin_ids = required_ids
+
+        QMessageBox.information(
+            self,
+            "Clone Plugin",
+            f"Cloned '{manifest.name}'. It's marked as required for this repo — "
+            "restart UkoreHub for it to actually load.",
+        )
+        self._rebuild_plugin_lists()
+
     def _on_plugin_item_changed(self, item: QListWidgetItem) -> None:
         if self._loading_plugins or self._project is None or self._repo is None:
             return
+
+        entry_id = item.data(Qt.UserRole + 1)
+        if entry_id is not None:
+            self._on_catalog_entry_checked(item, entry_id)
+            return
+
         plugin_id = item.data(Qt.UserRole)
         if plugin_id is None:
             return

@@ -5,6 +5,7 @@ from pathlib import Path
 from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore
+from core.vcs.git_service import GitService
 from interface.repo_settings.local_repository_page import LocalRepositoryPage
 from interface.repo_settings.requirements_and_plugins_page import RequirementsAndPluginsPage
 from interface.settings.common_settings_page import CommonSettingsPage
@@ -43,6 +44,8 @@ def register_builtin_settings_tabs(
     plugin_catalog: list[DiscoveredPlugin],
     plugin_load_failures: list[PluginLoadFailure],
     external_catalog_path: Path,
+    git_service: GitService,
+    plugins_root: Path,
 ) -> None:
     """Registers the built-in settings tabs the same way a plugin would.
     Each page_factory constructs a *fresh* widget on every call (not a
@@ -89,6 +92,8 @@ def register_builtin_settings_tabs(
                 local_config_store=local_config_store,
                 plugin_catalog=plugin_catalog,
                 external_catalog_path=external_catalog_path,
+                git_service=git_service,
+                plugins_root=plugins_root,
             ),
             on_activated=_trigger_refresh,
             category=CATEGORY_REPO,

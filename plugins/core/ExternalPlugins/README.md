@@ -79,6 +79,20 @@ requirement choice for the active project's repos, instead of listing every
 "repo"-source plugin `discover_plugins()` happens to find physically cloned
 on this machine regardless of which project it was cloned for.
 
+A selected-but-not-yet-cloned entry no longer requires a separate trip to
+this page to clone it (2026-08-10): its row on Requirements & Plugins is
+itself checkable, and checking it clones straight into
+`cache/plugins/<folder_name>` immediately (no confirm prompt — the only
+git-clone action in the app that skips one, since checking the box already
+is the explicit action), then marks it required for that repo by reading
+the fresh clone's `manifest.json` directly (no import/execution — just a
+`json.loads`, via `RequirementsAndPluginsPage._read_manifest_if_cloned`).
+Since `discover_plugins()`/`apply_plugins()` are one-shot at app startup
+(see `core/extensibility/README.md`), the plugin still doesn't actually
+*load* until UkoreHub is restarted — the row reflects that afterward as
+"(installed — restart UkoreHub to activate)" rather than going back to
+"(not installed — ...)".
+
 ### Showing and cascading `PluginManifest.requires`
 
 Each catalogued row's label also shows `— requires: X, Y` when the entry is

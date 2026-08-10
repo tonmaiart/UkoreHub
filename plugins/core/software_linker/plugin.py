@@ -6,26 +6,26 @@ import shutil
 import subprocess
 import winreg
 
-from PySide6.QtCore import QFileInfo, QSize, Qt
+from PySide6.QtCore import QFileInfo, QPropertyAnimation, QSize, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFileIconProvider,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QStyle,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -131,18 +131,16 @@ def _guess_by_registry(program_name: str, installed: list[tuple[str, str]]) -> s
 
 
 def _resolve_path_for_program(program_name: str, installed: list[tuple[str, str]]) -> str | None:
-    """Auto-Resolve Path's full three-source scan, tried in order until one
-    hits: system PATH, then the Windows Uninstall registry (`installed`,
-    a single list_installed_programs() call shared across every unlinked
-    Program in the click so the registry is only walked once), then a
-    handful of known default install locations. Only ever called for a
-    Program that isn't already linked — see
-    SoftwareLinkerPage._on_auto_resolve_path. This is deliberately a
-    separate, explicit, user-triggered scan from _auto_detect_missing's
-    silent PATH-only check below: the registry/default-path sources are
-    more likely to produce a wrong guess for a generically-named program,
-    so they're opt-in via the button rather than run automatically every
-    time this page is opened."""
+    """Full three-source scan, tried in order until one hits: system PATH,
+    then the Windows Uninstall registry (`installed`, a single
+    list_installed_programs() call shared across every unlinked Program in
+    the same pass so the registry is only walked once), then a handful of
+    known default install locations. Only ever called for a Program that
+    isn't already linked. Runs automatically for every still-unlinked
+    Program on each rebuild (SoftwareLinkerPage._auto_detect_missing) and
+    is also available as an explicit re-run via the "Auto-Resolve Path"
+    button (SoftwareLinkerPage._on_auto_resolve_path), which additionally
+    reports a summary of how many programs it resolved."""
     guess = shutil.which(program_name.lower().replace(" ", ""))
     if guess:
         return guess
@@ -241,24 +239,60 @@ def _link_rows(store, project_id):
     return rows
 
 
+class _ToastNotification(QFrame):
+    """Small self-dismissing popup used for click-to-launch feedback below,
+    instead of a blocking QMessageBox — appears near the card that
+    triggered it, holds briefly, then fades out on its own with nothing to
+    click through (a notification, not a confirmation)."""
+
+    def __init__(self, text: str, anchor: QWidget):
+        super().__init__(anchor, Qt.ToolTip | Qt.FramelessWindowHint)
+        self.setObjectName("softwareLinkToast")
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self._anchor = anchor
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(QLabel(text, self))
+
+        opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(opacity_effect)
+        self._fade_animation = QPropertyAnimation(opacity_effect, b"opacity", self)
+        self._fade_animation.setDuration(600)
+        self._fade_animation.setStartValue(1.0)
+        self._fade_animation.setEndValue(0.0)
+        self._fade_animation.finished.connect(self.close)
+
+    def present(self, *, hold_ms: int = 900) -> None:
+        self.adjustSize()
+        center = self._anchor.mapToGlobal(self._anchor.rect().center())
+        self.move(center.x() - self.width() // 2, center.y() - self.height() - 12)
+        self.show()
+        QTimer.singleShot(hold_ms, self._fade_animation.start)
+
+
 class _ProgramLinkCard(QFrame):
     """One program's link status: its own icon (Program Database's
     icon_filename, resolved via store.resolve_program_icon_path — falls
     back to a generic icon when the program has none set), name, linked
-    path, and status each on their own line, plus this row's own actions.
-    "Browse Program..." and "Browse Path..." used to be two separate
-    buttons acting on whatever list row happened to be selected; here
-    "Browse Path..." is folded into the "Browse Program..." split button's
-    dropdown (QToolButton menu) and both act on this card's own program
-    directly, no selection state needed.
+    path, and status each on their own line, plus this row's own actions —
+    "Browse Program...", "Browse Path...", and "Clear" each their own
+    button in their own column (a plain QHBoxLayout), no dropdown/split
+    button. Highlights on hover (QFrame#softwareLinkCard:hover in
+    interface/theme.py) to make clear the whole card is clickable.
 
-    Double-clicking anywhere on the card outside those buttons opens the
-    linked executable directly (same as the retired plugins/core/
+    A single left-click anywhere on the card outside those buttons opens
+    the linked executable directly (same as the retired plugins/core/
     program_launcher/'s card grid) — or, if nothing is linked yet, jumps
     straight into the same "Browse Program..." picker instead of leaving
-    the double-click a no-op. Qt delivers the double-click to whichever
-    child widget is under the cursor first, so double-clicking the Browse/
-    Clear buttons themselves still just activates that button."""
+    the click a no-op. Qt delivers the click to whichever child widget is
+    under the cursor first, so clicking the Browse/Clear buttons themselves
+    still just activates that button. Launch feedback is a
+    _ToastNotification, not a blocking QMessageBox — errors get the same
+    fade-out treatment as the success case, nothing needs to be dismissed
+    by hand."""
 
     def __init__(
         self,
@@ -307,28 +341,27 @@ class _ProgramLinkCard(QFrame):
         text_layout.addWidget(self._path_label)
         text_layout.addWidget(self._status_label)
 
-        browse_btn = QToolButton()
-        browse_btn.setText("Browse Program...")
-        browse_btn.setPopupMode(QToolButton.MenuButtonPopup)
-        browse_btn.clicked.connect(self._on_browse_program)
-        browse_menu = QMenu(browse_btn)
-        browse_menu.addAction("Browse Path...", self._on_browse_path)
-        browse_btn.setMenu(browse_menu)
+        browse_program_btn = QPushButton("Browse Program...")
+        browse_program_btn.clicked.connect(self._on_browse_program)
+
+        browse_path_btn = QPushButton("Browse Path...")
+        browse_path_btn.clicked.connect(self._on_browse_path)
 
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._on_clear)
 
-        button_col = QVBoxLayout()
-        button_col.setSpacing(4)
-        button_col.addWidget(browse_btn)
-        button_col.addWidget(clear_btn)
+        button_row = QHBoxLayout()
+        button_row.setSpacing(4)
+        button_row.addWidget(browse_program_btn)
+        button_row.addWidget(browse_path_btn)
+        button_row.addWidget(clear_btn)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(10)
         layout.addWidget(icon_label)
         layout.addLayout(text_layout, 1)
-        layout.addLayout(button_col)
+        layout.addLayout(button_row)
 
         self.refresh()
 
@@ -338,24 +371,26 @@ class _ProgramLinkCard(QFrame):
             self._path_label.setText(linked_path)
             self._status_label.setText("Linked")
             self._status_label.setProperty("linkStatus", "linked")
-            self.setToolTip("Double-click to open.")
+            self.setToolTip("Click to open.")
         else:
             self._path_label.setText("No path linked")
             self._status_label.setText("Not linked")
             self._status_label.setProperty("linkStatus", "not_linked")
-            self.setToolTip("Not linked yet — double-click to choose an installed program.")
+            self.setToolTip("Not linked yet — click to choose an installed program.")
         self._status_label.style().unpolish(self._status_label)
         self._status_label.style().polish(self._status_label)
 
-    def mouseDoubleClickEvent(self, event) -> None:
-        self._on_double_click()
-        super().mouseDoubleClickEvent(event)
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self._on_click()
+        super().mousePressEvent(event)
 
-    def _on_double_click(self) -> None:
+    def _on_click(self) -> None:
         exe_path = self._config_store.get(self._key)
         if not exe_path:
             self._on_browse_program()
             return
+        _ToastNotification(f"Opening {self._program.name}...", self).present()
         # A plugin (e.g. maya_launcher) may need to launch this Program
         # with its own setProject/env-merge wiring instead of a bare
         # process launch — see interface/program_launch_registry.py. Falls
@@ -367,7 +402,7 @@ class _ProgramLinkCard(QFrame):
         try:
             subprocess.Popen([exe_path])
         except OSError as exc:
-            QMessageBox.warning(self, self._program.name, f"Could not launch {self._program.name}:\n{exc}")
+            _ToastNotification(f"Could not launch {self._program.name}: {exc}", self).present()
 
     def _on_browse_program(self) -> None:
         dialog = ProgramPickerDialog(self)
@@ -391,7 +426,7 @@ class SoftwareLinkerPage(QWidget):
     """The app's main "Program Launcher" tab — lets the user link each
     Program Database entry to a local executable path on this machine
     (per-machine data, PluginConfigStore shared=False, since "what's
-    installed here" is never team-shared) and double-click a linked card to
+    installed here" is never team-shared) and click a linked card once to
     open it. Other plugins/add-ons (e.g. maya_launcher) read the same
     linked-path mapping by calling api.plugin_config_store("software_linker",
     shared=False) themselves — no coupling API needed, just agreeing on that
@@ -401,12 +436,13 @@ class SoftwareLinkerPage(QWidget):
     version) slot.
 
     Program Database is per-Project (core/models.py's Project.programs), so
-    this page lists every Program in the active Project's own catalog —
-    not filtered down to one repo's required_program_ids the way the
-    retired plugins/core/program_launcher/ was — while the double-click
-    launch below still uses whichever repo is currently active (SectionSpec's
-    standard set_repo protocol) for any Program with its own
-    ProgramLaunchRegistry entry."""
+    this page's underlying catalog is every Program in the active Project's
+    own catalog — same as the retired plugins/core/program_launcher/, this
+    can be narrowed down to just the active repo's required_program_ids via
+    the "Show Only Requirement for current repo only" checkbox (checked by
+    default; see _rebuild_cards). The click-to-launch below still uses
+    whichever repo is currently active (SectionSpec's standard set_repo
+    protocol) for any Program with its own ProgramLaunchRegistry entry."""
 
     def __init__(self, parent=None, *, store, config_store, program_launch_registry):
         super().__init__(parent)
@@ -416,6 +452,10 @@ class SoftwareLinkerPage(QWidget):
         self._project: Project | None = None
         self._repo: Repo | None = None
 
+        self._require_filter_checkbox = QCheckBox("Show Only Requirement for current repo only")
+        self._require_filter_checkbox.setChecked(True)
+        self._require_filter_checkbox.toggled.connect(lambda _checked: self._rebuild_cards())
+
         self.project_label = QLabel()
 
         header_layout = QHBoxLayout()
@@ -424,8 +464,8 @@ class SoftwareLinkerPage(QWidget):
         header_layout.addStretch()
         auto_resolve_btn = QPushButton("Auto-Resolve Path")
         auto_resolve_btn.setToolTip(
-            "Scan system PATH, installed programs, and common install "
-            "locations for every unlinked Program in this project."
+            "Already runs automatically for unlinked programs — use this to "
+            "re-scan on demand and see a summary of how many were resolved."
         )
         auto_resolve_btn.clicked.connect(self._on_auto_resolve_path)
         header_layout.addWidget(auto_resolve_btn)
@@ -442,6 +482,7 @@ class SoftwareLinkerPage(QWidget):
         scroll_area.setWidget(self._cards_container)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self._require_filter_checkbox)
         layout.addLayout(header_layout)
         layout.addWidget(scroll_area)
 
@@ -470,7 +511,11 @@ class SoftwareLinkerPage(QWidget):
         project_id = self._project.id
 
         self._auto_detect_missing(project_id)
-        for key, program, _version, label in _link_rows(self._store, project_id):
+        rows = _link_rows(self._store, project_id)
+        if self._require_filter_checkbox.isChecked() and self._repo is not None:
+            required_ids = set(self._repo.required_program_ids)
+            rows = [row for row in rows if row[1].id in required_ids]
+        for key, program, _version, label in rows:
             card = _ProgramLinkCard(
                 self._cards_container,
                 store=self._store,
@@ -484,15 +529,16 @@ class SoftwareLinkerPage(QWidget):
             self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
     def _auto_detect_missing(self, project_id: str) -> None:
-        # Best-effort only — checks the system PATH for an executable that
-        # looks like the program's name, nothing more. Programs with no
-        # match just stay unlinked until the user links one manually or
-        # clicks Auto-Resolve Path. See _resolve_path_for_program for the
-        # fuller registry/default-path scan that button runs instead.
+        # Runs the full PATH/registry/default-path scan (same one the
+        # "Auto-Resolve Path" button runs) automatically for every
+        # still-unlinked Program on each rebuild, never overwriting an
+        # existing link. Programs with no match anywhere just stay
+        # unlinked until the user links one manually.
+        installed = list_installed_programs()
         for key, program, _version, _label in _link_rows(self._store, project_id):
             if self._config_store.get(key):
                 continue
-            guess = shutil.which(program.name.lower().replace(" ", ""))
+            guess = _resolve_path_for_program(program.name, installed)
             if guess:
                 self._config_store.set(key, guess)
 
