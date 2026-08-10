@@ -23,8 +23,7 @@ def register(api) -> None:
         # api.app_root is contributed too so `import core.storage.metadata_store` /
         # `core.vcs.paths` / `core.extensibility.config_store` resolve inside
         # Maya's Python — that's how repo_paths.py talks to UkoreHub's own Project/Repo/
-        # pipeline model. Same convention plugins/repo_internal/UkoreBrowser/
-        # plugin.py already uses for the same reason.
+        # pipeline model.
         "PYTHONPATH": {ANY_VERSION: [str(tool_root / "maya-scripts"), str(api.app_root)]},
     }
     bridge.set("contributions", contributions)

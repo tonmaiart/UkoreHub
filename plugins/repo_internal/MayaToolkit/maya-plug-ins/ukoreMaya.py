@@ -44,13 +44,6 @@ def loadMenu():
         )
 
     cmds.menuItem(
-        label="Ukore File Browser...",
-        # image="contentBrowserGeneric.png",
-        parent=MENU_MAIN,
-        command="import UkoreMaya; from UkoreMaya.core import menu_utils; menu_utils.browser()",
-    )
-
-    cmds.menuItem(
         label="Quick Script...",
         # image="contentBrowserGeneric.png",
         parent=MENU_MAIN,
@@ -630,7 +623,6 @@ def _unregister_ukore_reference_editor_callback():
 
 # --------------------------------------------------------------------
 def _post_load_setup():
-    function.auto_launch_ukore_file_browser()
     loadMenu()
 
 

@@ -83,9 +83,7 @@ navigation aids now.)
   machine), scoped by both the repo's id and OS username (`getpass.getuser()`,
   sanitized to a safe filename). Used to live at
   `<browsed_repo_root>/.ukorehub/explorer_last_opened_<username>.json`
-  instead (same convention as
-  `plugins/repo_internal/UkoreBrowser/maya-scripts/UkoreBrowser/core/browser_config.py`'s
-  `BrowserConfig`) but that put the file inside whatever production repo was
+  instead but that put the file inside whatever production repo was
   being browsed, at the mercy of *that* repo's own `.gitignore` — several
   studio repos didn't exclude `.ukorehub/`, so this list kept getting
   committed to their history. `cache/` is this app's own repo, already

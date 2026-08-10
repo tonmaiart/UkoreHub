@@ -105,7 +105,7 @@ on every Rescan click would be spammy rather than helpful.
 exact function the old "Update All Reference and Picker" menu action was
 built on, see `UkoreMaya/core/Logic.py`) rather than reimplementing
 version-folder scanning — the same cross-plugin-by-name-import convention
-`UkoreBrowser`/`PublishApi` already use for `UkoreMaya`/`tmlib`. Only
+`PublishApi` already uses for `UkoreMaya`/`tmlib`. Only
 attempted for a reference that already resolves (`exists=True)` — the
 underlying function requires the path to exist and to sit under a
 "publish" folder with `vNNN` version subfolders; anything else, including
@@ -208,19 +208,6 @@ offered on the Maya File tab — references already have per-row Update
 Version/Redirect plus the auto-fix-on-Rescan behavior above; this button
 exists specifically because textures have neither.
 
-## Open in Ukore Browser
-
-Every row (both tabs) also has an **Open in Ukore Browser** button —
-`core.py`'s `open_in_ukore_browser` constructs
-`plugins/repo_internal/UkoreBrowser`'s own `MainWindow` directly (cross-plugin
-by-name import, same convention as `UkoreMaya`/`PublishApi` elsewhere in
-this plugin) and calls its `update_current_path(path)` navigation method,
-rather than going through `tmlib.core.File.launch("UkoreBrowser")` (what
-the Ukore Studio Tool menu's own "Ukore File Browser..." item uses), which
-has no way to pass a starting path in at all. Works for any row regardless
-of status — handy for eyeballing what's actually sitting in a resolved
-target folder, or a broken one, without leaving Maya.
-
 ## Beating Maya's own native "could not find file" dialog
 
 Redirecting broken references from `auto_check_and_redirect` only helps if
@@ -289,7 +276,7 @@ behavior existed.
   `_classify_path`), `_check_outdated` (version checking),
   `is_reference_loaded`/`set_reference_loaded` (load-state toggle),
   `redirect_reference`/`redirect_texture`/`update_reference_version`,
-  `open_in_ukore_browser`, `auto_fix_entries` (the manual Rescan button's
+  `auto_fix_entries` (the manual Rescan button's
   own silent-safe-only auto-redirect, shared logic with the paragraph
   below), and `auto_check_and_redirect` (the automatic entry point
   `ukoreMaya.py`'s `kAfterOpen` callback calls, applying the shared
@@ -304,8 +291,7 @@ behavior existed.
   from this plugin's own `maya-scripts/UkoreReferenceEditor/icons/`), File
   (filename only — see "File Info panel" below for the full path), Version,
   Next Version, Scope, Actions (Redirect when still missing after auto-fix
-  + always Update Version.../Repath File.../Repath Search.../Open in Ukore
-  Browser). Textures
+  + always Update Version.../Repath File.../Repath Search...). Textures
   tab: same minus Loaded, Version, Next Version. Only File is
   `QHeaderView.Stretch` — the narrow columns (Loaded, Status, Version, Next
   Version, Scope, Actions) are `QHeaderView.ResizeToContents`, so an icon

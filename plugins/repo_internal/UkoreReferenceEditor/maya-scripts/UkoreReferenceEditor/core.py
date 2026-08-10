@@ -21,7 +21,7 @@ reference that itself still resolves fine. This absorbs
 action (`UkoreMaya.core.function.update_references`, itself built on
 `UkoreMaya.core.utils.get_latest_version_in_folder_based`/`Logic.py`) —
 reused directly rather than reimplemented, same cross-plugin convention
-`UkoreBrowser`/`PublishApi` already use for importing `UkoreMaya`/`tmlib`
+`PublishApi` already uses for importing `UkoreMaya`/`tmlib`
 by name. Unlike a missing/broken reference, an outdated one is never
 auto-updated on scene open — only via the artist's own "Update Version"
 button in the UI, matching the old menu action's own manual,
@@ -459,33 +459,6 @@ def auto_fix_entries(entries: list, redirect_fn) -> int:
         if redirect_fn(entry, entry.suggested_path):
             fixed += 1
     return fixed
-
-
-def open_in_ukore_browser(path: str) -> bool:
-    """Opens plugins/repo_internal/UkoreBrowser navigated to `path` (a file or a
-    folder — UkoreBrowser's own update_current_path resolves either) —
-    same cross-plugin-by-name-import convention this editor already uses
-    for UkoreMaya/PublishApi. Doesn't go through tmlib.core.File.launch
-    (what the Ukore Studio Tool menu's own "Ukore File Browser..." item
-    uses) since that constructs a bare MainWindow with no way to pass a
-    target path in; this constructs the same MainWindow class directly and
-    calls its own navigation method right after. UkoreBrowser may be
-    disabled for this repo via Repository Setting > Enable Plugin (dropping
-    it off maya_launcher's assembled PYTHONPATH), same as any other tool,
-    so the import itself is optional."""
-    try:
-        from UkoreBrowser.interface import MainWindow as BrowserWindow
-    except ImportError:
-        cmds.warning(f"{_LOG_PREFIX} UkoreBrowser is not available (disabled for this repo, or not installed).")
-        return False
-    try:
-        window = BrowserWindow()
-        window.update_current_path(path)
-        window.show(dockable=True)
-        return True
-    except Exception as exc:  # noqa: BLE001 - a browser-open failure is a warning, not a crash
-        cmds.warning(f"{_LOG_PREFIX} Failed to open UkoreBrowser for {path!r}: {exc}")
-        return False
 
 
 def _confirm_redirect(display_path: str, suggested_path: Path) -> bool:

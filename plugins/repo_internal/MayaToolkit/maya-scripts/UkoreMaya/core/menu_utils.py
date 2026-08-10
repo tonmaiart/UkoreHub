@@ -5,10 +5,6 @@ from tmlib.core import File
 # ------------- File Launchers -------------------
 
 
-def browser():
-    File.launch("UkoreBrowser")
-
-
 def python_reader():
     File.launch("PythonReader")
 

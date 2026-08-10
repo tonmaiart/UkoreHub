@@ -2,7 +2,7 @@
 
 Shared Maya-side library — the single source of truth for "where does a
 publish go" and "how do I create the next version folder" — consumed by
-`MayaPublisher` and `UkoreBrowser` (its `core/repo_context.py`). Does not
+`MayaPublisher`. Does not
 launch Maya; like every other Maya tool plugin here, `plugin.py` itself
 exists purely to contribute a `PYTHONPATH` entry to
 `plugins/repo_internal/maya_launcher/`'s shared `maya_launcher_env_bridge`
@@ -32,21 +32,17 @@ not an artist-facing feature), and `maya_launcher/plugin.py`'s
 a repo's stored tool list says. See that plugin's README's "Per-repo tool
 toggle" section for why — this was added after a repo whose stored list
 predated this plugin's existence hit `ModuleNotFoundError: No module named
-'PublishApi'` inside `UkoreBrowser/core/repo_context.py`.
+'PublishApi'` inside a consuming Maya tool's own repo-context module.
 
 ## Files
 
 - `manifest.json` — plugin id `publish_api`, entry point `plugin.py`.
 - `plugin.py` — `register(api)`: contributes `maya-scripts/` **and**
-  `api.app_root` to the shared bridge (same reason
-  `plugins/repo_internal/UkoreBrowser/plugin.py` contributes `api.app_root` too —
-  so `import core.store`/`core.paths`/`core.extensibility.config_store`
-  resolve inside Maya's Python).
+  `api.app_root` to the shared bridge (so `import core.store`/`core.paths`/
+  `core.extensibility.config_store` resolve inside Maya's Python).
 - `maya-scripts/PublishApi/repo_paths.py`:
   - `find_ukorehub_root()` — locates the UkoreHub install root from this
-    file's own position on disk (`parents[5]` — see the UkoreBrowser
-    plugin's own `repo_context.py` for the sibling version of this trick,
-    one level deeper because of its extra `core/` subfolder).
+    file's own position on disk (`parents[5]`).
   - `get_active_repo()` — `(project, repo, repo_path)` for whichever repo
     UkoreHub currently has active, constructing `LocalConfigStore`/
     `MetadataStore` straight off disk (Maya's Python has no `PluginAPI`
@@ -206,6 +202,6 @@ Editor's graph.
 ## Working on this plugin
 
 Read/edit only files under this folder unless the change is specifically
-about how `MayaPublisher`/`UkoreBrowser` *consume* this API (a genuine
+about how `MayaPublisher` *consumes* this API (a genuine
 cross-plugin task, not a reason to read them by default) — see the
 `ukorehub-plugin` skill.

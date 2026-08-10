@@ -3,7 +3,7 @@ pipeline metadata (Project Editor's declared pipeline connections), never a
 filesystem-path convention like the old '.../share/...' -> '.../publish/...'
 string swap ModelPublisher/RigPublisher/AnimationPublisher used to each
 carry their own copy of. This is the single source of truth all three of
-those plugins (and UkoreBrowser) resolve a publish root through.
+those plugins resolve a publish root through.
 
 As of 2026-07-19, Project Editor only has ONE kind of pipeline connection
 ("Connect Pipeline Input Path...", stored under a repo's own
@@ -26,10 +26,7 @@ def find_ukorehub_root() -> Path:
     disk. This file lives at
     plugins/repo_internal/PublishApi/maya-scripts/PublishApi/repo_paths.py — five
     parents up is the UkoreHub repo root. Works without any IPC because
-    this tool's own files are physically inside the UkoreHub install, the
-    same trick plugins/repo_internal/UkoreBrowser/.../core/repo_context.py uses
-    (that one needs parents[6] instead — it has an extra core/ subfolder
-    between the package root and this same kind of file)."""
+    this tool's own files are physically inside the UkoreHub install."""
     return Path(__file__).resolve().parents[5]
 
 
@@ -68,9 +65,7 @@ def get_pipeline_refs() -> list[dict]:
     connection the active repo has made via "Connect Pipeline Input
     Path..." in Project Editor, read off the active Repo's own
     plugin_data["project_editor"] (core/models.py's Repo, populated by
-    get_active_repo() above) — same field
-    plugins/repo_internal/UkoreBrowser/.../core/repo_context.py's
-    get_pipeline_root_tabs() already relies on. Returns [] if there's no
+    get_active_repo() above). Returns [] if there's no
     active repo."""
     _, repo, _ = get_active_repo()
     if repo is None:

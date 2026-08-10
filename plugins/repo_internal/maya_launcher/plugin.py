@@ -19,7 +19,7 @@ PLUGIN_ID = "maya_launcher"
 SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
 # Convention-only string match with every Maya env-contributing plugin
 # (plugins/core/AdvancedSkeleton, cache/plugins/MayaNgSkin, .../MayaToolkit,
-# .../mGear, .../UkoreBrowser, .../DreamwallPicker, .../StudioLibrary,
+# .../mGear, .../DreamwallPicker, .../StudioLibrary,
 # .../PublishApi, .../MayaPublisher) — each writes its own contributions[tool_id] entry
 # (plus labels[tool_id]) into this shared, studio-tracked PluginConfigStore
 # at register() time. This plugin is a pure bridge reader: it owns
@@ -31,8 +31,8 @@ SOFTWARE_LINKER_PLUGIN_ID = "software_linker"
 MAYA_ENV_BRIDGE_PLUGIN_ID = "maya_launcher_env_bridge"
 ANY_VERSION = "*"
 # PublishApi is pure infrastructure — no artist-facing behavior or UI of
-# its own, just path-resolution/versioning other tools (UkoreBrowser,
-# MayaPublisher) import directly. Its env
+# its own, just path-resolution/versioning other tools (MayaPublisher)
+# import directly. Its env
 # contribution is force-included below regardless of whether it's checked
 # under Repository Setting > Enable Plugin: there's no legitimate reason a
 # repo would ever want it disabled, and doing so only breaks whatever else
@@ -218,7 +218,7 @@ def _prepare_env_and_plugins(api, repo, maya_version: str) -> tuple[dict, list[s
 
     Which tools' contributions actually apply is gated by
     `repo.required_plugin_ids` — Repository Setting > Enable Plugin — since
-    every contributing tool (MayaNgSkin, MayaToolkit, UkoreBrowser, ...) is
+    every contributing tool (MayaNgSkin, MayaToolkit, ...) is
     its own plugin (plugins/repo_internal/<Name>/ or cache/plugins/<Name>/)
     with a manifest id that matches its bridge tool_id exactly (see this
     plugin's README). This

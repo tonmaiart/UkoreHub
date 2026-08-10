@@ -11,11 +11,9 @@ import subprocess
 import re
 import json
 import maya.mel as mel
-from importlib import reload
-from tmlib.core import File
 from tmlib.module.PySide import QtWidgets
 
-from UkoreMaya.core import utils, Plugin
+from UkoreMaya.core import utils
 
 
 # --------------------------------------------------------------------
@@ -38,13 +36,6 @@ def selected_to_blank_dict():
 
     print(result)
     return result
-
-
-def auto_launch_ukore_file_browser():
-    reload(Plugin)
-    Plugin.reload_scripts()
-    if not cmds.file(query=True, sceneName=True):
-        File.launch("UkoreBrowser")
 
 
 # ------------------------------------------------------------

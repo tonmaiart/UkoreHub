@@ -48,7 +48,7 @@ _CUSTOM_PATHS_SETTINGS_KEY = "project_editor_custom_paths"
 # The built-in CATEGORY_REPO tabs that make up "Repository" under the
 # Repo Setting (Dev) top tab — everything else registered under
 # CATEGORY_REPO (a plugin's own settings tab, e.g. Maya Launcher,
-# MayaPublisher, UkoreBrowser, ...) falls under "Plugins" instead.
+# MayaPublisher, ...) falls under "Plugins" instead.
 # Hardcoded rather than a new SettingsTabSpec field since there are only
 # ever these four built-ins to name — same convention the now-retired
 # RepoSettingsPanel used.

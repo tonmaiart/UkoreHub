@@ -17,7 +17,7 @@ class MayaLauncherSettingsPage(QWidget):
 
     Per-tool env enable/disable ("Enabled Tools for Active Repo") used to
     live here too, backed by its own RepoToolsStore opt-out toggle — removed
-    2026-08-05. Every Maya tool (MayaNgskin, MayaToolkit, UkoreBrowser, ...)
+    2026-08-05. Every Maya tool (MayaNgskin, MayaToolkit, ...)
     is its own plugins/repo_internal/<Name>/ plugin now, each already
     toggleable per repo via Repository Setting > Enable Plugin
     (Repo.required_plugin_ids), so a second, separate toggle for the same

@@ -4,9 +4,8 @@ in Explorer's RepoBrowserWidget.
 Persisted under this app's own <repo_root>/cache/explorer/ (a UkoreHub-local,
 gitignored, per-machine cache — see /cache/ in this app's own .gitignore),
 keyed by repo id + OS username, rather than inside the browsed repo's own
-working tree. Used to live at <browsed_repo_root>/.ukorehub/ instead (same
-convention as plugins/repo_internal/UkoreBrowser/maya-scripts/UkoreBrowser/core/browser_config.py's
-BrowserConfig) but that made it a file inside a *production* repo's working
+working tree. Used to live at <browsed_repo_root>/.ukorehub/ instead but
+that made it a file inside a *production* repo's working
 tree, at the mercy of that repo's own .gitignore — several studio repos
 didn't exclude .ukorehub/, so this list was getting committed to their
 history. Moving it into UkoreHub's own cache/ sidesteps that entirely: it

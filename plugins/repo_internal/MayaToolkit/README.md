@@ -40,7 +40,3 @@ when it actually launches Maya. No direct import relationship with
 that plugin's README for the full bridge shape). Repository Setting >
 Enable Plugin (`Repo.required_plugin_ids`) is what lets a studio admin
 disable this tool per-repo; this plugin always contributes unconditionally.
-
-**`plugins/repo_internal/UkoreBrowser/` still depends on this plugin** staying
-enabled — it imports `tmlib`/`UkoreMaya` by name rather than vendoring
-them itself. See that plugin's README's "External dependencies" section.

@@ -36,10 +36,11 @@ restored from.
   required Maya `Program`). No longer owns any per-tool enable/disable UI
   (see "Per-repo tool gating" below).
 
-**The 7 nested tool payload folders that used to live here
+**The 6 nested tool payload folders that used to live here
 (`AdvancedSkeleton/`, `MayaNgskin/`, `MayaToolkit/`, `mGear/`,
-`UkoreBrowser/`, `DreamwallPicker/`, `StudioLibrary/`) all moved to their
-own top-level `plugins/core/<Name>/` folders on 2026-07-19.** Each is
+`DreamwallPicker/`, `StudioLibrary/`)
+all moved to their own top-level `plugins/core/<Name>/` folders on
+2026-07-19.** Each is
 its own plugin now (own `manifest.json` + `plugin.py`), contributing to
 the shared bridge described below instead of being read directly off disk
 by this plugin. See each one's own README for its specific vendored
@@ -54,7 +55,7 @@ shared "pick a Type, then a Ticket" window. All three were built on
 (itself one of these bridge-contributing tool plugins) that resolves a
 publish destination from the active repo's Project Editor pipeline
 metadata and creates versioned publish folders — the single source of
-truth those three, and eventually `UkoreBrowser`, shared instead of each
+truth those three shared instead of each
 carrying its own copy of that logic. **2026-08-05**: since the three
 plugins turned out to be near-identical (same `plugin.py`/`interface.py`/
 `ui.ui`, only the export logic differed), they were merged back into one
@@ -100,10 +101,9 @@ after every plugin has finished registering (see `core/extensibility/loader.py`)
 | `cache/plugins/MayaNgSkin` | `PYTHONPATH` + versioned `MAYA_PLUG_IN_PATH` |
 | `plugins/repo_internal/MayaToolkit` | `PYTHONPATH` + flat `MAYA_PLUG_IN_PATH` |
 | `plugins/core/mGear` | `MAYA_MODULE_PATH` + `MGEAR_SHIFTER_COMPONENT_PATH` |
-| `plugins/repo_internal/UkoreBrowser` | `PYTHONPATH` (its own `maya-scripts/` **and** `api.app_root`, so `import core.store`/`core.paths` resolves inside Maya's Python — that's how its vendored `core/repo_context.py` talks to UkoreHub's own Project/Repo model) |
 | `plugins/core/DreamwallPicker` | `PYTHONPATH` |
 | `plugins/core/StudioLibrary` | `PYTHONPATH` |
-| `plugins/repo_internal/PublishApi` | `PYTHONPATH` (its own `maya-scripts/` **and** `api.app_root`, same reason as `UkoreBrowser` above) |
+| `plugins/repo_internal/PublishApi` | `PYTHONPATH` (its own `maya-scripts/` **and** `api.app_root`, so `import core.store`/`core.paths` resolves inside Maya's Python — that's how it talks to UkoreHub's own Project/Repo model) |
 | `plugins/repo_internal/MayaPublisher` | `PYTHONPATH` |
 | `plugins/repo_internal/UkorePlayblast` | `PYTHONPATH` |
 
@@ -152,8 +152,7 @@ migrated — nothing read that file anymore, so the local copy was deleted
 
 **`plugins/repo_internal/PublishApi` is never gated by this at all** — it's
 pure infrastructure (no artist-facing behavior or UI of its own, only
-path-resolution/versioning functions other tools import directly:
-`UkoreBrowser`, `MayaPublisher`), so
+path-resolution/versioning functions `MayaPublisher` imports directly), so
 there's no legitimate reason to ever disable it per-repo. `open_maya_file`
 force-includes its contribution regardless of `repo.required_plugin_ids`
 (`PUBLISH_API_TOOL_ID` in `plugin.py`) — unlike the pre-2026-08-05

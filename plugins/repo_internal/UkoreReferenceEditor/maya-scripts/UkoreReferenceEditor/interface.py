@@ -461,18 +461,7 @@ class _EntryTable(QtWidgets.QWidget):
         )
         row_layout.addWidget(repath_search_button)
 
-        browse_button = QtWidgets.QPushButton("Open in Ukore Browser")
-        browse_button.clicked.connect(lambda _checked=False, r=row: self._open_in_browser(r))
-        row_layout.addWidget(browse_button)
-
         return container
-
-    def _open_in_browser(self, row: int):
-        entry = self._entries[row]
-        path = getattr(entry, self._path_attr)
-        print(f"{_LOG_PREFIX} [{self._label}] Open in Ukore Browser: {path!r}")
-        ok = core.open_in_ukore_browser(path)
-        print(f"{_LOG_PREFIX} [{self._label}] Open in Ukore Browser returned {ok}")
 
     def _run_action(self, row: int, target_path: Path, kind: str):
         entry = self._entries[row]

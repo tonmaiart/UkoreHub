@@ -232,10 +232,9 @@ store always exists.
 
 Reserve `plugin_config_store(shared=True)` for data that's genuinely
 studio-wide or spans projects (a global catalog, ...) —
-`plugins/core/project_editor/pipeline_store.py`,
-`plugins/repo_internal/MayaPublisher/interface/publish_mode_store.py`, and
-`plugins/repo_internal/UkoreBrowser/settings_page.py` are the worked
-examples of the former.
+`plugins/core/project_editor/pipeline_store.py` and
+`plugins/repo_internal/MayaPublisher/interface/publish_mode_store.py` are
+the worked examples of the former.
 
 ## `SectionSpec.wire`/`UICommandService`: cross-plugin UI coordination, not imports
 
