@@ -23,12 +23,16 @@ from core.extensibility.loader import DiscoveredPlugin, plugin_source
 from core.vcs.git_service import GitService
 from core.os_utils import open_in_file_explorer
 from interface.shared.widget_helpers import confirm_action
+from plugins.core.ExternalPlugins import sync_engine
 from plugins.core.ExternalPlugins.catalog_entry_dialog import CatalogEntryDialog
 from plugins.core.ExternalPlugins.catalog_store import CatalogEntry, ExternalPluginCatalog
+from plugins.core.ExternalPlugins.sync_status_store import ExternalPluginSyncStatusStore
 
 _NOT_CLONED = "Not cloned"
 _NOT_CHECKED = "Not checked yet"
 _BROKEN_GIT = "Broken .git directory (not a valid clone) — delete the folder and Clone again"
+_UPDATE_CONFLICT = "⚠ Update Conflict"
+_PENDING_RESTART = "Pending Restart — cloned/updated this session, restart UkoreHub to load it"
 
 
 @dataclass
@@ -42,8 +46,9 @@ class ExternalPluginsPage(QWidget):
     """Settings > Developer tab: every known cache/plugins/ repo plugin
     (catalogued or just found on disk), whether it's behind its remote,
     and Clone/Pull actions. See this plugin's own README for why this
-    runs everything synchronously (with a wait cursor) instead of a
-    background QThread.
+    page's own manual actions run synchronously (with a wait cursor)
+    instead of a background QThread — the separate auto-sync engine
+    (below) does use one.
 
     Each catalogued row also shows its own manifest's `requires` (only
     known once the entry is actually cloned — resolved via `plugin_catalog`,
@@ -56,7 +61,15 @@ class ExternalPluginsPage(QWidget):
     choice on every project's Requirements & Plugins tab — see this
     plugin's own README's "Used by this Project" section for the
     per-project filter this page tried and dropped the same day it was
-    added."""
+    added.
+
+    Entries the active repo currently requires are also cloned/updated
+    automatically at app start and on repo switch, off the UI thread — see
+    sync_engine.py/sync_worker.py and this plugin's own README's "Auto-sync
+    engine". sync_status_store carries that background engine's last result
+    for each entry across Settings-dialog opens (Update Conflict / a failed
+    auto-clone/-update), so a stuck plugin shows up here even if this tab
+    was never opened while the sync itself ran."""
 
     def __init__(
         self,
@@ -66,11 +79,13 @@ class ExternalPluginsPage(QWidget):
         plugins_root: Path,
         catalog: ExternalPluginCatalog,
         plugin_catalog: list[DiscoveredPlugin],
+        sync_status_store: ExternalPluginSyncStatusStore,
     ):
         super().__init__(parent)
         self.git_service = git_service
         self.plugins_root = Path(plugins_root)
         self.catalog = catalog
+        self.sync_status_store = sync_status_store
         self._plugin_by_id = {plugin.manifest.id: plugin for plugin in plugin_catalog}
         self._plugin_by_folder = {
             plugin.dir_path.name: plugin for plugin in plugin_catalog if plugin_source(plugin) == "repo"
@@ -81,7 +96,9 @@ class ExternalPluginsPage(QWidget):
             "Every external (repo) plugin known to the studio — cloned into cache/plugins/ or not yet. "
             "Add one that hasn't been cloned here yet, then Clone it; use Check for Updates to see which "
             "cloned ones are behind their remote. Every entry here is offered as a choice on every project's "
-            "Requirements & Plugins tab."
+            "Requirements & Plugins tab. Entries a repo currently requires clone/update themselves at app "
+            "start and on repo switch — Update Conflict here means an automatic update hit a merge conflict "
+            "and needs a dev to resolve it by hand (Open Git Directory)."
         )
         description.setWordWrap(True)
 
@@ -128,7 +145,7 @@ class ExternalPluginsPage(QWidget):
 
         rows: list[_Row] = []
         for entry in catalogued:
-            rows.append(_Row(entry=entry, catalogued=True, status=self._local_status(entry.folder_name)))
+            rows.append(_Row(entry=entry, catalogued=True, status=self._local_status(entry)))
 
         if self.plugins_root.exists():
             for child in sorted(self.plugins_root.iterdir()):
@@ -137,19 +154,37 @@ class ExternalPluginsPage(QWidget):
                 if not self.git_service.is_cloned(child):
                     continue
                 git_url = self.git_service.get_remote_url(child) if self.git_service.is_repo_root(child) else ""
-                status = _NOT_CHECKED if self.git_service.is_repo_root(child) else _BROKEN_GIT
                 ad_hoc_entry = CatalogEntry(id="", name=f"{child.name} (not catalogued)", git_url=git_url, folder_name=child.name)
-                rows.append(_Row(entry=ad_hoc_entry, catalogued=False, status=status))
+                rows.append(_Row(entry=ad_hoc_entry, catalogued=False, status=self._local_status(ad_hoc_entry)))
 
         self._rows = rows
         self._render()
 
-    def _local_status(self, folder_name: str) -> str:
-        local_path = self.plugins_root / folder_name
+    def _local_status(self, entry: CatalogEntry) -> str:
+        """Fast, local-only status for one row — folded in with whatever
+        the background auto-sync engine (sync_engine.py) last recorded for
+        this entry in sync_status_store, so a conflict/failure it hit while
+        this tab was closed still shows up the next time it's opened. An
+        ad-hoc "(not catalogued)" entry has entry.id == "" — sync_status_store
+        never has anything for that key, so these rows only ever get the
+        purely-local part of this (Not Cloned/Broken/Conflict/Pending
+        Restart), same as before this engine existed."""
+        local_path = self.plugins_root / entry.folder_name
+        sync_status = self.sync_status_store.get(entry.id) if entry.id else None
+
         if not self.git_service.is_cloned(local_path):
+            if sync_status is not None and sync_status.status == sync_engine.STATUS_ERROR:
+                return f"{_NOT_CLONED} — last auto-clone attempt failed: {sync_status.message}"
             return _NOT_CLONED
         if not self.git_service.is_repo_root(local_path):
             return _BROKEN_GIT
+        if self.git_service.has_unresolved_merge(local_path):
+            message = sync_status.message if sync_status is not None else ""
+            return f"{_UPDATE_CONFLICT}{f' — {message}' if message else ''}"
+        if entry.folder_name not in self._plugin_by_folder:
+            return _PENDING_RESTART
+        if sync_status is not None and sync_status.status == sync_engine.STATUS_ERROR:
+            return f"Auto-update failed: {sync_status.message}"
         return _NOT_CHECKED
 
     def _render(self) -> None:
@@ -284,7 +319,17 @@ class ExternalPluginsPage(QWidget):
         local_path = self.plugins_root / row.entry.folder_name
         if not self._require_valid_clone(local_path, "Pull"):
             return
-        self._run_with_wait_cursor(lambda: self.git_service.pull(local_path), "Pull")
+
+        def action() -> None:
+            self.git_service.pull(local_path)
+            # A successful manual Pull clears any stale conflict/error the
+            # background auto-sync engine had recorded — otherwise the
+            # Update Conflict badge would linger until the next auto-sync
+            # run happens to touch this same entry again.
+            if row.entry.id:
+                self.sync_status_store.clear(row.entry.id)
+
+        self._run_with_wait_cursor(action, "Pull")
 
     def _on_open_git_directory(self) -> None:
         row = self._selected_row()
@@ -359,6 +404,13 @@ class ExternalPluginsPage(QWidget):
                     continue
                 if not self.git_service.is_repo_root(local_path):
                     row.status = _BROKEN_GIT
+                    continue
+                if self.git_service.has_unresolved_merge(local_path):
+                    # Leave the conflict badge as-is rather than overwriting
+                    # it with an ahead/behind check that doesn't mean much
+                    # mid-merge — same conflict-first precedence _local_status
+                    # uses (see "Auto-sync engine" in this plugin's README).
+                    row.status = self._local_status(row.entry)
                     continue
                 row.status = "Checking..."
                 self._render()

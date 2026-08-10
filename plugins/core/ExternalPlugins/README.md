@@ -6,19 +6,39 @@ Settings > Developer > "External Plugins" — a studio-wide catalog of
 an ahead/behind check against each one's remote. Built because
 `core/extensibility/README.md` notes there's no auto-fetch/clone
 mechanism anywhere else — every `cache/plugins/` entry today was cloned
-by hand.
+by hand. A background auto-sync engine (see "Auto-sync engine" below)
+now handles the common case of that by itself — this page's manual
+actions remain for everything the engine can't or shouldn't do alone
+(first-ever clone of a brand new catalog entry, adopting an
+auto-detected folder, resolving a conflict).
 
 - `manifest.json` — plugin id `external_plugins`.
-- `catalog_store.py` — `CatalogEntry` (`id, name, git_url, folder_name`) +
-  `ExternalPluginCatalog`, a thin wrapper around a shared (`shared=True`)
-  `PluginConfigStore` (`data/plugins/core/external_plugins.json`,
+- `catalog_store.py` — `CatalogEntry` (`id, name, git_url, folder_name,
+  plugin_id`) + `ExternalPluginCatalog`, a thin wrapper around a shared
+  (`shared=True`) `PluginConfigStore` (`data/plugins/core/external_plugins.json`,
   git-tracked so every machine sees the same catalog after a self-update
-  pull) — `list_entries()/add_entry()/edit_entry()/delete_entry()`.
-  `folder_name` must be a single safe path segment: it's used directly as
-  `cache/plugins/<folder_name>`.
+  pull) — `list_entries()/add_entry()/edit_entry()/delete_entry()/
+  update_plugin_id()`. `folder_name` must be a single safe path segment:
+  it's used directly as `cache/plugins/<folder_name>`. `plugin_id` is a
+  cache of "what `PluginManifest.id` does this entry produce once cloned",
+  unknown until some machine's auto-sync engine or the Requirements &
+  Plugins manual clone-on-check flow backfills it — see "Auto-sync engine"
+  below for why this exists.
 - `catalog_entry_dialog.py` — `CatalogEntryDialog`: Name / Git URL /
   Folder Name fields for Add/Edit, same shape as `interface/settings/
-  program_dialog.py`'s `ProgramDialog`.
+  program_dialog.py`'s `ProgramDialog`. Never exposes `plugin_id` — it's
+  derived/cached, not something a human sets.
+- `sync_engine.py` — Qt-free sync logic: `resolve_required_entries()`
+  (which catalog entries the active repo's `Repo.required_plugin_ids`
+  resolves to, via each entry's `plugin_id`) and `sync_entry()`
+  (clone-if-missing / pull-if-present / conflict-check for one entry).
+- `sync_worker.py` — `ExternalPluginSyncWorker(QThread)`: runs
+  `sync_engine` for a batch of entries sequentially, off the UI thread,
+  emitting `entry_synced`/`backfill_ready` signals rather than writing
+  anywhere directly.
+- `sync_status_store.py` — `ExternalPluginSyncStatusStore`: per-machine
+  (`shared=False`) record of the sync engine's last conflict/error result
+  per entry, so it survives until someone opens this tab.
 - `external_plugins_page.py` — `ExternalPluginsPage`: the tab itself.
   Lists every catalog entry plus any `cache/plugins/*` folder that's
   already cloned but not yet in the catalog (auto-detected via
@@ -28,8 +48,13 @@ by hand.
   actually a valid repo root (`GitService.is_repo_root` returns False —
   e.g. an interrupted/broken clone) shows as its own distinct status
   instead of being treated as usable — see "Why `is_repo_root`, not just
-  `is_cloned`" below. Add/Edit/Delete manage the catalog itself; Clone/Pull
-  act on the selected row via `GitService.clone`/`pull`; "Check for
+  `is_cloned`" below. Every row's status (`_local_status`) also folds in
+  the auto-sync engine's last result for that entry — `Update Conflict`,
+  `Pending Restart`, or a failed auto-clone/-update message — see
+  "Auto-sync engine" below. Add/Edit/Delete manage the catalog itself;
+  Clone/Pull act on the selected row via `GitService.clone`/`pull` (a
+  successful manual Pull also clears any stale conflict/error the engine
+  had recorded for that entry); "Check for
   Updates" runs `GitService.fetch` + the new `get_ahead_behind` (see
   `core/README.md`) against every cloned row and updates its status text
   (`Up to date` / `N commit(s) behind` / `N commit(s) ahead (not pushed)`
@@ -39,7 +64,9 @@ by hand.
   `Up to date`), since a Pull alone can't fix that; "Open Git Directory"
   opens the selected row's local clone
   in the OS file explorer via `core/os_utils.py`'s `open_in_file_explorer`
-  (no-op with an info message if it isn't cloned yet); "Stage Untracked &
+  (no-op with an info message if it isn't cloned yet — also how a dev
+  reaches an `Update Conflict` row to resolve it, this page builds no
+  in-app conflict-resolution UI of its own); "Stage Untracked &
   Push" stages every untracked file (`GitService.stage_paths`), commits
   with a message typed into a plain `QInputDialog` prompt, then pushes
   (`GitService.commit`/`push`) — a bulk "get this repo plugin's new files
@@ -50,7 +77,64 @@ by hand.
   `ExternalPluginsPage` per `page_factory` call — same "no long-lived page,
   a new one every time Settings is opened" convention every Settings tab
   uses (see `interface/settings/settings_view.py`'s `SettingsView`
-  docstring), so there's nothing here to wire up for shutdown cleanup.
+  docstring). Also builds `_SyncController` once per app session — see
+  "Auto-sync engine" below — which is the one long-lived thing in this
+  plugin.
+
+## Auto-sync engine
+
+A repo's required `cache/plugins/` entries clone/update themselves
+automatically at app start and on every repo switch, instead of waiting
+for someone to open this tab and click Clone/Pull by hand.
+`plugin.py`'s `register(api)` subscribes `_SyncController.on_lifecycle_event`
+to both `api.on_app_start`/`api.on_repo_changed` (`interface/plugin_api.py`,
+fired from `interface/main_window.py`'s `_start_app`/`_set_active_repo`) —
+this is the entire lifecycle wiring; nothing outside this plugin folder
+needed to change.
+
+- **Resolving "required but never cloned here"**: `Repo.required_plugin_ids`
+  stores a plugin's *manifest id*, only learned by reading `manifest.json`
+  after a clone exists (see `interface/repo_settings/
+  requirements_and_plugins_page.py`'s `_on_catalog_entry_checked`). A
+  machine that's never cloned a given entry has no other way to map a
+  required manifest id back to that entry's `git_url`/`folder_name` — so
+  `CatalogEntry.plugin_id` caches that mapping, backfilled the first time
+  `sync_engine.resolve_required_entries()` sees the entry already
+  discovered this session (matched by `folder_name`, via the same
+  `plugin_catalog` `loader.discover_plugins()` already produced at
+  startup — no extra manifest.json parsing) and written back through the
+  shared catalog store, so once any one machine backfills it, every other
+  machine's next catalog pull can resolve it too. A required manifest id
+  with no `plugin_id` mapping anywhere yet just doesn't auto-clone until
+  some machine backfills it (e.g. via the existing manual checkbox flow) —
+  degrades gracefully, never crashes.
+- **Runs on a background thread, not this page's synchronous pattern**:
+  see "Why no background thread" below — that section is about this
+  page's own deliberate, one-at-a-time button clicks, which is a different
+  situation from an automatic sync firing on every app start and repo
+  switch. `ExternalPluginSyncWorker` (`sync_worker.py`) is a real `QThread`,
+  modeled on `plugins/core/submit`'s worker classes and
+  `plugins/core/project_editor/required_repo_clone_worker.py`'s "QThread
+  wraps a sequential clone/pull batch" shape. It only ever emits signals —
+  `_SyncController` (in `plugin.py`) is the only thing that writes to the
+  catalog (`update_plugin_id`) or the status store, and always on the main
+  thread (Qt queues a cross-thread signal onto the receiving object's own
+  thread automatically), so there's no locking anywhere in this engine.
+- **Never overlaps two syncs on the same folder**: `_SyncController` runs
+  at most one `ExternalPluginSyncWorker` at a time. A trigger that arrives
+  mid-run replaces `_pending_context` (keeping only the latest) instead of
+  starting a second worker; the in-flight worker's `finished` signal starts
+  exactly one more run for that latest context once it completes — so a
+  rapid double repo-switch still eventually syncs the repo actually left
+  active, without two `git pull`s ever racing on the same
+  `cache/plugins/<folder>` clone.
+- **Conflict detection reuses existing `GitService` primitives** —
+  `has_unresolved_merge()` (checks `.git/MERGE_HEAD`) and the same
+  `GitOperationError`-on-failure contract `pull()` already had. `sync_entry()`
+  never force-pushes, aborts a merge, or discards anything: a conflict is
+  left exactly as git leaves it, reported as `Update Conflict`, and
+  re-detected (not re-attempted) on every later sync until a dev resolves
+  it by hand via "Open Git Directory".
 
 ## Every catalogued entry is a choice for every project
 
@@ -126,7 +210,7 @@ fails this check shows `Broken .git directory (not a valid clone) —
 delete the folder and Clone again` rather than being silently treated as
 a normal clone.
 
-## Why no background thread
+## Why no background thread (for this page's own manual actions)
 
 Opening the tab only does a fast local filesystem pass (cloned vs. not
 cloned) — no network call. "Check for Updates" and Clone/Pull do call
@@ -139,3 +223,11 @@ responsive) rather than a `QThread`. Unlike `SectionSpec`,
 would mean extending that shared framework for a handful of small repo
 clones that don't need it. If the catalog grows large enough that this
 becomes a real wait, that's the trigger to revisit, not before.
+
+This reasoning is specific to *this page's* deliberate, one-click-at-a-time
+actions (this tab is rarely open, and each action is a single explicit
+click). The auto-sync engine (see "Auto-sync engine" above) is a different
+situation — it fires unattended on every app start and repo switch and may
+need to touch several plugins over the network, so it deliberately does use
+a real `QThread` (`sync_worker.py`) rather than repeating this page's
+synchronous pattern.

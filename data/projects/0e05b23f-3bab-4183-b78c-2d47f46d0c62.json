@@ -7,7 +7,7 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-10T05:17:33.877697+00:00",
+      "last_synced": "2026-08-10T08:48:42.900301+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
@@ -31,16 +31,11 @@
       ],
       "required_plugin_ids": [
         "maya_launcher",
-        "maya_publisher",
         "maya_toolkit",
         "publish_api",
-        "ukore_browser",
-        "ukore_playblast",
-        "ukore_reference_editor",
-        "banana_sketch",
-        "dreamwall_picker",
         "studio_library",
-        "ukore_shot"
+        "ukore_reference_editor",
+        "ukore_browser"
       ],
       "plugin_data": {
         "project_editor": {
@@ -463,20 +458,20 @@
         "maya_toolkit": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\Test\\cache\\plugins\\MayaToolkit\\maya-scripts"
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaToolkit\\maya-scripts"
             ]
           },
           "MAYA_PLUG_IN_PATH": {
             "*": [
-              "C:\\Tonmai\\Test\\cache\\plugins\\MayaToolkit\\maya-plug-ins"
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaToolkit\\maya-plug-ins"
             ]
           }
         },
         "publish_api": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\Test\\cache\\plugins\\PublishApi\\maya-scripts",
-              "C:\\Tonmai\\TonmaiWorkspace\\app"
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\PublishApi\\maya-scripts",
+              "C:\\Tonmai\\UkoreHubDev\\app"
             ]
           }
         },
@@ -498,8 +493,8 @@
         "ukore_reference_editor": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\Test\\cache\\plugins\\UkoreReferenceEditor\\maya-scripts",
-              "C:\\Tonmai\\TonmaiWorkspace\\app"
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\UkoreReferenceEditor\\maya-scripts",
+              "C:\\Tonmai\\UkoreHubDev\\app"
             ]
           }
         }
