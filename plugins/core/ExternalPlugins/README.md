@@ -60,15 +60,22 @@ Added 2026-08-10. This catalog is studio-wide (every entry is visible to
 every project), but not every project actually needs every repo plugin — a
 `cache/plugins/AdvancedSkeleton` clone one rigging-heavy project needs has no
 business showing up as an option for an unrelated project's repos. Each
-catalogued row (not the auto-detected "(not catalogued)" ones — nothing to
-select until they're adopted into the catalog) is checkable, labeled "Used by
-this Project": checking/unchecking it self-persists immediately (no Save
-button, same convention as every other list here) to the *active* project's
-own `Project.plugin_data["external_plugins"]["selected_entry_ids"]` (a
-`list[str]` of catalog entry ids) via `MetadataStore.get_project_plugin_data`/
-`set_project_plugin_data` — both already generic, so this needed no
-`core/models.py` or `core/storage/metadata_store.py` changes. If no project
-is active yet, the checkbox reverts and an info dialog explains why.
+catalogued entry (not the auto-detected "(not catalogued)" rows — nothing to
+mark until they're adopted into the catalog) tracks whether it's "used by"
+the *active* project, in `Project.plugin_data["external_plugins"]
+["selected_entry_ids"]` (a `list[str]` of catalog entry ids) via
+`MetadataStore.get_project_plugin_data`/`set_project_plugin_data` — both
+already generic, so this needed no `core/models.py` or
+`core/storage/metadata_store.py` changes.
+
+This was originally a manual per-row checkbox; changed same day after
+feedback that it was a redundant click — adding a catalog entry (Add) or
+adopting an auto-detected on-disk folder (Edit on a "(not catalogued)" row)
+only ever happens because the active project needs it, so
+`ExternalPluginsPage._auto_select_entry` now marks the entry "used by" the
+active project automatically right after either action, with no separate
+toggle. A no-op if no project is active yet — there's nothing to persist
+the selection against.
 
 `interface/repo_settings/requirements_and_plugins_page.py`'s External column
 (Settings > Repo Setting (Dev) > Requirements & Plugins) reads this same
@@ -100,17 +107,15 @@ cloned and its `manifest.json` declares `requires` — resolved via
 `PluginAPI.plugin_catalog` (the same `discover_plugins()` result the rest of
 the app uses; threaded into this page's constructor by `plugin.py`), not by
 this page re-parsing `manifest.json` itself. An entry that isn't cloned yet
-shows no requires text — there's no manifest to read until it is. Checking
-"Used by this Project" on an entry whose requirements resolve to *other*
-catalogued, cloned External entries prompts "Mark them as used by this
-project too?" before persisting (declining just reverts that one checkbox) —
-the same requires-closure-and-confirm shape
-`interface/repo_settings/requirements_and_plugins_page.py`'s
-`_confirm_and_enable_requirements` already uses at the per-repo tier, applied
-here at the per-project selection tier instead. A requirement that resolves
-to a Core/Internal plugin, or to a plugin this machine hasn't discovered at
-all, has nothing to cascade-select on this page — Core is always on and
-Internal is opted into per-repo, not per-project.
+shows no requires text — there's no manifest to read until it is.
+`_auto_select_entry` also cascades: an entry auto-selected whose
+requirements resolve to *other* catalogued, cloned External entries marks
+those as "used by" the project too, silently (no confirm prompt — see "Used
+by this Project" above for why this page dropped the manual-toggle/confirm
+shape entirely). A requirement that resolves to a Core/Internal plugin, or
+to a plugin this machine hasn't discovered at all, has nothing to
+cascade-select on this page — Core is always on and Internal is opted into
+per-repo, not per-project.
 
 ## Why `is_repo_root`, not just `is_cloned`
 

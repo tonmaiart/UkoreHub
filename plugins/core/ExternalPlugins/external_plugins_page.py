@@ -50,24 +50,29 @@ class ExternalPluginsPage(QWidget):
     runs everything synchronously (with a wait cursor) instead of a
     background QThread.
 
-    Catalogued rows are also checkable ("Used by this Project") — persisted
-    to the active Project's own `Project.plugin_data["external_plugins"]
+    Adding a new catalog entry, or adopting an auto-detected on-disk
+    folder into the catalog, automatically marks it "used by" the active
+    Project — persisted to `Project.plugin_data["external_plugins"]
     ["selected_entry_ids"]` (via MetadataStore.get/set_project_plugin_data,
     already generic — no core/ changes needed for this). This is the
     project-level tier `interface/repo_settings/requirements_and_plugins_page.py`'s
     External column filters against, so a repo plugin cloned for one
     project doesn't show up as a choice for every other project on a
-    shared studio machine. Un-catalogued (auto-detected, not yet adopted)
-    rows get no checkbox — nothing to select until they're added to the
-    catalog.
+    shared studio machine. There's no manual toggle for this — adding an
+    entry here only ever happens because the active project needs it, so
+    a separate checkbox click would just be a redundant confirmation of
+    something already decided (2026-08-10, replacing the earlier
+    "Used by this Project" checkbox after exactly this feedback).
 
     Each catalogued row also shows its own manifest's `requires` (only
     known once the entry is actually cloned — resolved via `plugin_catalog`,
     the same discover_plugins() result the rest of the app uses, so no
-    manual manifest.json parsing here). Checking "Used by this Project" on
-    an entry that requires other catalog entries prompts to mark those as
-    used too, mirroring RequirementsAndPluginsPage's own requires-closure
-    prompt at the per-repo tier."""
+    manual manifest.json parsing here). Adding/adopting an entry whose
+    manifest already declares `requires` (i.e. it was already cloned when
+    adopted) auto-marks those required catalog entries as used too, same
+    idea as RequirementsAndPluginsPage's own requires-closure prompt at
+    the per-repo tier, just without a confirmation prompt here — see
+    `_auto_select_entry`."""
 
     def __init__(
         self,
@@ -91,19 +96,17 @@ class ExternalPluginsPage(QWidget):
             plugin.dir_path.name: plugin for plugin in plugin_catalog if plugin_source(plugin) == "repo"
         }
         self._rows: list[_Row] = []
-        self._loading_selection = False
 
         description = QLabel(
             "Every external (repo) plugin known to the studio — cloned into cache/plugins/ or not yet. "
             "Add one that hasn't been cloned here yet, then Clone it; use Check for Updates to see which "
-            "cloned ones are behind their remote. Check \"Used by this Project\" so this entry becomes a "
-            "choice on Requirements & Plugins for the active project's repos."
+            "cloned ones are behind their remote. Adding or adopting an entry here automatically marks it "
+            "used by the active project, making it a choice on Requirements & Plugins for that project's repos."
         )
         description.setWordWrap(True)
 
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.list_widget.itemChanged.connect(self._on_item_changed)
 
         add_btn = QPushButton("Add")
         edit_btn = QPushButton("Edit")
@@ -171,22 +174,16 @@ class ExternalPluginsPage(QWidget):
 
     def _render(self) -> None:
         selected_folder = self._selected_row().entry.folder_name if self._selected_row() else None
-        selected_entry_ids = self._selected_entry_ids()
-        self._loading_selection = True
         self.list_widget.clear()
         for row in self._rows:
             label = f"{row.entry.name}{self._requires_label(row.entry)} — {row.status}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, row.entry.folder_name)
             item.setData(Qt.UserRole + 1, row.entry.id)
-            if row.catalogued:
-                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                item.setCheckState(Qt.Checked if row.entry.id in selected_entry_ids else Qt.Unchecked)
             self.list_widget.addItem(item)
             if row.entry.folder_name == selected_folder:
                 item.setSelected(True)
                 self.list_widget.setCurrentItem(item)
-        self._loading_selection = False
 
     def _requires_label(self, entry: CatalogEntry) -> str:
         """' — requires: X, Y' if this entry is cloned and its manifest
@@ -213,83 +210,42 @@ class ExternalPluginsPage(QWidget):
         data = self.store.get_project_plugin_data(project_id, _PLUGIN_DATA_KEY)
         return set(data.get(_SELECTED_ENTRY_IDS_KEY, []))
 
-    def _entry_by_id(self, entry_id: str) -> CatalogEntry | None:
-        for row in self._rows:
-            if row.catalogued and row.entry.id == entry_id:
-                return row.entry
-        return None
-
     def _catalog_entry_by_folder(self) -> dict[str, CatalogEntry]:
         return {row.entry.folder_name: row.entry for row in self._rows if row.catalogued}
 
-    def _confirm_and_select_requirements(self, entry: CatalogEntry, selected: set[str]) -> bool:
-        """Called after `entry`'s own checkbox is already checked. Mutates
-        `selected` in place with any required catalog entries the user
-        agrees to add. Returns False (caller should revert) only if the
-        user declines; True if there was nothing to add (including "not
-        cloned yet, so its requires are unknown") or the user agreed."""
-        plugin = self._plugin_by_folder.get(entry.folder_name)
-        if plugin is None:
-            return True
-        entry_by_folder = self._catalog_entry_by_folder()
-        missing: list[CatalogEntry] = []
-        for req_id in plugin.manifest.requires:
-            req_plugin = self._plugin_by_id.get(req_id)
-            # Only another *catalogued* External entry is something to
-            # select here — a Core/Internal requirement (or one this
-            # machine hasn't discovered at all) has nothing to check on
-            # this page.
-            if req_plugin is None or plugin_source(req_plugin) != "repo":
-                continue
-            req_entry = entry_by_folder.get(req_plugin.dir_path.name)
-            if req_entry is None or req_entry.id in selected:
-                continue
-            missing.append(req_entry)
-        if not missing:
-            return True
-
-        names = "\n".join(f"- {req_entry.name}" for req_entry in missing)
-        confirm = QMessageBox.question(
-            self,
-            "Select Required Plugins",
-            f"'{entry.name}' requires the following external plugin(s), not yet used by this project:\n\n"
-            f"{names}\n\nMark them as used by this project too?",
-        )
-        if confirm != QMessageBox.Yes:
-            return False
-        selected.update(req_entry.id for req_entry in missing)
-        return True
-
-    def _on_item_changed(self, item: QListWidgetItem) -> None:
-        if self._loading_selection:
-            return
-        entry_id = item.data(Qt.UserRole + 1)
-        if not entry_id:
-            return
+    def _auto_select_entry(self, entry: CatalogEntry) -> None:
+        """Called right after `entry` is added to the catalog or adopted
+        from an on-disk folder — marks it "used by" the active project
+        with no user interaction, since adding/adopting an entry here only
+        ever happens because that project needs it. A no-op if no project
+        is active yet (nothing to persist against) or it's already
+        selected. Also pulls in any already-known `requires` (only
+        resolvable if `entry` was already cloned when adopted — a brand
+        new, not-yet-cloned entry has no manifest to read yet)."""
         project_id = self._active_project_id()
         if project_id is None:
-            QMessageBox.information(self, "Used by this Project", "No active project — select a project first.")
-            self._loading_selection = True
-            item.setCheckState(Qt.Unchecked)
-            self._loading_selection = False
             return
         selected = self._selected_entry_ids()
-        if item.checkState() == Qt.Checked:
-            entry = self._entry_by_id(entry_id)
-            if entry is not None and not self._confirm_and_select_requirements(entry, selected):
-                self._loading_selection = True
-                item.setCheckState(Qt.Unchecked)
-                self._loading_selection = False
-                return
-            selected.add(entry_id)
-        else:
-            selected.discard(entry_id)
+        if entry.id in selected:
+            return
+        selected.add(entry.id)
+        plugin = self._plugin_by_folder.get(entry.folder_name)
+        if plugin is not None:
+            entry_by_folder = self._catalog_entry_by_folder()
+            for req_id in plugin.manifest.requires:
+                req_plugin = self._plugin_by_id.get(req_id)
+                # Only another *catalogued* External entry is something to
+                # select here — a Core/Internal requirement (or one this
+                # machine hasn't discovered at all) has nothing to mark on
+                # this page.
+                if req_plugin is None or plugin_source(req_plugin) != "repo":
+                    continue
+                req_entry = entry_by_folder.get(req_plugin.dir_path.name)
+                if req_entry is not None:
+                    selected.add(req_entry.id)
         data = self.store.get_project_plugin_data(project_id, _PLUGIN_DATA_KEY)
         data[_SELECTED_ENTRY_IDS_KEY] = sorted(selected)
         self.store.set_project_plugin_data(project_id, _PLUGIN_DATA_KEY, data)
-        # Re-render so any cascade-selected sibling rows' checkboxes reflect
-        # the updated selection too (not just the row the user clicked).
-        self._render()
 
     def _selected_row(self) -> _Row | None:
         items = self.list_widget.selectedItems()
@@ -307,11 +263,12 @@ class ExternalPluginsPage(QWidget):
         dialog = CatalogEntryDialog(self)
         if dialog.exec():
             try:
-                self.catalog.add_entry(dialog.name(), dialog.git_url(), dialog.folder_name())
+                new_entry = self.catalog.add_entry(dialog.name(), dialog.git_url(), dialog.folder_name())
             except UkoreHubError as exc:
                 QMessageBox.warning(self, "Add External Plugin", str(exc))
                 return
             self.refresh_list()
+            self._auto_select_entry(new_entry)
 
     def _on_edit(self) -> None:
         row = self._selected_row()
@@ -327,6 +284,7 @@ class ExternalPluginsPage(QWidget):
         )
         if not dialog.exec():
             return
+        adopted_entry: CatalogEntry | None = None
         try:
             if row.catalogued:
                 self.catalog.edit_entry(
@@ -334,11 +292,13 @@ class ExternalPluginsPage(QWidget):
                 )
             else:
                 # Adopts an auto-detected, un-catalogued folder into the catalog.
-                self.catalog.add_entry(dialog.name(), dialog.git_url(), dialog.folder_name())
+                adopted_entry = self.catalog.add_entry(dialog.name(), dialog.git_url(), dialog.folder_name())
         except UkoreHubError as exc:
             QMessageBox.warning(self, "Edit External Plugin", str(exc))
             return
         self.refresh_list()
+        if adopted_entry is not None:
+            self._auto_select_entry(adopted_entry)
 
     def _on_delete(self) -> None:
         row = self._selected_row()
