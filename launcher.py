@@ -135,10 +135,17 @@ def _build_cloud_sync(data_dir: Path, appdata_dir: Path, google_tokens):
 def main() -> None:
     ensure_dependencies()
 
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import Qt, QTimer
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
 
+    # Fractional Windows display scaling (125%/150%/175%) can leave Qt's
+    # painted widget positions and the mouse-event coordinates Windows
+    # delivers rounded to slightly different pixel grids — on some
+    # machines this shows up as checkboxes/list rows that render fine but
+    # don't register clicks. Rounding the scale factor to a whole number
+    # keeps both grids aligned.
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
     app = QApplication(sys.argv)
     # icon.ico (UkoreHubLauncher repo) is only baked into UkoreHub.exe itself (via
     # PyInstaller's --icon) — that thin exe just spawns `pythonw
