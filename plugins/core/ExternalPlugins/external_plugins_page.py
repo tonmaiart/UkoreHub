@@ -113,10 +113,18 @@ class ExternalPluginsPage(QWidget):
         edit_btn = QPushButton("Edit")
         delete_btn = QPushButton("Delete")
         clone_btn = QPushButton("Clone")
-        pull_btn = QPushButton("Pull")
-        check_btn = QPushButton("Check for Updates")
-        open_dir_btn = QPushButton("Open Git Directory")
-        stage_push_btn = QPushButton("Stage Untracked && Push")
+        pull_btn = QPushButton("Update Selected")
+        pull_btn.setToolTip("Pull from the remote for the selected plugin.")
+
+        check_btn = QPushButton("Check for Status")
+        check_btn.setToolTip("Check the status of all external plugin.")
+
+        open_dir_btn = QPushButton("Open Selected Cloned Directory")
+        open_dir_btn.setToolTip("Open the directory of the selected cloned plugin.")
+
+        stage_push_btn = QPushButton("Bulk Push")
+        stage_push_btn.setToolTip("Stage untracked,modified changes and push to the remote for the selected plugin.")
+
         add_btn.clicked.connect(self._on_add)
         edit_btn.clicked.connect(self._on_edit)
         delete_btn.clicked.connect(self._on_delete)
@@ -165,12 +173,27 @@ class ExternalPluginsPage(QWidget):
         if self.git_service.has_unresolved_merge(local_path):
             message = sync_status.message if sync_status is not None else ""
             return f"{_UPDATE_CONFLICT}{f' — {message}' if message else ''}"
+        
+        # เช็กสถานะไฟล์ในเครื่อง (Untracked, Modified, Staged) แบบรวดเร็วตอนโหลดตาราง
+        try:
+            untracked, modified, staged = self.git_service.get_working_tree_status(local_path)
+            if untracked or modified or staged:
+                changes = []
+                if modified:
+                    changes.append(f"{len(modified)} modified")
+                if staged:
+                    changes.append(f"{len(staged)} staged")
+                if untracked:
+                    changes.append(f"{len(untracked)} untracked")
+                return f"Not up to date — {', '.join(changes)} file(s)"
+        except Exception:
+            pass
+
         if entry.folder_name not in self._plugin_by_folder:
             return _PENDING_RESTART
         if sync_status is not None and sync_status.status == sync_engine.STATUS_ERROR:
             return f"Auto-update failed: {sync_status.message}"
         return _NOT_CHECKED
-
     def _render(self) -> None:
         selected_folder = self._selected_row().entry.folder_name if self._selected_row() else None
         self.list_widget.clear()
@@ -317,43 +340,47 @@ class ExternalPluginsPage(QWidget):
     def _on_stage_untracked_and_push(self) -> None:
         row = self._selected_row()
         if row is None:
-            QMessageBox.information(self, "Stage Untracked & Push", "Select an entry first.")
+            QMessageBox.information(self, "Bulk Push", "Select an entry first.")
             return
         local_path = self.plugins_root / row.entry.folder_name
-        if not self._require_valid_clone(local_path, "Stage Untracked & Push"):
+        if not self._require_valid_clone(local_path, "Bulk Push"):
             return
+        
         try:
-            untracked, _modified, _staged = self.git_service.get_working_tree_status(local_path)
+            untracked, modified, staged = self.git_service.get_working_tree_status(local_path)
         except GitOperationError as exc:
-            QMessageBox.warning(self, "Stage Untracked & Push", str(exc))
+            QMessageBox.warning(self, "Bulk Push", str(exc))
             return
-        if not untracked:
-            QMessageBox.information(self, "Stage Untracked & Push", "No untracked files to stage.")
+        
+        # รวมไฟล์ทั้ง Untracked, Modified และ Staged เข้าด้วยกัน
+        all_changed_paths = list(set(untracked + modified + staged))
+
+        if not all_changed_paths:
+            QMessageBox.information(self, "Bulk Push", "No changes (untracked, modified, or staged files) to push.")
             return
+
         confirmed = confirm_action(
             self,
-            "Stage Untracked & Push",
-            f"Stage {len(untracked)} untracked file(s), commit, and push in '{row.entry.name}'?",
+            "Bulk Push",
+            f"Stage/Push {len(all_changed_paths)} file(s), commit, and push in '{row.entry.name}'?",
         )
         if not confirmed:
             return
-        # A push needs a commit, not just staged changes — a plain message
-        # prompt is enough here since this is a bulk "get untracked files
-        # in" action, not a real per-file commit-review workflow (Submit's
-        # own page already covers that for repos, not repo plugins).
+
         message, ok = QInputDialog.getMultiLineText(
-            self, "Commit Message", "Commit message:", f"Add untracked files ({len(untracked)})"
+            self, "Commit Message", "Commit message:", f"Update plugin files ({len(all_changed_paths)} files)"
         )
         if not ok or not message.strip():
             return
 
         def action() -> None:
-            self.git_service.stage_paths(local_path, untracked)
+            # ถ้ามีไฟล์ untracked หรือ modified ให้สั่ง stage เพิ่มเติม (ส่วนที่ staged อยู่แล้วคำสั่ง add จะไม่กระทบอะไร)
+            if untracked or modified:
+                self.git_service.stage_paths(local_path, list(set(untracked + modified)))
             self.git_service.commit(local_path, message)
             self.git_service.push(local_path)
 
-        self._run_with_wait_cursor(action, "Stage Untracked & Push")
-
+        self._run_with_wait_cursor(action, "Bulk Push")
     def _run_with_wait_cursor(self, action, title: str) -> None:
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -364,7 +391,6 @@ class ExternalPluginsPage(QWidget):
             QApplication.restoreOverrideCursor()
         self.refresh_list()
 
-    # -- check for updates --------------------------------------------------------
 
     def _on_check_for_updates(self) -> None:
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -378,29 +404,40 @@ class ExternalPluginsPage(QWidget):
                     row.status = _BROKEN_GIT
                     continue
                 if self.git_service.has_unresolved_merge(local_path):
-                    # Leave the conflict badge as-is rather than overwriting
-                    # it with an ahead/behind check that doesn't mean much
-                    # mid-merge — same conflict-first precedence _local_status
-                    # uses (see "Auto-sync engine" in this plugin's README).
                     row.status = self._local_status(row.entry)
                     continue
+
                 row.status = "Checking..."
                 self._render()
                 QApplication.processEvents()
+
                 try:
                     self.git_service.fetch(local_path)
                     ahead_behind = self.git_service.get_ahead_behind(local_path)
-                    untracked, _modified, _staged = self.git_service.get_working_tree_status(local_path)
+                    untracked, modified, staged = self.git_service.get_working_tree_status(local_path)
                 except GitOperationError as exc:
                     row.status = f"Check failed: {exc}"
                     continue
-                row.status = self._format_status(ahead_behind, len(untracked))
+
+                row.status = self._format_status(
+                    ahead_behind,
+                    untracked_count=len(untracked),
+                    modified_count=len(modified),
+                    staged_count=len(staged),
+                )
+                self._render()
+                QApplication.processEvents()
         finally:
             QApplication.restoreOverrideCursor()
         self._render()
 
     @staticmethod
-    def _format_status(ahead_behind: tuple[int, int] | None, untracked_count: int) -> str:
+    def _format_status(
+        ahead_behind: tuple[int, int] | None,
+        untracked_count: int = 0,
+        modified_count: int = 0,
+        staged_count: int = 0,
+    ) -> str:
         if ahead_behind is None:
             base = "No upstream (nothing pushed yet)"
         else:
@@ -413,12 +450,18 @@ class ExternalPluginsPage(QWidget):
                 base = f"{ahead} commit(s) ahead (not pushed)"
             else:
                 base = f"Diverged (ahead {ahead}, behind {behind})"
+
+        changes = []
+        if modified_count > 0:
+            changes.append(f"{modified_count} modified")
+        if staged_count > 0:
+            changes.append(f"{staged_count} staged")
         if untracked_count > 0:
-            # Untracked files mean this clone isn't a clean match for
-            # "latest" even when it's otherwise even with its upstream —
-            # surfaced as its own not-up-to-date signal since a Pull alone
-            # won't resolve it.
+            changes.append(f"{untracked_count} untracked")
+
+        if changes:
             if base == "Up to date":
                 base = "Not up to date"
-            return f"{base} — {untracked_count} untracked file(s)"
+            return f"{base} — {', '.join(changes)} file(s)"
+
         return base
