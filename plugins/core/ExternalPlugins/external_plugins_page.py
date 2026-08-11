@@ -125,6 +125,10 @@ class ExternalPluginsPage(QWidget):
         stage_push_btn = QPushButton("Bulk Push")
         stage_push_btn.setToolTip("Stage untracked,modified changes and push to the remote for the selected plugin.")
 
+        ignore_update_btn = QPushButton("Gitignore Update All")
+        ignore_update_btn.setToolTip("ลบไฟล์ทั้งหมดที่ตรงกับกฎ .gitignore ออกจากการ Track ของ Git (Untrack)")
+        ignore_update_btn.clicked.connect(self._on_gitignore_update)
+
         add_btn.clicked.connect(self._on_add)
         edit_btn.clicked.connect(self._on_edit)
         delete_btn.clicked.connect(self._on_delete)
@@ -465,3 +469,29 @@ class ExternalPluginsPage(QWidget):
             return f"{base} — {', '.join(changes)} file(s)"
 
         return base
+
+    def _on_gitignore_update(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            QMessageBox.information(self, "Gitignore Update", "Select an entry first.")
+            return
+        local_path = self.plugins_root / row.entry.folder_name
+        if not self._require_valid_clone(local_path, "Gitignore Update"):
+            return
+
+        confirmed = confirm_action(
+            self,
+            "Gitignore Update",
+            f"ต้องการ Untrack ไฟล์ทั้งหมดที่เข้าข่าย .gitignore ใน '{row.entry.name}' ใช่หรือไม่?\n\n(ไฟล์จริงในเครื่องจะไม่ถูกลบ)",
+        )
+        if not confirmed:
+            return
+
+        def action() -> None:
+            # เรียกใช้ฟังก์ชันล้าง index ตาม ignore
+            self.git_service.untrack_ignored_files(local_path)
+            self.git_service.commit(local_path, "Untrack gitignored files")
+            # ถือเป็นการอัปเดตสถานะ สามารถพ่วง push ไปด้วยเลยก็ได้ หรือให้ผู้ใช้กด Push เอง
+            self.git_service.push(local_path)
+
+        self._run_with_wait_cursor(action, "Gitignore Update")

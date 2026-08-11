@@ -552,3 +552,8 @@ class GitService:
             staged=staged,
             is_clean=is_clean,
         )
+
+    def untrack_ignored_files(self, repo_path: Path) -> None:
+        self._run_capture(["rm", "-r", "--cached", "."], cwd=Path(repo_path))
+        self._run_capture(["add", "."], cwd=Path(repo_path))
+        
