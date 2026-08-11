@@ -139,7 +139,7 @@ class ExternalPluginsPage(QWidget):
         stage_push_btn.clicked.connect(self._on_stage_untracked_and_push)
 
         button_row = QHBoxLayout()
-        for button in (add_btn, edit_btn, delete_btn, clone_btn, pull_btn, check_btn, open_dir_btn, stage_push_btn):
+        for button in (add_btn, edit_btn, delete_btn, clone_btn, pull_btn, check_btn, open_dir_btn, stage_push_btn,ignore_update_btn):
             button_row.addWidget(button)
         button_row.addStretch()
 
