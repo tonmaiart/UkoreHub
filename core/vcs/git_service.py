@@ -556,4 +556,11 @@ class GitService:
     def untrack_ignored_files(self, repo_path: Path) -> None:
         self._run_capture(["rm", "-r", "--cached", "."], cwd=Path(repo_path))
         self._run_capture(["add", "."], cwd=Path(repo_path))
-        
+
+    def set_user_identity(self, repo_path: Path, name: str, email: str) -> None:
+            """ตั้งค่าชื่อและอีเมลสำหรับ Commit ใน Repo นั้นๆ ( Local config )"""
+            repo_path = Path(repo_path)
+            if name:
+                self._run_capture(["config", "user.name", name], cwd=repo_path)
+            if email:
+                self._run_capture(["config", "user.email", email], cwd=repo_path)

@@ -488,10 +488,18 @@ class ExternalPluginsPage(QWidget):
             return
 
         def action() -> None:
-            # เรียกใช้ฟังก์ชันล้าง index ตาม ignore
+            # ดึงชื่อ GitHub username ที่ล็อกอินอยู่ในแอปมาใช้งาน
+            # (ดึงจาก LocalConfigStore ผ่าน self.git_service หรือผ่าน parent ถ้ามีเก็บไว้)
+            # หรือใช้ชื่อสำรองถ้ายังไม่ได้ล็อกอินผ่านระบบแอป
+            username = "UkoreHub Automation User"
+            
+            # ตั้งค่า Identity ให้กับ Repo นี้ก่อนสั่ง Commit ป้องกันปัญหา Author unknown
+            email = f"{username.lower().replace(' ', '_')}@users.noreply.github.com"
+            self.git_service.set_user_identity(local_path, username, email)
+
+            # รันคำสั่ง Untrack และ Commit / Push ตามปกติ
             self.git_service.untrack_ignored_files(local_path)
             self.git_service.commit(local_path, "Untrack gitignored files")
-            # ถือเป็นการอัปเดตสถานะ สามารถพ่วง push ไปด้วยเลยก็ได้ หรือให้ผู้ใช้กด Push เอง
             self.git_service.push(local_path)
 
         self._run_with_wait_cursor(action, "Gitignore Update")
