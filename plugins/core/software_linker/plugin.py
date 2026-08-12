@@ -108,26 +108,36 @@ def list_installed_programs() -> list[tuple[str, str]]:
 def _guess_by_default_install_path(program_name: str, version: str = "") -> str | None:
     """ค้นหาจากพาธเริ่มต้นของโปรแกรม โดยนำเวอร์ชันมาร่วมพิจารณาด้วย"""
     name = program_name.lower()
+    ver_str = str(version).strip().lower() if version else ""
+
     for keyword, patterns in _DEFAULT_INSTALL_GLOBS.items():
         if keyword not in name:
             continue
+
         for pattern in patterns:
+            # 1. ถ้าระบุเวอร์ชันชัดเจน ให้พยายามสร้าง pattern ที่เจาะจงเวอร์ชันนั้นก่อน (เช่น Maya2024)
+            if ver_str:
+                # แปลง pattern เช่น 'Maya*' เป็น 'Maya2024' หรือ 'Maya*2024*'
+                specific_pattern = pattern.replace("*", f"*{ver_str}*")
+                specific_matches = sorted(glob.glob(specific_pattern), reverse=True)
+                if specific_matches:
+                    return specific_matches[0]
+                
+                # ลองเช็กอีกรอบกรณี pattern ไม่ได้ใช้ wildcard ท้ายคำ
+                exact_pattern = pattern.replace("*", ver_str)
+                exact_matches = sorted(glob.glob(exact_pattern), reverse=True)
+                if exact_matches:
+                    return exact_matches[0]
+
+                # ***สำคัญ***: ถ้าระบุเวอร์ชันชัดเจน แล้วหาโฟลเดอร์เวอร์ชันนั้นไม่เจอ 
+                # ให้จบการหาของ pattern นี้ไปเลย ห้ามหลุดไปหยิบ Maya2026 จาก matches ทั่วไป
+                continue
+
+            # 2. ถ้าไม่ได้ระบุเวอร์ชันเลย ค่อยค้นหาแบบกว้าง (Wildcard) แล้วหยิบเวอร์ชันล่าสุด
             matches = sorted(glob.glob(pattern), reverse=True)
-            if not matches:
-                continue
+            if matches:
+                return matches[0]
 
-            # 1. ถ้ามีการระบุเวอร์ชัน ให้สแกนหาตัวที่ตรงกับเวอร์ชันนั้นๆ ก่อน
-            if version:
-                ver_str = str(version).strip().lower()
-                for match in matches:
-                    # เช็กว่าเวอร์ชันอยู่ในพาธจริงหรือไม่
-                    if ver_str in match.lower():
-                        return match
-                # ถ้าเจาะจงเวอร์ชันแล้วแต่ไม่เจอพาธเวอร์ชันนั้น ให้ข้าม pattern นี้ไป (อย่าสุ่มหยิบตัวอื่น)
-                continue
-
-            # 2. ถ้าไม่ได้ระบุเวอร์ชันเลย ค่อยใช้พาธแรกที่เจอ
-            return matches[0]
     return None
 
 
@@ -136,19 +146,20 @@ def _guess_by_registry(program_name: str, version: str, installed: list[tuple[st
     name = program_name.lower()
     ver = version.lower().strip()
 
-    # 1. ถ้ามีระบุเวอร์ชัน พยายามหาตัวที่ตรงทั้งชื่อและเวอร์ชัน
+    # 1. ถ้าระบุเวอร์ชัน ต้องเจอทั้งชื่อโปรแกรมและเวอร์ชันใน DisplayName เท่านั้น
     if ver:
         for display_name, exe_path in installed:
             disp_lower = display_name.lower()
             if name in disp_lower and ver in disp_lower:
                 return exe_path
-        # หากระบุเวอร์ชันแล้วไม่เจอตัวที่ตรง ให้คืนค่า None เพื่อไม่ให้หยิบเวอร์ชันอื่นสุ่มสี่สี่ห้ามาใส่
+        # ถ้าระบุเวอร์ชันแล้วไม่เจอใน Registry ให้คืนค่า None ทันที
         return None
 
-    # 2. ถ้าไม่ได้ระบุเวอร์ชัน ให้หาตามชื่อโปรแกรมอย่างเดียวเป็น fallback
+    # 2. ถ้าไม่ได้ระบุเวอร์ชันเลย ค่อยค้นหาตามชื่อโปรแกรมอย่างเดียว
     for display_name, exe_path in installed:
         if name in display_name.lower():
             return exe_path
+
     return None
 
 def _resolve_path_for_program(program_name: str, version: str, installed: list[tuple[str, str]]) -> str | None:
