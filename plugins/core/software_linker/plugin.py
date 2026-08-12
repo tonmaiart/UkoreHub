@@ -546,9 +546,28 @@ class SoftwareLinkerPage(QWidget):
 
         self._auto_detect_missing(project_id)
         rows = _link_rows(self._store, project_id)
+        
         if self._require_filter_checkbox.isChecked() and self._repo is not None:
             required_ids = set(self._repo.required_program_ids)
-            rows = [row for row in rows if row[1].id in required_ids]
+            pins = self._repo.program_version_pins  # เช่น {"<maya_program_id>": "2026"}
+            
+            filtered_rows = []
+            for row in rows:
+                key, program, version, label = row
+                # 1. ต้องเป็น Program ID ที่ Repo นี้ Require ไว้ก่อน
+                if program.id not in required_ids:
+                    continue
+                
+                # 2. ถ้า Program นี้มีการตั้งค่า Pin เวอร์ชันไว้สำหรับ Repo นี้
+                #    ให้แสดงเฉพาะแถวที่เวอร์ชันตรงกับ Pin เท่านั้น
+                pinned_ver = pins.get(program.id)
+                if pinned_ver and version and version != pinned_ver:
+                    continue
+                
+                filtered_rows.append(row)
+            
+            rows = filtered_rows
+
         for key, program, _version, label in rows:
             card = _ProgramLinkCard(
                 self._cards_container,
