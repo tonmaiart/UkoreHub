@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSortFilterProxyModel
+from PySide6.QtCore import QSortFilterProxyModel, QModelIndex
 
 
 class FileTableFilterProxy(QSortFilterProxyModel):
@@ -13,12 +13,17 @@ class FileTableFilterProxy(QSortFilterProxyModel):
         self._search_text = text.lower()
         self.invalidateFilter()
 
-    def filterAcceptsRow(self, source_row: int, source_parent) -> bool:
+    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
         fs_model = self.sourceModel()
+        if fs_model is None:
+            return True
+
         index = fs_model.index(source_row, 0, source_parent)
+        
+        # ถ้าไม่มีการพิมพ์ค้นหา ให้ผ่านได้ทุกกรณี (รวมถึงโฟลเดอร์ทั้งหมด)
+        if not self._search_text:
+            return True
+
+        # ถ้ามีการค้นหา ให้เช็คชื่อไฟล์/โฟลเดอร์
         file_name = fs_model.fileName(index)
-
-        if self._search_text and self._search_text not in file_name.lower():
-            return False
-
-        return True
+        return self._search_text in file_name.lower()

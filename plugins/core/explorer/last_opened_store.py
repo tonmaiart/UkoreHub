@@ -46,27 +46,40 @@ class LastOpenedStore:
             json.dumps({"last_opened": self._relpaths}, indent=4), encoding="utf-8"
         )
 
-    def get_last_opened(self) -> list[Path]:
-        still_valid = []
-        paths = []
-        for rel in self._relpaths:
-            abs_path = self.repo_root / rel
-            if abs_path.exists():
-                still_valid.append(rel)
-                paths.append(abs_path)
-        if still_valid != self._relpaths:
-            self._relpaths = still_valid
-            self._save()
-        return paths
-
     def add(self, abs_path: Path) -> list[Path]:
         try:
-            rel = str(Path(abs_path).relative_to(self.repo_root))
+            # แปลงเป็น Absolute Path ให้ชัวร์ก่อนเปรียบเทียบ
+            abs_p = Path(abs_path).resolve()
+            repo_p = self.repo_root.resolve()
+            rel = str(abs_p.relative_to(repo_p))
         except ValueError:
             return self.get_last_opened()
+            
         if rel in self._relpaths:
             self._relpaths.remove(rel)
         self._relpaths.insert(0, rel)
         self._relpaths = self._relpaths[: self.max_entries]
         self._save()
         return self.get_last_opened()
+
+    def get_last_opened(self) -> list[Path]:
+        still_valid = []
+        paths = []
+        for rel in self._relpaths:
+            # ป้องกันกรณีที่ใน JSON มี Drive Letter หรือ Absolute Path ปนมา
+            rel_p = Path(rel)
+            if rel_p.is_absolute():
+                try:
+                    rel_p = rel_p.relative_to(self.repo_root.resolve())
+                except ValueError:
+                    continue
+
+            abs_path = self.repo_root / rel_p
+            if abs_path.exists():
+                still_valid.append(str(rel_p))
+                paths.append(abs_path)
+                
+        if still_valid != self._relpaths:
+            self._relpaths = still_valid
+            self._save()
+        return paths

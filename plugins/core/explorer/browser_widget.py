@@ -35,9 +35,6 @@ _MAX_LAST_OPENED = 20
 _LAST_OPENED_PANEL_WIDTH = 220
 
 _ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
-# Both nav icons live at the repo root rather than assets/icons/ — falls back
-# to text (same convention as interface/sidebar/sidebar.py's Setting
-# button) if a file isn't there.
 BACK_ICON_PATH = _ROOT_DIR / "icons8-back-50.png"
 UP_ICON_PATH = _ROOT_DIR / "icons8-up-50.png"
 ADD_FOLDER_ICON_PATH = _ROOT_DIR / "add_folder.png"
@@ -54,22 +51,15 @@ def _apply_nav_icon(button: QPushButton, icon_path: Path, fallback_text: str) ->
 
 
 class RepoBrowserWidget(QWidget):
-    def __init__(self, parent=None, *, git_service: GitService, open_file: Callable[[Path], None] | None = None, cache_dir: Path | None = None):
+    def __init__(self, parent=None, *, git_service: GitService, open_file: Callable[[Path], None] | None = None, cache_dir: Path | None = None, debug_bus=None):
         super().__init__(parent)
+        self._debug_bus = debug_bus
+        self._cache_dir = cache_dir
         self._open_file = open_file or open_with_default_app
         self._root: Path | None = None
         self._current_path: Path | None = None
         self._opening_popup: QMessageBox | None = None
-        # History for the "Back" button (browser-style: return to whatever
-        # path was current before the most recent navigation) — separate
-        # from the "Up" button, which always goes to the parent folder
-        # regardless of navigation history.
         self._back_stack: list[Path] = []
-        # Persisted per-repo, per-user (LastOpenedStore, under this app's
-        # own cache/explorer/, not the browsed repo's working tree) rather
-        # than kept purely in-memory — rebuilt from that store on every
-        # set_root() (repo switch) so it survives across app restarts and
-        # repo switches, unlike a plain in-memory MRU list would.
         self._last_opened_store: LastOpenedStore | None = None
 
         self.fs_model = QFileSystemModel()
@@ -77,9 +67,6 @@ class RepoBrowserWidget(QWidget):
         self.proxy = FileTableFilterProxy()
         self.proxy.setSourceModel(self.fs_model)
 
-        # "Back" returns to the previously visited path (browser history-style,
-        # see _back_stack) — "Up" always jumps to the current path's parent
-        # folder, regardless of what was visited before.
         self.history_back_button = QPushButton()
         _apply_nav_icon(self.history_back_button, BACK_ICON_PATH, "Back")
         self.history_back_button.setEnabled(False)
@@ -87,10 +74,7 @@ class RepoBrowserWidget(QWidget):
         self.up_button = QPushButton()
         _apply_nav_icon(self.up_button, UP_ICON_PATH, "Up")
         self.up_button.clicked.connect(self._on_up)
-        # Creates a new folder inside whichever folder is currently open —
-        # same action as the file table's empty-area "Create New Folder"
-        # context menu entry (_create_new_folder), just reachable without a
-        # right-click.
+        
         self.add_folder_button = QPushButton()
         _apply_nav_icon(self.add_folder_button, ADD_FOLDER_ICON_PATH, "New Folder")
         self.add_folder_button.clicked.connect(self._on_add_folder_clicked)
@@ -112,10 +96,6 @@ class RepoBrowserWidget(QWidget):
         nav_row.addWidget(self.breadcrumb, stretch=1)
         nav_row.addWidget(self.search_edit)
 
-        # "Folder Navigator": the COLUMN_COUNT (5) side-by-side drill-down
-        # lists above the file table — one column per folder depth, each
-        # narrowing the next (a Miller-column browser, like macOS Finder's
-        # column view). Kept spacing tight so more entries fit per column.
         self.columns: list[QListWidget] = []
         self.column_filters: list[QLineEdit] = []
         columns_row = QHBoxLayout()
@@ -140,13 +120,6 @@ class RepoBrowserWidget(QWidget):
         folder_navigator_layout = QVBoxLayout(folder_navigator_group)
         folder_navigator_layout.addLayout(columns_row)
 
-        # "Last Opened Files": an MRU list of files opened via a table
-        # double-click, docked at the far right of the Folder Navigator row.
-        # Clicking an entry only navigates the browser to that file's
-        # current path (_on_last_opened_clicked) — it deliberately does NOT
-        # wire up double-click-to-open the way the file table does, so this
-        # list is a navigation shortcut only, never a second way to launch a
-        # file.
         self.last_opened_list = QListWidget()
         self.last_opened_list.setSpacing(0)
         self.last_opened_list.itemClicked.connect(self._on_last_opened_clicked)
@@ -166,10 +139,7 @@ class RepoBrowserWidget(QWidget):
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(22)
-        # Name and Date Modified are the columns users actually scan, so they
-        # get Stretch (claim any resize slack first) — Size stays Interactive
-        # so it can't eat into their share, and Type is hidden entirely
-        # (QFileSystemModel column 2 — redundant with the file's icon/name).
+        
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -187,10 +157,6 @@ class RepoBrowserWidget(QWidget):
         table_row.addWidget(self.table, stretch=1)
         table_row.addWidget(self.commit_panel)
 
-        # Opens the currently browsed folder in the OS file explorer
-        # (core/os_utils.py's open_in_file_explorer) — sits below the file
-        # table rather than in nav_row, since it's a "hand off to the OS"
-        # action rather than in-app navigation.
         self.open_directory_button = QPushButton("Open Directory")
         self.open_directory_button.clicked.connect(self._on_open_directory_clicked)
         bottom_row = QHBoxLayout()
@@ -207,40 +173,66 @@ class RepoBrowserWidget(QWidget):
         layout.addLayout(main_column)
 
     def browse_to_file(self, path: Path) -> None:
-        """Navigates to the folder containing `path` — called from other
-        tabs (e.g. Submit's commit-card Browse button / Inspect in Explorer)
-        to jump here and show a specific file."""
         self._navigate_to(Path(path).parent)
 
     def set_root(self, path: Path, *, repo_id: str) -> None:
-        path = Path(path)
+        path = Path(path).resolve()
         self._root = path
-        self.fs_model.setRootPath(str(path))
-        
-        self._last_opened_store = LastOpenedStore(
-            repo_root=path, 
-            cache_dir=self._cache_dir, 
-            repo_id=repo_id, 
-            max_entries=_MAX_LAST_OPENED
-        )
-        self._refresh_last_opened_list()
-        self._navigate_to(path)
+
+        posix_path = path.as_posix()
+        if self._debug_bus:
+            self._debug_bus.log("Explorer", f"set_root: {posix_path}")
+
+        # กำหนด Root ให้กับ QFileSystemModel
+        self.fs_model.setRootPath(posix_path)
+
+        if self._cache_dir:
+            self._last_opened_store = LastOpenedStore(
+                repo_root=path, 
+                cache_dir=self._cache_dir, 
+                repo_id=repo_id, 
+                max_entries=_MAX_LAST_OPENED
+            )
+            self._refresh_last_opened_list()
+
+        # หน่วงเวลาสั้นๆ (50ms) เพื่อให้ QFileSystemModel สแกนดักจับ Index บนดิสก์ได้ทัน
+        QTimer.singleShot(50, lambda: self._navigate_to(path))
 
     def _navigate_to(self, path: Path, *, _record_history: bool = True) -> None:
-        path = Path(path)
+        path = Path(path).resolve()
         if self._root is None:
             return
+
         try:
             path.relative_to(self._root)
         except ValueError:
-            return
+            if self._debug_bus:
+                self._debug_bus.log("Explorer", f"[WARN] Path {path} is outside root {self._root}. Falling back to root.")
+            path = self._root
+
         if _record_history and self._current_path is not None and path != self._current_path:
             self._back_stack.append(self._current_path)
             self.history_back_button.setEnabled(True)
+
         self._current_path = path
         self.breadcrumb.setText(str(path))
-        index = self.fs_model.index(str(path))
-        self.table.setRootIndex(self.proxy.mapFromSource(index))
+
+        posix_path = path.as_posix()
+        source_index = self.fs_model.index(posix_path)
+        proxy_index = self.proxy.mapFromSource(source_index)
+
+        if self._debug_bus:
+            self._debug_bus.log(
+                "Explorer", 
+                f"_navigate_to: {posix_path} | source_valid={source_index.isValid()} | proxy_valid={proxy_index.isValid()}"
+            )
+
+        # สั่งตั้งค่า RootIndex โดยตรงจาก Proxy
+        if proxy_index.isValid():
+            self.table.setRootIndex(proxy_index)
+        elif source_index.isValid():
+            self.table.setRootIndex(self.proxy.mapFromSource(source_index))
+
         self._sync_columns_from_path(path)
         self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
 
@@ -260,7 +252,7 @@ class RepoBrowserWidget(QWidget):
         source_index = self.proxy.mapToSource(current)
         path = Path(self.fs_model.filePath(source_index))
         if self.fs_model.isDir(source_index):
-            return  # folder-level history is already shown by _navigate_to
+            return
         self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
 
     def _on_up(self) -> None:
@@ -377,10 +369,6 @@ class RepoBrowserWidget(QWidget):
             item.setToolTip(str(opened_path))
 
     def _on_last_opened_clicked(self, item) -> None:
-        # Deliberately navigation-only — see the comment where
-        # last_opened_list is constructed for why this list never wires up
-        # a double-click-to-open path. Selecting the file's row after
-        # navigating just highlights where it is; it doesn't open it.
         path = Path(item.data(Qt.UserRole))
         self._navigate_to(path.parent)
         self._select_file_in_table(path)
@@ -397,11 +385,6 @@ class RepoBrowserWidget(QWidget):
         self.table.scrollTo(proxy_index)
 
     def _show_opening_popup(self, path: Path) -> None:
-        # Non-modal and self-closing — just a quick acknowledgement that the
-        # double-click registered and the app is launching, not something
-        # the user has to dismiss. Kept as an instance attribute (rather
-        # than a bare local) and explicitly deleteLater()'d so a rapid
-        # double-click on another file can't leave a stale popup lingering.
         if self._opening_popup is not None:
             self._opening_popup.close()
             self._opening_popup.deleteLater()
@@ -448,9 +431,6 @@ class RepoBrowserWidget(QWidget):
             self._delete(path)
 
     def _on_empty_area_context_menu(self, pos) -> None:
-        # Right-click on blank space in the file table (no row under the
-        # cursor) — acts on the currently open folder itself rather than a
-        # selected row, since there is no row to target here.
         if self._current_path is None:
             return
         is_root = self._root is not None and self._current_path == self._root
@@ -460,10 +440,6 @@ class RepoBrowserWidget(QWidget):
         menu.addSeparator()
         act_rename_folder = menu.addAction("Rename Folder")
         act_delete_folder = menu.addAction("Delete Folder")
-        # Renaming/deleting the repo root out from under the browser would
-        # leave set_root()'s fs_model/_last_opened_store pointed at a path
-        # that no longer exists, so those two are disabled while sitting at
-        # the root.
         act_rename_folder.setEnabled(not is_root)
         act_delete_folder.setEnabled(not is_root)
 
