@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
@@ -21,6 +22,7 @@ class RepoBrowserPage(QWidget):
         local_config_store: LocalConfigStore,
         git_service: GitService,
         file_opener_registry: FileOpenerRegistry,
+        cache_dir: Path,
     ):
         super().__init__(parent)
         self.local_config_store = local_config_store
@@ -30,7 +32,13 @@ class RepoBrowserPage(QWidget):
 
         self.empty_label = QLabel("Select a repo to see this information.")
         self.not_cloned_label = QLabel("Repo not yet cloned — use Repo Git Status to sync.")
-        self.browser = RepoBrowserWidget(git_service=git_service, open_file=self._open_file)
+        
+        # สร้าง Widget เพียงครั้งเดียวโดยส่ง cache_dir เข้าไปตามที่ออกแบบไว้
+        self.browser = RepoBrowserWidget(
+            git_service=git_service, 
+            open_file=self._open_file,
+            cache_dir=cache_dir,
+        )
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.empty_label)
@@ -41,11 +49,6 @@ class RepoBrowserPage(QWidget):
         self.browser.setVisible(False)
 
     def _open_file(self, path: Path) -> None:
-        # Only reachable via a double-click inside Repo Browser — a file
-        # opened any other way (directly launching Maya, Windows Explorer,
-        # etc.) never goes through this, so a custom opener's side effects
-        # (e.g. env injection) only ever apply to opens UkoreHub itself
-        # triggered.
         if self._active_repo is not None:
             opener = self._file_opener_registry.find_opener(path)
             if opener is not None and opener(path, self._active_repo):
@@ -64,15 +67,9 @@ class RepoBrowserPage(QWidget):
             show_exclusive(self.not_cloned_label, self.empty_label, self.browser)
             return
         show_exclusive(self.browser, self.empty_label, self.not_cloned_label)
-        # Only re-navigate when the repo actually changed — switching tabs
-        # away and back re-invokes set_repo() with the SAME repo, and we
-        # must not reset the user's current folder/selection in that case.
         if repo.id != self._last_repo_id:
             self.browser.set_root(abs_path, repo_id=repo.id)
             self._last_repo_id = repo.id
 
     def browse_to_path(self, path: Path) -> None:
-        """Optional MainWindow UICommandService protocol — see
-        interface/section_registry.py's UICommandService.navigate_and_focus and
-        plugins/core/submit/plugin.py's browse_file_requested wiring."""
         self.browser.browse_to_file(path)

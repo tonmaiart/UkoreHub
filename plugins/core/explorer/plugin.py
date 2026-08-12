@@ -11,6 +11,7 @@ def register(api) -> None:
         local_config_store=api.local_config,
         git_service=api.git,
         file_opener_registry=api.file_opener_registry,
+        cache_dir=api.cache_dir,  # <--- ส่ง api.cache_dir เข้าไป
     )
     icons_dir = api.app_root / "assets" / "icons"
     api.register_section(

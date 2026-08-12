@@ -488,16 +488,8 @@ class ExternalPluginsPage(QWidget):
             return
 
         def action() -> None:
-            # ดึงชื่อ GitHub username ที่ล็อกอินอยู่ในแอปมาใช้งาน
-            # (ดึงจาก LocalConfigStore ผ่าน self.git_service หรือผ่าน parent ถ้ามีเก็บไว้)
-            # หรือใช้ชื่อสำรองถ้ายังไม่ได้ล็อกอินผ่านระบบแอป
-            username = "UkoreHub Automation User"
-            
-            # ตั้งค่า Identity ให้กับ Repo นี้ก่อนสั่ง Commit ป้องกันปัญหา Author unknown
-            email = f"{username.lower().replace(' ', '_')}@users.noreply.github.com"
-            self.git_service.set_user_identity(local_path, username, email)
-
-            # รันคำสั่ง Untrack และ Commit / Push ตามปกติ
+            # ลบส่วนตั้งค่า username / email ชั่วคราวออกไปได้เลย
+            # เพราะระบบหลักตั้งค่า user.name / user.email ให้ Repo นี้เรียบร้อยแล้ว
             self.git_service.untrack_ignored_files(local_path)
             self.git_service.commit(local_path, "Untrack gitignored files")
             self.git_service.push(local_path)

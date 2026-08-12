@@ -558,9 +558,34 @@ class GitService:
         self._run_capture(["add", "."], cwd=Path(repo_path))
 
     def set_user_identity(self, repo_path: Path, name: str, email: str) -> None:
-            """ตั้งค่าชื่อและอีเมลสำหรับ Commit ใน Repo นั้นๆ ( Local config )"""
-            repo_path = Path(repo_path)
-            if name:
-                self._run_capture(["config", "user.name", name], cwd=repo_path)
-            if email:
-                self._run_capture(["config", "user.email", email], cwd=repo_path)
+        """ตั้งค่าชื่อและอีเมลสำหรับ Commit ใน Repo นั้นๆ ( Local config )"""
+        repo_path = Path(repo_path)
+        if name:
+            self._run_capture(["config", "user.name", name], cwd=repo_path)
+        if email:
+            self._run_capture(["config", "user.email", email], cwd=repo_path)
+
+
+    def safe_untrack_and_clean_ignored(self, repo_path: Path, username: str = "UkoreHub Automation") -> None:
+        """Untrack ไฟล์ที่อยู่ใน .gitignore และจัดการ Commit การเปลี่ยนแปลงอัตโนมัติ
+
+        เพื่อป้องกันไม่ให้ไฟล์หลุดเข้า Git จนเป็นอุปสรรคต่อการ Auto Pull / Update
+        """
+        repo_path = Path(repo_path)
+        if not self.is_repo_root(repo_path):
+            return
+
+        # 1. ตั้งค่า Identity สำรองชั่วคราวเพื่อป้องกัน Commit ล้มเหลวกรณีไม่มี user.name
+        email = f"{username.lower().replace(' ', '_')}@users.noreply.github.com"
+        self.set_user_identity(repo_path, username, email)
+
+        # 2. สั่ง Untrack ไฟล์ที่เข้าข่าย .gitignore ออกจาก Index
+        try:
+            self.untrack_ignored_files(repo_path)
+            # 3. ถ้ามี Staged Changes เกิดขึ้นจากการ Untrack ให้ Commit เก็บไว้
+            _, modified, staged = self.get_working_tree_status(repo_path)
+            if staged or modified:
+                self.commit(repo_path, "Auto-untrack gitignored files before sync")
+        except GitOperationError:
+            # หากไม่มีไฟล์ต้อง Untrack หรือ Commit ไม่สำเร็จ ให้ข้ามไปทำงานขั้นตอนถัดไปได้ทันที
+            pass

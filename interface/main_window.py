@@ -184,8 +184,32 @@ class MainWindow(QMainWindow):
         self.sidebar.set_account_username(self.local_config_store.github_username)
         self._restore_active_repo()
         self._apply_to_current_page()
+        self._setup_auto_git_identity()
         QTimer.singleShot(0, self._start_auto_sync)
         self._fire_app_started()
+
+    def _setup_auto_git_identity(self) -> None:
+        """ตั้งค่า git user.name และ user.email อัตโนมัติจาก GitHub Username ที่ล็อกอินอยู่"""
+        github_username = self.local_config_store.github_username
+        if not github_username:
+            return
+
+        email = f"{github_username.lower().replace(' ', '_')}@users.noreply.github.com"
+
+        def apply_identity(context):
+            if context.repo and context.repo_path.exists():
+                try:
+                    current_name = self.git_service._run_capture(["config", "user.name"], cwd=context.repo_path).strip()
+                except Exception:
+                    current_name = ""
+
+                if not current_name:
+                    self.git_service.set_user_identity(context.repo_path, github_username, email)
+                    self._core.debug_bus.log("GitIdentity", f"Auto-configured git identity for {context.repo.name}: {github_username}")
+
+        # ผูกการทำงานเข้ากับ Hook ของระบบ
+        self.hook_registry.subscribe_app_start(apply_identity)
+        self.hook_registry.subscribe_repo_changed(apply_identity)
 
     # -- navigation (Explorer / Submit / About / Setting) --
 

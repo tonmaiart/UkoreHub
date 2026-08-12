@@ -106,6 +106,8 @@ def sync_entry(git_service: GitService, plugins_root: Path, entry: CatalogEntry)
             "then commit or abort the merge.",
         )
 
+    git_service.safe_untrack_and_clean_ignored(local_path)
+    
     try:
         git_service.pull(local_path)
     except GitOperationError as exc:

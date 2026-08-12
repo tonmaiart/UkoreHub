@@ -54,7 +54,7 @@ def _apply_nav_icon(button: QPushButton, icon_path: Path, fallback_text: str) ->
 
 
 class RepoBrowserWidget(QWidget):
-    def __init__(self, parent=None, *, git_service: GitService, open_file: Callable[[Path], None] | None = None):
+    def __init__(self, parent=None, *, git_service: GitService, open_file: Callable[[Path], None] | None = None, cache_dir: Path | None = None):
         super().__init__(parent)
         self._open_file = open_file or open_with_default_app
         self._root: Path | None = None
@@ -216,7 +216,13 @@ class RepoBrowserWidget(QWidget):
         path = Path(path)
         self._root = path
         self.fs_model.setRootPath(str(path))
-        self._last_opened_store = LastOpenedStore(path, repo_id, max_entries=_MAX_LAST_OPENED)
+        
+        self._last_opened_store = LastOpenedStore(
+            repo_root=path, 
+            cache_dir=self._cache_dir, 
+            repo_id=repo_id, 
+            max_entries=_MAX_LAST_OPENED
+        )
         self._refresh_last_opened_list()
         self._navigate_to(path)
 
