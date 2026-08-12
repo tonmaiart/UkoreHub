@@ -26,6 +26,8 @@ from interface.settings.settings_view import SettingsDialog
 from interface.sidebar.sidebar import Sidebar
 from interface.ui_registry_manager import UIRegistryManager
 
+import subprocess
+
 # interface/main_window.py -> interface/ -> repo root — used only to find
 # UkoreHub.exe for _relaunch_to_login (the launcher exe built at the repo
 # root by build_exe.py (UkoreHubLauncher repo)).
@@ -438,7 +440,12 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _restart_app() -> None:
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        # Restart app via Launcher Only to ensure auto-update is working.
+        if not relaunch_ukorehub_exe(_REPO_ROOT):
+            # สำรองไว้สำหรับ Developer ที่รัน python launcher.py ตรงๆ ในโฟลเดอร์ app
+            subprocess.Popen([sys.executable, *sys.argv], cwd=str(_REPO_ROOT))
+        
+        QApplication.quit()
 
     # -- shutdown -------------------------------------------------------------
 
