@@ -105,49 +105,64 @@ def list_installed_programs() -> list[tuple[str, str]]:
     return sorted(programs.items())
 
 
-def _guess_by_default_install_path(program_name: str) -> str | None:
-    """Third and last resort for Auto-Resolve Path: a handful of known
-    default install locations for common DCCs, glob-matched since the
-    version number is baked into the folder name (e.g. "Maya2026"). Picks
-    the highest sorted match when more than one version is installed —
-    good enough for a best-effort auto-link, not a version-pin resolver."""
+def _guess_by_default_install_path(program_name: str, version: str = "") -> str | None:
+    """ค้นหาจากพาธเริ่มต้นของโปรแกรม โดยนำเวอร์ชันมาร่วมพิจารณาด้วย"""
     name = program_name.lower()
     for keyword, patterns in _DEFAULT_INSTALL_GLOBS.items():
         if keyword not in name:
             continue
         for pattern in patterns:
             matches = sorted(glob.glob(pattern), reverse=True)
-            if matches:
-                return matches[0]
+            if not matches:
+                continue
+            
+            # ถ้ามีการระบุเวอร์ชัน ให้ค้นหาพาธที่มีเลขเวอร์ชันนั้นก่อน
+            if version:
+                for match in matches:
+                    if version.lower() in match.lower():
+                        return match
+            
+            # ถ้าไม่พบพาธที่ตรงเวอร์ชัน หรือไม่มีเวอร์ชัน ให้ใช้พาธล่าสุดที่เจอ
+            return matches[0]
     return None
 
 
-def _guess_by_registry(program_name: str, installed: list[tuple[str, str]]) -> str | None:
+def _guess_by_registry(program_name: str, version: str, installed: list[tuple[str, str]]) -> str | None:
+    """ค้นหาจาก Registry โดยเช็กทั้งชื่อโปรแกรมและเวอร์ชัน"""
     name = program_name.lower()
+    ver = version.lower()
+    
+    # 1. พยายามหาตัวที่ตรงทั้งชื่อและเวอร์ชันก่อน
+    if ver:
+        for display_name, exe_path in installed:
+            disp_lower = display_name.lower()
+            if name in disp_lower and ver in disp_lower:
+                return exe_path
+
+    # 2. ถ้าไม่เจอ ให้หาตามชื่อโปรแกรมอย่างเดียวเป็น fallback
     for display_name, exe_path in installed:
         if name in display_name.lower():
             return exe_path
     return None
 
 
-def _resolve_path_for_program(program_name: str, installed: list[tuple[str, str]]) -> str | None:
-    """Full three-source scan, tried in order until one hits: system PATH,
-    then the Windows Uninstall registry (`installed`, a single
-    list_installed_programs() call shared across every unlinked Program in
-    the same pass so the registry is only walked once), then a handful of
-    known default install locations. Only ever called for a Program that
-    isn't already linked. Runs automatically for every still-unlinked
-    Program on each rebuild (SoftwareLinkerPage._auto_detect_missing) and
-    is also available as an explicit re-run via the "Auto-Resolve Path"
-    button (SoftwareLinkerPage._on_auto_resolve_path), which additionally
-    reports a summary of how many programs it resolved."""
-    guess = shutil.which(program_name.lower().replace(" ", ""))
+def _resolve_path_for_program(program_name: str, version: str, installed: list[tuple[str, str]]) -> str | None:
+    """ค้นหาพาธติดตั้งโดยส่งทั้งชื่อโปรแกรมและเวอร์ชันเข้าไปตรวจเช็ก"""
+    # 1. ค้นหาใน PATH
+    search_term = f"{program_name}{version}".lower().replace(" ", "")
+    guess = shutil.which(search_term)
+    if not guess:
+        guess = shutil.which(program_name.lower().replace(" ", ""))
     if guess:
         return guess
-    guess = _guess_by_registry(program_name, installed)
+
+    # 2. ค้นหาใน Windows Registry
+    guess = _guess_by_registry(program_name, version, installed)
     if guess:
         return guess
-    return _guess_by_default_install_path(program_name)
+
+    # 3. ค้นหาใน Default Installation Globs
+    return _guess_by_default_install_path(program_name, version)
 
 
 class ProgramPickerDialog(QDialog):
@@ -529,16 +544,12 @@ class SoftwareLinkerPage(QWidget):
             self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
     def _auto_detect_missing(self, project_id: str) -> None:
-        # Runs the full PATH/registry/default-path scan (same one the
-        # "Auto-Resolve Path" button runs) automatically for every
-        # still-unlinked Program on each rebuild, never overwriting an
-        # existing link. Programs with no match anywhere just stay
-        # unlinked until the user links one manually.
         installed = list_installed_programs()
-        for key, program, _version, _label in _link_rows(self._store, project_id):
+        for key, program, version, _label in _link_rows(self._store, project_id):
             if self._config_store.get(key):
                 continue
-            guess = _resolve_path_for_program(program.name, installed)
+            # ส่ง version เพิ่มเข้าไปเป็นอาร์กิวเมนต์ที่ 2
+            guess = _resolve_path_for_program(program.name, version, installed)
             if guess:
                 self._config_store.set(key, guess)
 
@@ -547,10 +558,11 @@ class SoftwareLinkerPage(QWidget):
             return
         installed = list_installed_programs()
         resolved = 0
-        for key, program, _version, _label in _link_rows(self._store, self._project.id):
+        for key, program, version, _label in _link_rows(self._store, self._project.id):
             if self._config_store.get(key):
                 continue
-            guess = _resolve_path_for_program(program.name, installed)
+            # ส่ง version เพิ่มเข้าไปเป็นอาร์กิวเมนต์ที่ 2
+            guess = _resolve_path_for_program(program.name, version, installed)
             if guess:
                 self._config_store.set(key, guess)
                 resolved += 1
