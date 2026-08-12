@@ -115,14 +115,18 @@ def _guess_by_default_install_path(program_name: str, version: str = "") -> str 
             matches = sorted(glob.glob(pattern), reverse=True)
             if not matches:
                 continue
-            
-            # ถ้ามีการระบุเวอร์ชัน ให้ค้นหาพาธที่มีเลขเวอร์ชันนั้นก่อน
+
+            # 1. ถ้ามีการระบุเวอร์ชัน ให้สแกนหาตัวที่ตรงกับเวอร์ชันนั้นๆ ก่อน
             if version:
+                ver_str = str(version).strip().lower()
                 for match in matches:
-                    if version.lower() in match.lower():
+                    # เช็กว่าเวอร์ชันอยู่ในพาธจริงหรือไม่
+                    if ver_str in match.lower():
                         return match
-            
-            # ถ้าไม่พบพาธที่ตรงเวอร์ชัน หรือไม่มีเวอร์ชัน ให้ใช้พาธล่าสุดที่เจอ
+                # ถ้าเจาะจงเวอร์ชันแล้วแต่ไม่เจอพาธเวอร์ชันนั้น ให้ข้าม pattern นี้ไป (อย่าสุ่มหยิบตัวอื่น)
+                continue
+
+            # 2. ถ้าไม่ได้ระบุเวอร์ชันเลย ค่อยใช้พาธแรกที่เจอ
             return matches[0]
     return None
 
@@ -130,29 +134,27 @@ def _guess_by_default_install_path(program_name: str, version: str = "") -> str 
 def _guess_by_registry(program_name: str, version: str, installed: list[tuple[str, str]]) -> str | None:
     """ค้นหาจาก Registry โดยเช็กทั้งชื่อโปรแกรมและเวอร์ชัน"""
     name = program_name.lower()
-    ver = version.lower()
-    
-    # 1. พยายามหาตัวที่ตรงทั้งชื่อและเวอร์ชันก่อน
+    ver = version.lower().strip()
+
+    # 1. ถ้ามีระบุเวอร์ชัน พยายามหาตัวที่ตรงทั้งชื่อและเวอร์ชัน
     if ver:
         for display_name, exe_path in installed:
             disp_lower = display_name.lower()
             if name in disp_lower and ver in disp_lower:
                 return exe_path
+        # หากระบุเวอร์ชันแล้วไม่เจอตัวที่ตรง ให้คืนค่า None เพื่อไม่ให้หยิบเวอร์ชันอื่นสุ่มสี่สี่ห้ามาใส่
+        return None
 
-    # 2. ถ้าไม่เจอ ให้หาตามชื่อโปรแกรมอย่างเดียวเป็น fallback
+    # 2. ถ้าไม่ได้ระบุเวอร์ชัน ให้หาตามชื่อโปรแกรมอย่างเดียวเป็น fallback
     for display_name, exe_path in installed:
         if name in display_name.lower():
             return exe_path
     return None
 
-
 def _resolve_path_for_program(program_name: str, version: str, installed: list[tuple[str, str]]) -> str | None:
     """ค้นหาพาธติดตั้งโดยส่งทั้งชื่อโปรแกรมและเวอร์ชันเข้าไปตรวจเช็ก"""
-    # 1. ค้นหาใน PATH
-    search_term = f"{program_name}{version}".lower().replace(" ", "")
-    guess = shutil.which(search_term)
-    if not guess:
-        guess = shutil.which(program_name.lower().replace(" ", ""))
+    # 1. ค้นหาใน Default Installation Globs ก่อน เพราะสามารถระบุโฟลเดอร์เวอร์ชันชัวร์สุด (เช่น Maya2024, Maya2026)
+    guess = _guess_by_default_install_path(program_name, version)
     if guess:
         return guess
 
@@ -161,9 +163,15 @@ def _resolve_path_for_program(program_name: str, version: str, installed: list[t
     if guess:
         return guess
 
-    # 3. ค้นหาใน Default Installation Globs
-    return _guess_by_default_install_path(program_name, version)
+    # 3. Fallback: ค้นหาใน System PATH (shutil.which)
+    search_term = f"{program_name}{version}".lower().replace(" ", "")
+    guess = shutil.which(search_term)
+    if not guess:
+        guess = shutil.which(program_name.lower().replace(" ", ""))
+    if guess:
+        return guess
 
+    return None
 
 class ProgramPickerDialog(QDialog):
     """Simple icon+search picker over every installed program found in the
