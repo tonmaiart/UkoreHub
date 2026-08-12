@@ -64,6 +64,7 @@ class RepoBrowserWidget(QWidget):
 
         self.fs_model = QFileSystemModel()
         self.fs_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
+        self.fs_model.directoryLoaded.connect(self._on_directory_loaded)
         self.proxy = FileTableFilterProxy()
         self.proxy.setSourceModel(self.fs_model)
 
@@ -183,9 +184,6 @@ class RepoBrowserWidget(QWidget):
         if self._debug_bus:
             self._debug_bus.log("Explorer", f"set_root: {posix_path}")
 
-        # กำหนด Root ให้กับ QFileSystemModel
-        self.fs_model.setRootPath(posix_path)
-
         if self._cache_dir:
             self._last_opened_store = LastOpenedStore(
                 repo_root=path, 
@@ -195,8 +193,11 @@ class RepoBrowserWidget(QWidget):
             )
             self._refresh_last_opened_list()
 
-        # หน่วงเวลาสั้นๆ (50ms) เพื่อให้ QFileSystemModel สแกนดักจับ Index บนดิสก์ได้ทัน
-        QTimer.singleShot(50, lambda: self._navigate_to(path))
+        # 🟢 สั่งเริ่มสแกนโฟลเดอร์
+        self.fs_model.setRootPath(posix_path)
+        
+        # 🟢 นำทางเบื้องต้นไปก่อน (สำหรับเตรียม Breadcrumb/Columns)
+        self._navigate_to(path)
 
     def _navigate_to(self, path: Path, *, _record_history: bool = True) -> None:
         path = Path(path).resolve()
@@ -235,6 +236,19 @@ class RepoBrowserWidget(QWidget):
 
         self._sync_columns_from_path(path)
         self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
+
+    def _on_directory_loaded(self, path_str: str) -> None:
+        """จะถูกเรียกอัตโนมัติเมื่อ QFileSystemModel อ่านดิสก์เสร็จเรียบร้อยแล้ว"""
+        if self._current_path and Path(path_str).resolve() == self._current_path.resolve():
+            source_index = self.fs_model.index(path_str)
+            proxy_index = self.proxy.mapFromSource(source_index)
+
+            if proxy_index.isValid():
+                self.table.setRootIndex(proxy_index)
+                if self._debug_bus:
+                    self._debug_bus.log("Explorer", f"directoryLoaded success: {path_str}")
+            elif source_index.isValid():
+                self.table.setRootIndex(self.proxy.mapFromSource(source_index))
 
     def _relative_path_str(self, path: Path) -> str:
         if self._root is None:
