@@ -7,7 +7,7 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-13T12:56:17.945435+00:00",
+      "last_synced": "2026-08-13T14:46:34.076306+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
@@ -486,8 +486,13 @@
         "ukore_browser": {
           "PYTHONPATH": {
             "*": [
-              "E:\\UkoreWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-scripts",
-              "C:\\Users\\Admin\\Downloads\\UkoreHubLauncher-main (1)\\UkoreHubLauncher-main\\app"
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-scripts",
+              "C:\\Tonmai\\UkoreHubDev\\app"
+            ]
+          },
+          "MAYA_PLUG_IN_PATH": {
+            "*": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-plug-ins"
             ]
           }
         },
@@ -526,6 +531,46 @@
               "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\ukore_dreamwall_picker\\maya-scripts"
             ]
           }
+        },
+        "maya_ngskin": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-scripts"
+            ]
+          },
+          "MAYA_PLUG_IN_PATH": {
+            "2018": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2018"
+            ],
+            "2019": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2019"
+            ],
+            "2020": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2020"
+            ],
+            "2022": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2022"
+            ],
+            "2023": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2023"
+            ],
+            "2024": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2024"
+            ],
+            "2025": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2025"
+            ],
+            "2026": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaNgSkin\\maya-plug-ins\\2026"
+            ]
+          }
+        },
+        "studio_library": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\StudioLibrary\\maya-scripts"
+            ]
+          }
         }
       },
       "labels": {
@@ -537,7 +582,9 @@
         "ukore_reference_editor": "UkoreReferenceEditor",
         "ukore_menu": "Ukore Menu",
         "dw_publish_picker": "DW Publish Picker",
-        "dreamwall_picker": "DreamwallPicker"
+        "dreamwall_picker": "DreamwallPicker",
+        "maya_ngskin": "MayaNgSkin",
+        "studio_library": "StudioLibrary"
       },
       "launch_hooks": {
         "ukore_menu": {
@@ -553,6 +600,10 @@
           "order": 100,
           "post_open_mel": "python(\"import DwPublishPicker; DwPublishPicker.register_menu()\");",
           "diagnostic_msg": "DwPublishPicker menu registered to UkoreMenu"
+        },
+        "ukore_browser": {
+          "order": 10,
+          "post_open_mel": "python(\"try:\\n    import UkoreBrowser\\nexcept ImportError:\\n    pass\");"
         }
       }
     },
@@ -578,13 +629,6 @@
           "git_url": "https://github.com/tonmaiart/PublishApi.git",
           "folder_name": "PublishApi",
           "plugin_id": "publish_api"
-        },
-        {
-          "id": "437f9927-15a2-4031-a539-350116359087",
-          "name": "MayaToolkit",
-          "git_url": "https://github.com/tonmaiart/MayaToolkit.git",
-          "folder_name": "MayaToolkit",
-          "plugin_id": "maya_toolkit"
         },
         {
           "id": "b10d2de8-8d78-4120-be6a-efebaa9f8f91",
@@ -613,6 +657,13 @@
           "git_url": "https://github.com/tonmaiart/dw_publish_picker.git",
           "folder_name": "dw_publish_picker",
           "plugin_id": "dw_publish_picker"
+        },
+        {
+          "id": "2ee0619a-7a63-487e-9368-96ed09ec526f",
+          "name": "MayaToolkit",
+          "git_url": "https://github.com/tonmaiart/MayaToolkit.git",
+          "folder_name": "MayaToolkit",
+          "plugin_id": "maya_toolkit"
         }
       ]
     }
