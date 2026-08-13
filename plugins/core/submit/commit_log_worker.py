@@ -21,11 +21,23 @@ class CommitLogWorker(QThread):
 
     entries_ready = Signal(list)
 
-    def __init__(self, git_service: GitService, repo_path: Path, github_token: str | None, parent=None):
+    def __init__(
+        self,
+        git_service: GitService,
+        repo_path: Path,
+        github_token: str | None,
+        avatar_cache: dict[str, bytes | None] | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.git_service = git_service
         self.repo_path = repo_path
         self.github_token = github_token
+        # Shared across every poll (page keeps this alive for the page's own
+        # lifetime), so an author's avatar is only ever downloaded once
+        # instead of on every 30-minute repoll — same idiom
+        # PathCommitHistoryWorker uses for Explorer's panel.
+        self._avatar_cache = avatar_cache if avatar_cache is not None else {}
 
     def run(self) -> None:
         try:
@@ -34,14 +46,21 @@ class CommitLogWorker(QThread):
             pass  # offline/auth hiccup — fall back to whatever's already local
 
         entries = fetch_entries_via_github(
-            self.git_service, self.repo_path, "", self.github_token, _FETCH_LIMIT, 1, {}
+            self.git_service, self.repo_path, "", self.github_token, _FETCH_LIMIT, 1, self._avatar_cache
         )
         if entries is None:
+            commits = []
             try:
                 branch = self.git_service.get_current_branch(self.repo_path)
                 commits = self.git_service.get_commit_log(self.repo_path, limit=_FETCH_LIMIT, ref=f"origin/{branch}")
             except GitOperationError:
-                commits = []
+                pass
+            if not commits:
+                # No matching remote-tracking branch (fetch failed/never ran,
+                # or this branch isn't pushed yet) — fall back to local HEAD,
+                # same as Explorer's per-path panel, instead of showing
+                # nothing even though local history exists.
+                commits = self.git_service.get_commit_log(self.repo_path, limit=_FETCH_LIMIT)
             entries = [
                 CommitHistoryEntry(
                     hash=commit.hash[:10],

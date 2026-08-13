@@ -40,7 +40,14 @@ from __future__ import annotations
 
 from interface.project_selector_dialog import ProjectSelectorDialog
 from interface.repo_settings.local_repository_page import LOCAL_REPOSITORY
-from interface.shared.commit_history import CommitCard, CommitHistoryEntry, fetch_entries_via_github
+from interface.shared.commit_history import (
+    CommitCard,
+    CommitFilesDialog,
+    CommitHistoryEntry,
+    fetch_entries_via_github,
+    format_commit_date,
+    format_relative_time,
+)
 from interface.shared.image_asset import pick_image_file, save_image_asset
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 from interface.shared.widget_helpers import confirm_action, set_bold, set_secondary_text, show_exclusive, wrap_scrollable
@@ -54,6 +61,7 @@ from interface.main_window import MainWindow
 
 __all__ = [
     "CommitCard",
+    "CommitFilesDialog",
     "CommitHistoryEntry",
     "DEFAULT_THEME_NAME",
     "LOCAL_REPOSITORY",
@@ -63,6 +71,8 @@ __all__ = [
     "apply_theme",
     "confirm_action",
     "fetch_entries_via_github",
+    "format_commit_date",
+    "format_relative_time",
     "get_theme",
     "pick_image_file",
     "register_builtin_settings_tabs",

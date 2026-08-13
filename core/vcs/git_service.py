@@ -241,7 +241,10 @@ class GitService:
         except GitOperationError:
             remote_url = ""
         auth_args, auth_env = self._github_auth_args_and_env(remote_url)
-        self._run_capture([*auth_args, "fetch", "--quiet"], cwd=repo_path, extra_env=auth_env)
+        # Bounded: this runs silently in the background (Submit's commit
+        # history poll) and must fail fast rather than hang the QThread
+        # forever if the network stalls instead of cleanly refusing.
+        self._run_capture([*auth_args, "fetch", "--quiet"], cwd=repo_path, extra_env=auth_env, timeout=30)
 
     def open_or_sync(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> str:
         dest = Path(dest)
@@ -426,7 +429,13 @@ class GitService:
         )
 
     def _run_capture(
-        self, args: list[str], cwd: Path, extra_env: dict | None = None, *, _retried_ownership: bool = False
+        self,
+        args: list[str],
+        cwd: Path,
+        extra_env: dict | None = None,
+        *,
+        _retried_ownership: bool = False,
+        timeout: float | None = None,
     ) -> str:
         try:
             result = subprocess.run(
@@ -437,7 +446,15 @@ class GitService:
                 text=True,
                 env=_non_interactive_env(extra_env),
                 creationflags=_NO_WINDOW_FLAGS,
+                timeout=timeout,
             )
+        except subprocess.TimeoutExpired as exc:
+            # Without this, a stalled network op (e.g. a VPN/firewall that
+            # silently drops the connection instead of refusing it) hangs
+            # the calling QThread forever — see CommitLogWorker's background
+            # fetch(), which must never block its own "Loading..." state
+            # indefinitely.
+            raise GitOperationError(f"git {' '.join(args)} timed out: {exc}") from exc
         except OSError as exc:
             # e.g. WinError 206 "The filename or extension is too long" when
             # a huge pathspec argument list (hundreds/thousands of selected
@@ -454,7 +471,7 @@ class GitService:
                 match = _DUBIOUS_OWNERSHIP_RE.search(stderr)
                 if match:
                     self._add_safe_directory(match.group(1))
-                    return self._run_capture(args, cwd, extra_env, _retried_ownership=True)
+                    return self._run_capture(args, cwd, extra_env, _retried_ownership=True, timeout=timeout)
             raise GitOperationError(f"git {' '.join(args)} failed: {stderr}")
         return result.stdout
 

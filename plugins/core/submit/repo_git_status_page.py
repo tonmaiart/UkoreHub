@@ -3,11 +3,13 @@ from __future__ import annotations
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QSize, QTimer, Qt, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -15,11 +17,15 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from plugin_api import (
+    CommitFilesDialog,
+    CommitHistoryEntry,
     GitHubAuthError,
     GitOperationError,
     GitService,
@@ -31,6 +37,8 @@ from plugin_api import (
     UkoreHubError,
     check_repo_access,
     confirm_action,
+    format_commit_date,
+    format_relative_time,
     show_exclusive,
     wrap_scrollable,
 )
@@ -72,6 +80,9 @@ class RepoGitStatusPage(QWidget):
         self._stream_worker: GitStreamWorker | None = None
         self._stage_worker: GitStreamWorker | None = None
         self._commit_log_worker: CommitLogWorker | None = None
+        self._commit_log_entries: list[CommitHistoryEntry] = []
+        self._commit_log_avatar_cache: dict[str, bytes | None] = {}
+        self._commit_files_dialog: CommitFilesDialog | None = None
         self._pending_commit_message = ""
         self._pending_amend = False
         self._last_status: RepoStatus | None = None
@@ -182,30 +193,53 @@ class RepoGitStatusPage(QWidget):
         # machine's own. Polled on repo switch, Refresh Status, and after a
         # push (all funneled through refresh_status()/_poll_commit_log), plus
         # a background QTimer so it stays current while the tab just sits
-        # open. See CommitCard (interface/shared/commit_history.py) — passing
-        # git_service/repo_path/on_browse_file makes each card expandable via
-        # a "Files" button.
+        # open. Plain table, not CommitCard (interface/shared/commit_history.py)
+        # — double-clicking a row opens the same CommitFilesDialog CommitCard's
+        # "Files" button does.
         self.commit_log_status_label = QLabel("")
         self.commit_log_status_label.setWordWrap(True)
-        self._commit_log_cards_container = QWidget()
-        self._commit_log_cards_layout = QVBoxLayout(self._commit_log_cards_container)
-        self._commit_log_cards_layout.addStretch()
-        commit_log_scroll = wrap_scrollable(self._commit_log_cards_container, object_name="commitHistoryScroll")
+        # Columns: avatar icon, author, message, relative time ("3 hours
+        # ago"), absolute date — date last since the relative column is the
+        # one worth reading at a glance, absolute is just backup detail.
+        self.commit_log_table = QTableWidget(0, 5)
+        self.commit_log_table.setHorizontalHeaderLabels(["", "Author", "Message", "Time Ago", "Date"])
+        self.commit_log_table.verticalHeader().setVisible(False)
+        self.commit_log_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.commit_log_table.setSelectionMode(QAbstractItemView.NoSelection)
+        self.commit_log_table.setIconSize(QSize(20, 20))
+        self.commit_log_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.commit_log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.commit_log_table.doubleClicked.connect(self._on_commit_row_double_clicked)
         commit_log_group = QGroupBox("Commit History")
         commit_log_layout = QVBoxLayout(commit_log_group)
         commit_log_layout.addWidget(self.commit_log_status_label)
-        commit_log_layout.addWidget(commit_log_scroll)
+        commit_log_layout.addWidget(self.commit_log_table)
 
         self._commit_log_timer = QTimer(self)
         self._commit_log_timer.setInterval(COMMIT_LOG_POLL_INTERVAL_MS)
         self._commit_log_timer.timeout.connect(self._poll_commit_log)
         self._commit_log_timer.start()
 
-        self.content_widget = QWidget()
-        content_layout = QVBoxLayout(self.content_widget)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
         content_layout.addLayout(lists_row)
         content_layout.addWidget(git_log_group)
         content_layout.addWidget(commit_log_group, 1)
+
+        # Without this outer scroll wrapper, content_layout has no room to
+        # spare on a typical window height: Modified/Staged/Git Log all get
+        # the default stretch (0, "keep my sizeHint"), so Qt satisfies them
+        # first and squeezes the one item stretch=1 was meant to *grow*
+        # (commit_log_group) all the way down to 0 height under space
+        # pressure instead — the whole "Commit History" box disappears
+        # rather than just showing fewer cards. Same wrap_scrollable(page
+        # content) shape as custom_paths_settings_page.py and friends.
+        scroll = wrap_scrollable(content)
+
+        self.content_widget = QWidget()
+        content_wrap_layout = QVBoxLayout(self.content_widget)
+        content_wrap_layout.setContentsMargins(0, 0, 0, 0)
+        content_wrap_layout.addWidget(scroll)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.empty_label)
@@ -297,26 +331,50 @@ class RepoGitStatusPage(QWidget):
         if not self.git_service.is_cloned(dest_path):
             return
         self.commit_log_status_label.setText("Loading...")
-        self._commit_log_worker = CommitLogWorker(self.git_service, dest_path, self.git_service.get_github_token())
+        self._commit_log_worker = CommitLogWorker(
+            self.git_service, dest_path, self.git_service.get_github_token(), avatar_cache=self._commit_log_avatar_cache
+        )
         self._commit_log_worker.entries_ready.connect(self._on_commit_log_ready)
         self._commit_log_worker.start()
 
     def _on_commit_log_ready(self, entries: list[CommitHistoryEntry]) -> None:
-        while self._commit_log_cards_layout.count() > 1:  # keep the trailing stretch
-            item = self._commit_log_cards_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        self._commit_log_entries = entries
         self.commit_log_status_label.setText("No commit history found." if not entries else "")
-        dest_path = self._dest_path()
-        for entry in entries:
-            card = CommitCard(
-                entry,
-                git_service=self.git_service,
-                repo_path=dest_path,
-                on_browse_file=self.browse_file_requested.emit,
-            )
-            self._commit_log_cards_layout.insertWidget(self._commit_log_cards_layout.count() - 1, card)
+        self.commit_log_table.setRowCount(len(entries))
+        for row, entry in enumerate(entries):
+            avatar_item = QTableWidgetItem()
+            if entry.avatar_bytes:
+                pixmap = QPixmap()
+                pixmap.loadFromData(entry.avatar_bytes)
+                avatar_item.setIcon(QIcon(pixmap))
+            else:
+                # No avatar (local-git fallback, or the download failed) —
+                # same generic person glyph CommitCard falls back to.
+                avatar_item.setText("\U0001F464")
+                avatar_item.setTextAlignment(Qt.AlignCenter)
+            self.commit_log_table.setItem(row, 0, avatar_item)
+            self.commit_log_table.setItem(row, 1, QTableWidgetItem(entry.author_display))
+            self.commit_log_table.setItem(row, 2, QTableWidgetItem(entry.message))
+            self.commit_log_table.setItem(row, 3, QTableWidgetItem(format_relative_time(entry.date)))
+            self.commit_log_table.setItem(row, 4, QTableWidgetItem(format_commit_date(entry.date)))
+
+    def _on_commit_row_double_clicked(self, index) -> None:
+        row = index.row()
+        if not (0 <= row < len(self._commit_log_entries)):
+            return
+        # Non-modal, fresh dialog per double-click — replaces the previous
+        # one (if a row was already open) rather than stacking windows, same
+        # idiom CommitCard's own "Files" button uses.
+        if self._commit_files_dialog is not None:
+            self._commit_files_dialog.close()
+        self._commit_files_dialog = CommitFilesDialog(
+            self,
+            git_service=self.git_service,
+            repo_path=self._dest_path(),
+            entry=self._commit_log_entries[row],
+            on_browse_file=self.browse_file_requested.emit,
+        )
+        self._commit_files_dialog.show()
 
     def _on_gitweb_clicked(self) -> None:
         if self._repo is None:

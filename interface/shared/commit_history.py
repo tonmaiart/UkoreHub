@@ -38,6 +38,36 @@ def format_commit_date(raw: str) -> str:
     return dt.strftime("%d %b %Y")
 
 
+def format_relative_time(raw: str) -> str:
+    """Best-effort "3 hours ago" from the same git/GitHub ISO date strings
+    format_commit_date parses — falls back to the raw string on a parse
+    failure, same reasoning as format_commit_date."""
+    if not raw:
+        return raw
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+    seconds = (now - dt).total_seconds()
+    if seconds < 60:
+        return "just now"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes} min{'s' if minutes != 1 else ''} ago"
+    hours = int(minutes // 60)
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = int(hours // 24)
+    if days < 30:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    months = int(days // 30)
+    if months < 12:
+        return f"{months} month{'s' if months != 1 else ''} ago"
+    years = int(days // 365)
+    return f"{years} year{'s' if years != 1 else ''} ago"
+
+
 def fetch_entries_via_github(
     git_service: GitService,
     repo_path: Path,
@@ -119,7 +149,7 @@ class CommitCard(QFrame):
         self._git_service = git_service
         self._repo_path = repo_path
         self._on_browse_file = on_browse_file
-        self._files_dialog: _CommitFilesDialog | None = None
+        self._files_dialog: CommitFilesDialog | None = None
         self._expandable = git_service is not None and repo_path is not None
 
         avatar_label = QLabel()
@@ -166,7 +196,7 @@ class CommitCard(QFrame):
         # again while it was already open) rather than stacking windows.
         if self._files_dialog is not None:
             self._files_dialog.close()
-        self._files_dialog = _CommitFilesDialog(
+        self._files_dialog = CommitFilesDialog(
             self,
             git_service=self._git_service,
             repo_path=self._repo_path,
@@ -176,11 +206,13 @@ class CommitCard(QFrame):
         self._files_dialog.show()
 
 
-class _CommitFilesDialog(QDialog):
+class CommitFilesDialog(QDialog):
     """Popup window listing the files changed in one commit — replaces the
     old inline-expanding "Files" row so the commit list itself doesn't grow
     taller as you inspect commits. Non-modal so "Browse" (which jumps to the
-    Explorer tab) doesn't force closing this window first."""
+    Explorer tab) doesn't force closing this window first. Public (used
+    directly by plugins/core/submit/repo_git_status_page.py's table-row
+    double-click, not just CommitCard's own "Files" button)."""
 
     def __init__(
         self,
