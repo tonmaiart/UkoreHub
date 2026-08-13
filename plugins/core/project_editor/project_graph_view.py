@@ -9,6 +9,7 @@ from PySide6.QtCore import QEventLoop, QLineF, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QBrush,
     QColor,
+    QFont,
     QPainter,
     QPainterPath,
     QPen,
@@ -17,6 +18,7 @@ from PySide6.QtGui import (
     QRadialGradient,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsItem,
     QGraphicsPathItem,
     QGraphicsScene,
@@ -28,19 +30,26 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressDialog,
+    QStyle,
     QVBoxLayout,
     QWidget,
 )
 
-from core.exceptions import ConflictError, NotFoundError, UkoreHubError
-from core.vcs.git_service import GitService
-from core.models import Project, Repo
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
-from interface.builtin_settings_tabs import LOCAL_REPOSITORY
+from plugin_api import (
+    LOCAL_REPOSITORY,
+    ConflictError,
+    GitService,
+    LocalConfigStore,
+    MetadataStore,
+    NotFoundError,
+    Project,
+    Repo,
+    UkoreHubError,
+    confirm_action,
+    pick_image_file,
+    save_image_asset,
+)
 from plugins.core.project_editor.dialogs import RepoDialog
-from interface.shared.image_asset import pick_image_file, save_image_asset
-from interface.shared.widget_helpers import confirm_action
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.required_repo_clone_worker import RequiredRepoCloneWorker
 
@@ -83,22 +92,17 @@ _GRAPH_BACKGROUND_EDGE_HEX = "#080808"
 _GRID_SPACING = 40
 _GRID_LINE_ALPHA = 8
 
-# Clone-status corner icon, drawn top-right on every node — file lives at
-# plugins/core/project_editor/project_graph_view.py, three parents up is
-# the UkoreHub repo root.
-_ICONS_DIR = Path(__file__).resolve().parents[3] / "assets" / "icons"
-_CONNECTED_ICON_PATH = _ICONS_DIR / "icons8-connected-30.png"
-_DISCONNECTED_ICON_PATH = _ICONS_DIR / "icons8-disconnected-30.png"
+# Clone-status corner icon, drawn top-right on every node.
 _CLONE_STATUS_ICON_SIZE = 16
 _CLONE_STATUS_ICON_MARGIN = 6
-_clone_status_icon_cache: dict[bool, QPixmap | None] = {}
+_clone_status_icon_cache: dict[bool, QPixmap] = {}
 
 # Bottom-right HUD (active project/repo, sync state, pipeline connections).
 _OVERLAY_MARGIN = 12
 
 
 def _theme_colors():
-    from interface.theme import DEFAULT_THEME_NAME, get_theme
+    from plugin_api import DEFAULT_THEME_NAME, get_theme
 
     return get_theme(DEFAULT_THEME_NAME)
 
@@ -119,19 +123,15 @@ def _format_last_synced(last_synced: str | None) -> str:
     return parsed.astimezone().strftime("%d %b %Y, %H:%M")
 
 
-def _clone_status_icon(is_cloned: bool) -> QPixmap | None:
+def _clone_status_icon(is_cloned: bool) -> QPixmap:
     """Cached, pre-scaled QPixmap for the clone/not-cloned corner badge —
-    loaded once per status value, not once per node per paint() call."""
+    built once per status value from QApplication's own standardIcon
+    (QGraphicsItem.paint() has no widget/style() of its own to draw from),
+    not once per node per paint() call."""
     if is_cloned not in _clone_status_icon_cache:
-        path = _CONNECTED_ICON_PATH if is_cloned else _DISCONNECTED_ICON_PATH
-        pixmap = QPixmap(str(path)) if path.exists() else None
-        if pixmap is not None and not pixmap.isNull():
-            pixmap = pixmap.scaled(
-                _CLONE_STATUS_ICON_SIZE, _CLONE_STATUS_ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-        else:
-            pixmap = None
-        _clone_status_icon_cache[is_cloned] = pixmap
+        standard_icon = QStyle.SP_DialogYesButton if is_cloned else QStyle.SP_DialogNoButton
+        icon = QApplication.style().standardIcon(standard_icon)
+        _clone_status_icon_cache[is_cloned] = icon.pixmap(_CLONE_STATUS_ICON_SIZE, _CLONE_STATUS_ICON_SIZE)
     return _clone_status_icon_cache[is_cloned]
 
 
@@ -195,14 +195,13 @@ class RepoNodeItem(QGraphicsItem):
         painter.restore()
 
         clone_icon = _clone_status_icon(self.is_cloned)
-        if clone_icon is not None:
-            icon_rect = QRectF(
-                rect.right() - clone_icon.width() - _CLONE_STATUS_ICON_MARGIN,
-                rect.top() + _CLONE_STATUS_ICON_MARGIN,
-                clone_icon.width(),
-                clone_icon.height(),
-            )
-            painter.drawPixmap(icon_rect.topLeft(), clone_icon)
+        icon_rect = QRectF(
+            rect.right() - clone_icon.width() - _CLONE_STATUS_ICON_MARGIN,
+            rect.top() + _CLONE_STATUS_ICON_MARGIN,
+            clone_icon.width(),
+            clone_icon.height(),
+        )
+        painter.drawPixmap(icon_rect.topLeft(), clone_icon)
 
         painter.save()
         font = painter.font()
@@ -467,14 +466,13 @@ class ProjectGraphView(QGraphicsView):
         self._project_name_label.setObjectName("projectGraphProjectName")
         self._project_name_label.setAlignment(Qt.AlignRight)
         self._project_name_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._project_name_label.setStyleSheet(
-            "QLabel#projectGraphProjectName {"
-            " background: transparent;"
-            " color: #ffffff;"
-            " font-size: 22px;"
-            " font-weight: 700;"
-            "}"
-        )
+        name_font = QFont()
+        name_font.setPixelSize(22)
+        name_font.setWeight(QFont.Bold)
+        self._project_name_label.setFont(name_font)
+        name_palette = self._project_name_label.palette()
+        name_palette.setColor(self._project_name_label.foregroundRole(), QColor("#ffffff"))
+        self._project_name_label.setPalette(name_palette)
         overlay_layout.addWidget(self._project_name_label, alignment=Qt.AlignRight)
 
         self._overlay = QLabel(self._overlay_container)
@@ -482,13 +480,12 @@ class ProjectGraphView(QGraphicsView):
         self._overlay.setTextFormat(Qt.RichText)
         self._overlay.setAlignment(Qt.AlignRight | Qt.AlignTop)
         self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._overlay.setStyleSheet(
-            "QLabel#projectGraphOverlay {"
-            " background: transparent;"
-            " color: #dcddde;"
-            " font-size: 11px;"
-            "}"
-        )
+        overlay_font = QFont()
+        overlay_font.setPixelSize(11)
+        self._overlay.setFont(overlay_font)
+        overlay_palette = self._overlay.palette()
+        overlay_palette.setColor(self._overlay.foregroundRole(), QColor("#dcddde"))
+        self._overlay.setPalette(overlay_palette)
         overlay_layout.addWidget(self._overlay, alignment=Qt.AlignRight)
 
         self._overlay_container.hide()

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QFormLayout, QLabel, QLineEdit, QWidget
 
-from core.storage.config_store import SystemConfigStore
+from core_api import SystemConfigStore
+from interface.shared.widget_helpers import set_secondary_text
 
 
 class GithubOAuthSettingsPage(QWidget):
@@ -29,7 +30,7 @@ class GithubOAuthSettingsPage(QWidget):
             "launcher (UkoreHub.exe) to work. Register a public OAuth App and\n"
             "enable \"Device Flow\" to get one."
         )
-        hint.setProperty("secondary", True)
+        set_secondary_text(hint)
         hint.setWordWrap(True)
         form.addRow("", hint)
 

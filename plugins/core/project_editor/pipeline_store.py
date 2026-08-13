@@ -3,9 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from core.exceptions import NotFoundError
-from core.models import Repo
-from core.storage.metadata_store import MetadataStore
+from plugin_api import MetadataStore, NotFoundError, Repo
 
 # This plugin's id, also its Repo.plugin_data key (core/models.py's Repo) —
 # each repo's own pipeline_inputs/custom_paths live at

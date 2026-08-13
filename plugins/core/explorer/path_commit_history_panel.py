@@ -4,9 +4,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from core.vcs.git_service import GitService
-from interface.shared.commit_history import CommitCard, CommitHistoryEntry
-from interface.shared.widget_helpers import wrap_scrollable
+from plugin_api import CommitCard, CommitHistoryEntry, GitService, wrap_scrollable
 from plugins.core.explorer.path_commit_history_worker import PathCommitHistoryWorker
 
 

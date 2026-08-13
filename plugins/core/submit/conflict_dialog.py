@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from interface.shared.widget_helpers import wrap_scrollable
+from plugin_api import wrap_scrollable
 
 
 class ConflictResolutionDialog(QDialog):

@@ -4,10 +4,7 @@ from typing import Callable
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from core.vcs.git_service import GitService
-from core.models import Project, Repo
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
+from plugin_api import GitService, LocalConfigStore, MetadataStore, Project, Repo
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.project_graph_view import ProjectGraphView
 
@@ -101,14 +98,14 @@ class ProjectEditorPage(QWidget):
 
     def switch_project(self) -> None:
         """Bound to project_settings_page.py's "Switch Project..." button —
-        wraps UICommandService.switch_project (interface/section_registry.py),
+        wraps UICommandService.switch_project (plugin_api/registries/section_registry.py),
         itself wrapping MainWindow._request_switch_project. Never changes
         current_project_id() in place; a real restart is the only way this
         app admits a different project."""
         if self._switch_project_callback is not None:
             self._switch_project_callback()
 
-    # -- page protocol (see interface/section_registry.py) ----------------
+    # -- page protocol (see plugin_api/registries/section_registry.py) ----------------
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
         self.graph_view.set_active_repo(project, repo)

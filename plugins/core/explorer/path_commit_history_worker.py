@@ -4,8 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from core.vcs.git_service import GitService
-from interface.shared.commit_history import CommitHistoryEntry, fetch_entries_via_github
+from plugin_api import CommitHistoryEntry, GitService, fetch_entries_via_github
 
 
 class PathCommitHistoryWorker(QThread):

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from interface.settings_tab_registry import CATEGORY_DEVELOPER, SettingsTabSpec
+from plugin_api import CATEGORY_DEVELOPER, SettingsTabSpec
 from plugins.core.CloudDataAdmin.cloud_data_admin_page import CloudDataAdminPage
 
 PLUGIN_ID = "cloud_data_admin"

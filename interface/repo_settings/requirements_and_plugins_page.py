@@ -16,19 +16,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exceptions import GitOperationError
-from core.extensibility.loader import DiscoveredPlugin, PluginManifest, plugin_source
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
-from core.vcs.git_service import GitService
+from core_api import DiscoveredPlugin, GitOperationError, GitService, LocalConfigStore, MetadataStore, PluginManifest, plugin_source
 from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
 from interface.shared.widget_helpers import wrap_scrollable
 
-# Matches plugins/core/ExternalPlugins/catalog_store.py's _CATALOG_KEY and
+# Matches plugins/core/ExternalPluginManager/catalog_store.py's _CATALOG_KEY and
 # PLUGIN_ID by convention (agreeing on a plugin_id + JSON shape inside
 # Project.plugin_data), not by importing that plugin's source — see
-# plugins/README.md's "Sharing data with another plugin".
+# developer/app/docs/plugins-guide.md's "Sharing data with another plugin".
 _EXTERNAL_PLUGINS_ID = "external_plugins"
 _EXTERNAL_CATALOG_KEY = "catalog"
 _NOT_CLONED_SUFFIX = " (not installed — check to clone)"
@@ -70,11 +66,12 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         unchecked by default, persisted to Repo.required_plugin_ids. Lists
         every "repo"-source plugin discover_plugins() finds cloned on this
         machine, plus every entry in the active Project's own
-        plugins/core/ExternalPlugins/ catalog
+        plugins/core/ExternalPluginManager/ catalog
         (Project.plugin_data["external_plugins"]["catalog"]) that isn't
         cloned/discovered yet. Was a studio-wide catalog with a brief,
         reverted 2026-08-10 attempt at a per-project selection filter on
-        top of it — see that plugin's own README for why the filter
+        top of it — see developer/app/docs/plugins/ExternalPluginManager.md
+        for why the filter
         version failed (catalog entries added before the filter existed
         had no way back into a project's selection once the manual toggle
         that set it was removed). Moving the catalog itself into
@@ -241,21 +238,21 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
         return f" — requires: {', '.join(names)}"
 
     def _add_pending_external_items(self, discovered_repo_folders: set[str], required_ids: list[str]) -> None:
-        """A studio-wide catalog entry (plugins/core/ExternalPlugins/) that
+        """A studio-wide catalog entry (plugins/core/ExternalPluginManager/) that
         this session's plugin discovery hasn't picked up (see loader.py's
         discover_plugins, run once at app startup) — split by actual on-disk
         state, since "not discovered yet" covers three different situations:
         - Not cloned at all: checkable — checking it clones it right here
           (see _on_catalog_entry_checked) instead of sending the user to
-          Settings > Developer > External Plugins first.
+          Settings > Project > External Plugin Manager first.
         - Cloned (by this flow or by hand) but not yet discovered this
           session: shown disabled with its current required-for-this-repo
           state, since there's nothing left to do but restart.
         - A broken .git directory (GitService.is_cloned true, is_repo_root
-          false — see plugins/core/ExternalPlugins/README.md's "Why
-          is_repo_root, not just is_cloned"): shown disabled, pointing at
-          External Plugins to fix it rather than silently treating it as
-          installed."""
+          false — see developer/app/docs/plugins/ExternalPluginManager.md's
+          "Why is_repo_root, not just is_cloned"): shown disabled, pointing
+          at External Plugin Manager to fix it rather than silently treating
+          it as installed."""
         for entry in sorted(self._read_external_catalog(), key=lambda e: e["name"]):
             if entry["folder_name"] in discovered_repo_folders:
                 continue
@@ -296,10 +293,10 @@ class RequirementsAndPluginsPage(BaseRepoSettingsPage):
             return None
 
     def _read_external_catalog(self) -> list[dict]:
-        """The active Project's own External Plugins catalog (see
-        plugins/core/ExternalPlugins/catalog_store.py) — read straight from
-        self.store on every call, no caching, so an edit made on the
-        External Plugins settings tab earlier in the same session is
+        """The active Project's own External Plugin Manager catalog (see
+        plugins/core/ExternalPluginManager/catalog_store.py) — read straight
+        from self.store on every call, no caching, so an edit made on the
+        External Plugin Manager settings tab earlier in the same session is
         picked up the next time this tab is opened."""
         if self._project is None:
             return []

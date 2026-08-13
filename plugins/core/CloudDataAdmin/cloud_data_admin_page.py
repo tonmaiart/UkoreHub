@@ -15,11 +15,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exceptions import ConflictError
-from core.os_utils import open_with_default_app
+from plugin_api import ConflictError, open_with_default_app, set_secondary_text
 
 # The three fixed top-level blobs launcher.py always pulls, regardless of
-# which plugins are loaded this run — see data/README.md.
+# which plugins are loaded this run — see developer/app/docs/data-layout.md.
 _FIXED_BLOB_NAMES = ["projects.json", "programs.json", "system_config.json"]
 
 
@@ -53,7 +52,7 @@ class CloudDataAdminPage(QWidget):
             "own data/ files; restart UkoreHub afterward to load whatever you push."
         )
         intro.setWordWrap(True)
-        intro.setProperty("secondary", True)
+        set_secondary_text(intro)
         layout.addWidget(intro)
 
         form = QFormLayout()
@@ -81,7 +80,7 @@ class CloudDataAdminPage(QWidget):
 
         self._status_label = QLabel()
         self._status_label.setWordWrap(True)
-        self._status_label.setProperty("secondary", True)
+        set_secondary_text(self._status_label)
         layout.addWidget(self._status_label)
 
         layout.addStretch()

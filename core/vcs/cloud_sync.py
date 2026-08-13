@@ -2,14 +2,14 @@
 data/system_config.json, data/plugins/core/*.json) to/from Cloudflare R2 —
 the replacement for the old "git pull carries data/ along with the app
 code" model, which broke whenever a machine had an uncommitted local edit
-(see developer/bug-history/README.md).
+(see the ukorehub-cloud-sync skill).
 
 Deliberately isolated in its own module: never import this from
 core/storage/metadata_store.py, core/storage/config_store.py, or
 core/extensibility/config_store.py — those get vendored (copy-pasted, not
 imported) into developer/launcher/launcher_build/core/ for
 UkoreHubLauncher.exe's own build, and boto3 has no business ending up in
-that PyInstaller bundle. Only launcher.py and interface/plugin_api.py (the
+that PyInstaller bundle. Only launcher.py and plugin_api/plugin_api.py (the
 unfrozen app, run via plain python(w).exe) import this.
 
 Authenticates with a single shared static R2 API key (Account ID + Access

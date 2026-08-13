@@ -5,12 +5,15 @@ from typing import Callable
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from core.extensibility.file_opener import FileOpenerRegistry
-from core.vcs.git_service import GitService
-from core.models import Project, Repo
-from core.os_utils import open_with_default_app
-from core.storage.config_store import LocalConfigStore
-from interface.shared.widget_helpers import show_exclusive
+from plugin_api import (
+    FileOpenerRegistry,
+    GitService,
+    LocalConfigStore,
+    Project,
+    Repo,
+    open_with_default_app,
+    show_exclusive,
+)
 from plugins.core.explorer.browser_widget import RepoBrowserWidget
 
 

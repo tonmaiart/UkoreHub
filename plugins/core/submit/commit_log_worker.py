@@ -4,9 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from core.exceptions import GitOperationError
-from core.vcs.git_service import GitService
-from interface.shared.commit_history import CommitHistoryEntry, fetch_entries_via_github
+from plugin_api import CommitHistoryEntry, GitOperationError, GitService, fetch_entries_via_github
 
 _FETCH_LIMIT = 20
 

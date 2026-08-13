@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from interface.section_registry import UICommandService, SectionSpec
+from PySide6.QtWidgets import QStyle
+
+from plugin_api import SectionSpec, UICommandService
 from plugins.core.submit.repo_git_status_page import RepoGitStatusPage
 
 SECTION_KEY = "repo_git_status"
@@ -19,7 +21,6 @@ def _wire(page: RepoGitStatusPage, host: UICommandService) -> None:
 
 def register(api) -> None:
     page = RepoGitStatusPage(store=api.metadata, local_config_store=api.local_config, git_service=api.git)
-    icons_dir = api.app_root / "assets" / "icons"
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,
@@ -27,10 +28,10 @@ def register(api) -> None:
             order=20,
             page_factory=lambda: page,
             background_threads=lambda p: [p._git_worker, p._status_worker, p._stream_worker, p._commit_log_worker],
-            icon_path=icons_dir / "icons8-submit-50.png",
+            standard_icon=QStyle.SP_DialogSaveButton,
             wire=_wire,
             # SectionTabList lays this out at the right edge of Submit's own
-            # row; the page updates its color directly (see
+            # row; the page updates its icon directly (see
             # RepoGitStatusPage.status_dot / RepoStatusDot.set_state).
             trailing_widget_factory=lambda: page.status_dot,
         )

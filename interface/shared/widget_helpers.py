@@ -1,6 +1,27 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QMessageBox, QScrollArea, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QScrollArea, QWidget
+
+from interface.theme import DEFAULT_THEME_NAME, get_theme
+
+
+def set_secondary_text(label: QLabel) -> None:
+    """Muted/secondary text color — replaces the old QSS
+    `QLabel[secondary="true"] { color: ... }` selector pattern with a
+    direct QPalette set, the most common QSS-selector call site in the app
+    before the zero-QSS migration."""
+    palette = label.palette()
+    palette.setColor(label.foregroundRole(), QColor(get_theme(DEFAULT_THEME_NAME).text_secondary))
+    label.setPalette(palette)
+
+
+def set_bold(label: QLabel) -> None:
+    """Bold text — replaces the old QSS `font-weight: bold` rules (e.g.
+    `[cardTitle="true"]`, `#commitHistoryTitle`) with a direct QFont set."""
+    font = label.font()
+    font.setBold(True)
+    label.setFont(font)
 
 
 def wrap_scrollable(widget: QWidget, *, frameless: bool = True, object_name: str | None = None) -> QScrollArea:

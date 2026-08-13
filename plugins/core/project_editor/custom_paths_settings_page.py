@@ -19,10 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exceptions import NotFoundError
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
-from interface.shared.widget_helpers import show_exclusive, wrap_scrollable
+from plugin_api import LocalConfigStore, MetadataStore, NotFoundError, set_secondary_text, show_exclusive, wrap_scrollable
 from plugins.core.project_editor.pipeline_store import CustomPath, PipelineStore, RepoRef
 
 
@@ -223,7 +220,7 @@ class CustomPathsSettingsPage(QWidget):
             "add at least one before another repo can reference it."
         )
         create_hint_label.setWordWrap(True)
-        create_hint_label.setProperty("secondary", True)
+        set_secondary_text(create_hint_label)
 
         create_group = QGroupBox("Create Input Path")
         create_layout = QVBoxLayout(create_group)
@@ -238,7 +235,7 @@ class CustomPathsSettingsPage(QWidget):
 
         connect_hint_label = QLabel("Point this repo at another repo's declared Custom Path — shown as an edge in the Graph View.")
         connect_hint_label.setWordWrap(True)
-        connect_hint_label.setProperty("secondary", True)
+        set_secondary_text(connect_hint_label)
 
         connect_button = QPushButton("Connect...")
         connect_button.clicked.connect(self._on_connect)
@@ -420,7 +417,7 @@ class CustomPathsSettingsPage(QWidget):
                 widget.deleteLater()
         if not self._connections:
             empty_row = QLabel("No connections yet.")
-            empty_row.setProperty("secondary", True)
+            set_secondary_text(empty_row)
             self._connections_layout.addWidget(empty_row)
             return
         for index, ref in enumerate(self._connections):

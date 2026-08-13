@@ -19,7 +19,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QListWidget, QListWidgetItem, QVBoxLayout
 
-from core.models import Project
+from core_api import Project
 
 
 class ProjectSelectorDialog(QDialog):

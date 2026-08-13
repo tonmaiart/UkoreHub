@@ -4,7 +4,7 @@ from typing import Callable
 
 from PySide6.QtCore import QThread, Signal
 
-from core.exceptions import GitOperationError
+from plugin_api import GitOperationError
 
 
 class GitStreamWorker(QThread):

@@ -4,9 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
-from core.exceptions import GitOperationError
-from core.vcs.git_service import GitService
-from core.models import RepoStatus
+from plugin_api import GitOperationError, GitService, RepoStatus
 
 
 class RepoStatusWorker(QThread):

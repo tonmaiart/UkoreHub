@@ -6,8 +6,8 @@ from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from core.auth.github_auth import fetch_avatar_bytes
-from core.storage.config_store import LocalConfigStore
+from core_api import LocalConfigStore, fetch_avatar_bytes
+from interface.shared.widget_helpers import set_bold, set_secondary_text
 
 AVATAR_SIZE = 48
 
@@ -71,10 +71,10 @@ class CommonSettingsPage(QWidget):
         self.avatar_label.setText("\U0001F464")
 
         self.username_label = QLabel(username or "Not signed in")
-        self.username_label.setStyleSheet("font-weight: bold;")
+        set_bold(self.username_label)
 
         self.login_at_label = QLabel(_format_login_at(local_config_store.github_login_at))
-        self.login_at_label.setProperty("secondary", True)
+        set_secondary_text(self.login_at_label)
 
         account_text = QVBoxLayout()
         account_text.setSpacing(2)

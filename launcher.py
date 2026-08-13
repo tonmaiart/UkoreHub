@@ -18,6 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# CACHE_DIR (below) is deliberately allowed to live outside REPO_ROOT, so a
+# process spawned from CACHE_DIR/cache/plugins/... (e.g. Maya, via
+# maya_launcher's os.environ.copy()) has no relative path back to REPO_ROOT.
+# Exported here so such processes can read data/ straight off disk without
+# guessing — see PublishApi/repo_paths.py's find_ukorehub_root().
+os.environ["UKOREHUB_APP_ROOT"] = str(REPO_ROOT)
+
 # cache/ (per-machine app state) and storage/ (cloned workspace repos) used to
 # be hardcoded as REPO_ROOT-relative — a problem for Update, which replaces
 # this whole app/ folder (see UkoreHubLauncher's README.md): anything left
@@ -95,7 +102,7 @@ def _build_cloud_sync(data_dir: Path, appdata_dir: Path):
     data/system_config.json is gitignored (see .gitignore's comment), so a
     fresh clone has no local copy yet, and the bucket name needed to pull
     the real one lives inside it. appdata/system_config.default.json
-    (tracked in git, see appdata/README.md — deliberately kept out of
+    (tracked in git, see developer/app/docs/data-layout.md — deliberately kept out of
     data/, which is reserved for cloud-synced files only, including by the
     Maya-side scripts under cache/plugins/ clones that hardcode data/
     paths directly) breaks that cycle — same "not meaningfully secret for
@@ -177,22 +184,28 @@ def main() -> None:
             "may not sync correctly.",
         )
 
-    from core.app_core import UkoreCore
-    from core.events.debug_log import DebugLogBus
-    from core.exceptions import ConflictError
-    from core.extensibility.file_opener import FileOpenerRegistry
-    from core.extensibility.loader import apply_plugins, discover_plugins, plugin_source
-    from core.relaunch import relaunch_ukorehub_exe
-    from core.storage.metadata_store import migrate_legacy_programs, read_project_ids
-    from interface.builtin_settings_tabs import register_builtin_settings_tabs
-    from interface.main_window import MainWindow
-    from interface.plugin_api import PLUGIN_API_VERSION, PluginAPI
-    from interface.program_launch_registry import ProgramLaunchRegistry
-    from interface.section_registry import SectionRegistry
-    from interface.settings_tab_registry import SettingsTabRegistry
-    from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
-    from interface.theme_apply import apply_theme
-    from interface.ui_registry_manager import UIRegistryManager
+    from core_api import (
+        ConflictError,
+        DebugLogBus,
+        FileOpenerRegistry,
+        UkoreCore,
+        apply_plugins,
+        discover_plugins,
+        migrate_legacy_programs,
+        plugin_source,
+        read_project_ids,
+        relaunch_ukorehub_exe,
+    )
+    from interface_api import MainWindow, apply_theme, register_builtin_settings_tabs
+    from plugin_api import (
+        PLUGIN_API_VERSION,
+        PluginAPI,
+        ProgramLaunchRegistry,
+        SectionRegistry,
+        SettingsTabRegistry,
+        SidebarFooterActionRegistry,
+        UIRegistryManager,
+    )
 
     data_dir = REPO_ROOT / "data"
     data_dir.mkdir(exist_ok=True)
@@ -200,7 +213,7 @@ def main() -> None:
     # icons, browser link icon overrides, static app-chrome icons) — never
     # cloud-synced, so deliberately kept out of data/ (which is now either
     # an R2 blob cache or a git-tracked JSON default) to keep that
-    # separation obvious on disk. See assets/README.md.
+    # separation obvious on disk. See developer/app/docs/data-layout.md.
     assets_dir = REPO_ROOT / "assets"
     assets_dir.mkdir(exist_ok=True)
     # appdata/ holds the git-tracked static files data/ itself doesn't own —
@@ -209,7 +222,7 @@ def main() -> None:
     # "cloud-synced JSON only", matching what the Maya-side scripts under
     # cache/plugins/ clones already assume when they hardcode data/ paths
     # directly (they can't import PluginAPI, so they duplicate this
-    # assumption rather than reading it from anywhere). See appdata/README.md.
+    # assumption rather than reading it from anywhere). See developer/app/docs/data-layout.md.
     appdata_dir = REPO_ROOT / "appdata"
     appdata_dir.mkdir(exist_ok=True)
     # cache/ is where every per-machine, gitignored file lives now (not
@@ -236,7 +249,7 @@ def main() -> None:
     #
     # projects.json is itself just a lightweight index now (id/name only) —
     # the real per-project data lives in projects/<id>.json blobs (see
-    # core/storage/metadata_store.py's MetadataStore, data/README.md). Once
+    # core/storage/metadata_store.py's MetadataStore, developer/app/docs/data-layout.md). Once
     # the index is pulled, pull every project blob it references too; a
     # still-old-shape index (schema_version < 2, repos embedded) means
     # nothing has migrated yet, so read_project_ids returns None and
@@ -379,7 +392,7 @@ def main() -> None:
         if len(existing_project_ids) <= 1:
             local_config_store.set_active_project(next(iter(existing_project_ids), None))
         else:
-            from interface.project_selector_dialog import ProjectSelectorDialog
+            from interface_api import ProjectSelectorDialog
 
             selector = ProjectSelectorDialog(store.list_projects())
             if not selector.exec():
@@ -405,7 +418,7 @@ def main() -> None:
     # fetched/updated on demand only for a repo that requires it (opts in
     # via Repo.required_plugin_ids, see
     # interface/main_window.py's _apply_plugin_visibility); see
-    # plugins/README.md.
+    # developer/app/docs/plugins-guide.md.
     # Discovery runs before registry construction so its result (the plugin
     # catalog) can be threaded into the builtin registrations below (Plugins
     # settings tab, repo editor's plugin picker).
@@ -492,7 +505,7 @@ def main() -> None:
     # screen. A second showMaximized() call made synchronously here, still
     # before app.exec() has run a single event, is *also* pre-realization —
     # empirically it did not reliably override a clobbered maximized state
-    # on Windows (see developer/bug-history/2026-07-20-main-window-not-maximizing.md).
+    # on Windows (see the ukorehub-interface skill).
     # QTimer.singleShot(0, ...) queues this call to run right after the
     # event loop actually starts, once the native window exists — the
     # standard, reliable fix for this Qt/Windows quirk.

@@ -14,9 +14,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.storage.metadata_store import MetadataStore
-from interface.shared.image_asset import pick_image_file
-from interface.shared.requirements_tree_widget import RequirementsTreeWidget
+from plugin_api import MetadataStore, RequirementsTreeWidget, pick_image_file
 
 
 class ProjectDialog(QDialog):

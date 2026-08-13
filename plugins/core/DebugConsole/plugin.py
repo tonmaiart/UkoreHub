@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from interface.section_registry import SectionSpec
+from PySide6.QtWidgets import QStyle
+
+from plugin_api import SectionSpec
 from plugins.core.DebugConsole.debug_console_page import DebugConsolePage
 
 SECTION_KEY = "debug_console"
 
 
 def register(api) -> None:
-    icons_dir = api.app_root / "assets" / "icons"
     page = DebugConsolePage(debug_bus=api.debug_bus)
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,
             label="Debug Console",
             order=900,
-            icon_path=icons_dir / "icons8-debug-50.png",
+            standard_icon=QStyle.SP_MessageBoxInformation,
             page_factory=lambda: page,
         )
     )

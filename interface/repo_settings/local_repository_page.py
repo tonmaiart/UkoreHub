@@ -5,10 +5,16 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton, QVBoxLayout
 
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
+from core_api import LocalConfigStore, MetadataStore
 from interface.shared.base_repo_settings_page import BaseRepoSettingsPage
 from interface.shared.widget_helpers import confirm_action
+
+# Lives here (not interface/builtin_settings_tabs.py, where the rest of the
+# settings-tab keys are defined) specifically so interface_api/__init__.py
+# can re-export it without pulling in builtin_settings_tabs.py's plugin_api
+# import at the same point plugin_api itself is re-exporting from
+# interface_api — see interface_api/__init__.py's own comment.
+LOCAL_REPOSITORY = "local_repository"
 
 
 class LocalRepositoryPage(BaseRepoSettingsPage):

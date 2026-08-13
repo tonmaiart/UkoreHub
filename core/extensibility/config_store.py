@@ -13,7 +13,7 @@ class PluginConfigStore:
     LocalConfigStore/SystemConfigStore (core/storage/config_store.py) but
     with a free-form key/value schema instead of fixed fields, since core/
     can't know in advance what any given plugin wants to persist. `on_save`,
-    when provided by the caller (interface/plugin_api.py, for shared=True
+    when provided by the caller (plugin_api/plugin_api.py, for shared=True
     stores only — see core/vcs/cloud_sync.py), pushes the freshly-saved file
     up to the shared studio bucket."""
 

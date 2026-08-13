@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from core.models import Project, Repo
+from core_api import Project, Repo
 
 # Three small, single-method Protocols instead of one combined one — a
 # page implements any subset of these (see main_window.py's three call
@@ -15,8 +15,8 @@ from core.models import Project, Repo
 #
 # These stay optional-per-page on purpose: making any of them mandatory
 # was tried and reverted after it crashed pages with no notion of "active
-# repo" (DebugConsole, BananaSketch) — see
-# developer/bug-history/2026-08-09-set-repo-not-optional-protocol-method.md.
+# repo" (DebugConsole, BananaSketch) — see the ukorehub-interface skill's
+# "Page protocol" section.
 # A page satisfies a Protocol just by having the right method (structural
 # typing, PEP 544) — it never needs to inherit from these classes.
 

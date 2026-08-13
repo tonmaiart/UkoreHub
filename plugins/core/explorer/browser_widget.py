@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QDir, QSize, Qt, QTimer
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QFileSystemModel,
@@ -18,13 +17,15 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QTableView,
     QVBoxLayout,
     QWidget,
 )
 
-from core.vcs.git_service import GitService
-from core.os_utils import open_in_file_explorer, open_with_default_app
+from plugin_api import GitService, open_in_file_explorer, open_with_default_app
 from plugins.core.explorer.file_table_proxy import FileTableFilterProxy
 from plugins.core.explorer.last_opened_store import LastOpenedStore
 from plugins.core.explorer.path_commit_history_panel import PathCommitHistoryPanel
@@ -34,20 +35,31 @@ OPENING_POPUP_DURATION_MS = 3000
 _MAX_LAST_OPENED = 20
 _LAST_OPENED_PANEL_WIDTH = 220
 
-_ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
-BACK_ICON_PATH = _ROOT_DIR / "icons8-back-50.png"
-UP_ICON_PATH = _ROOT_DIR / "icons8-up-50.png"
-ADD_FOLDER_ICON_PATH = _ROOT_DIR / "add_folder.png"
 NAV_ICON_SIZE = QSize(18, 18)
 
 
-def _apply_nav_icon(button: QPushButton, icon_path: Path, fallback_text: str) -> None:
-    if icon_path.exists():
-        button.setIcon(QIcon(str(icon_path)))
-        button.setIconSize(NAV_ICON_SIZE)
-        button.setToolTip(fallback_text)
-    else:
-        button.setText(fallback_text)
+def _apply_nav_icon(button: QPushButton, standard_icon: QStyle.StandardPixmap, fallback_text: str) -> None:
+    button.setIcon(button.style().standardIcon(standard_icon))
+    button.setIconSize(NAV_ICON_SIZE)
+    button.setToolTip(fallback_text)
+
+
+class _PaddedItemDelegate(QStyledItemDelegate):
+    """4px left/right item padding for the column list widgets below —
+    replaces the old `QListWidget::item { padding: 0px 4px; }` QSS rule
+    with a delegate that insets the paint/sizeHint rect directly."""
+
+    _PADDING = 4
+
+    def paint(self, painter, option, index) -> None:
+        option = QStyleOptionViewItem(option)
+        option.rect = option.rect.adjusted(self._PADDING, 0, -self._PADDING, 0)
+        super().paint(painter, option, index)
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setWidth(size.width() + self._PADDING * 2)
+        return size
 
 
 class RepoBrowserWidget(QWidget):
@@ -69,15 +81,15 @@ class RepoBrowserWidget(QWidget):
         self.proxy.setSourceModel(self.fs_model)
 
         self.history_back_button = QPushButton()
-        _apply_nav_icon(self.history_back_button, BACK_ICON_PATH, "Back")
+        _apply_nav_icon(self.history_back_button, QStyle.SP_ArrowBack, "Back")
         self.history_back_button.setEnabled(False)
         self.history_back_button.clicked.connect(self._on_history_back)
         self.up_button = QPushButton()
-        _apply_nav_icon(self.up_button, UP_ICON_PATH, "Up")
+        _apply_nav_icon(self.up_button, QStyle.SP_FileDialogToParent, "Up")
         self.up_button.clicked.connect(self._on_up)
-        
+
         self.add_folder_button = QPushButton()
-        _apply_nav_icon(self.add_folder_button, ADD_FOLDER_ICON_PATH, "New Folder")
+        _apply_nav_icon(self.add_folder_button, QStyle.SP_FileDialogNewFolder, "New Folder")
         self.add_folder_button.clicked.connect(self._on_add_folder_clicked)
         self.breadcrumb = QLineEdit()
         self.breadcrumb.returnPressed.connect(self._on_breadcrumb_entered)
@@ -109,7 +121,7 @@ class RepoBrowserWidget(QWidget):
             filter_edit.textChanged.connect(lambda _t, idx=i: self._filter_column(idx))
             list_widget = QListWidget()
             list_widget.setSpacing(0)
-            list_widget.setStyleSheet("QListWidget::item { padding: 0px 4px; margin: 0px; }")
+            list_widget.setItemDelegate(_PaddedItemDelegate(list_widget))
             list_widget.itemClicked.connect(lambda item, idx=i: self._on_column_item_clicked(idx, item))
             column_layout.addWidget(filter_edit)
             column_layout.addWidget(list_widget)

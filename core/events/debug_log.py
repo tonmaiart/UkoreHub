@@ -1,5 +1,5 @@
 """In-memory debug log bus — see core/events/bus.py's InMemoryEventBus.
-Owned by core/app_core.py's UkoreCore (core.debug_bus) and reached via a
+Owned by core_api/app_core.py's UkoreCore (core.debug_bus) and reached via a
 core/api handle rather than a bare module import. Consumed by
 plugins/core/DebugConsole/'s live viewer page. Deliberately not persisted
 (see DebugConsole's own README) and capped at 1000 entries by default."""

@@ -1,6 +1,6 @@
 """Generic in-memory event bus — base for core/events/debug_log.py's
 DebugLogBus. Owned by
-core/app_core.py's UkoreCore (core.debug_bus), not a
+core_api/app_core.py's UkoreCore (core.debug_bus), not a
 module-level global — a caller reaches it via a core/api handle instead
 of a bare import.
 

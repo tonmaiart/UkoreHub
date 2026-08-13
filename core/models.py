@@ -17,13 +17,13 @@ class Repo:
     # Which specific version this repo launches for a multi-version Program
     # in required_program_ids (e.g. {"<maya_program_id>": "2024"}) — see
     # maya_launcher's link_resolution.py's pinned_version() (now its own
-    # cache/plugins/ clone, see plugins/README.md).
+    # cache/plugins/ clone, see developer/app/docs/plugins-guide.md).
     # A Program with 0/1 versions needs no entry here.
     program_version_pins: dict[str, str] = field(default_factory=dict)
     # Formerly an opt-out list over plugins/core entries. No longer read
     # anywhere (2026-08-04 — every plugins/core plugin is unconditionally
     # visible for every repo now, see interface/main_window.py's
-    # _apply_plugin_visibility and plugins/README.md); kept as a field
+    # _apply_plugin_visibility and developer/app/docs/plugins-guide.md); kept as a field
     # purely so existing persisted JSON with this key still round-trips
     # cleanly. See required_plugin_ids below for the opt-in model actually
     # in use, for cache/plugins entries.
@@ -43,7 +43,7 @@ class Repo:
     # blob, so a repo-level edit only ever pushes/conflicts this repo's own
     # project blob. Only for data that's actually (project_id, repo_id)-scoped
     # — studio-wide or cross-project plugin data still belongs in
-    # PluginConfigStore(shared=True), see plugins/README.md.
+    # PluginConfigStore(shared=True), see developer/app/docs/plugins-guide.md.
     plugin_data: dict[str, dict] = field(default_factory=dict)
 
     def to_dict(self) -> dict:

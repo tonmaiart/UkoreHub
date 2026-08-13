@@ -7,7 +7,7 @@
       "name": "AnimatorTeam",
       "git_url": "https://github.com/tonmaiart/KafkaProj.git",
       "local_path": "MerderaProject/KafkaProj",
-      "last_synced": "2026-08-12T08:15:25.972568+00:00",
+      "last_synced": "2026-08-13T12:56:17.945435+00:00",
       "status": "cloned",
       "thumbnail_filename": "d930b619-2774-4ab4-b381-899e0464e121.png",
       "description": "",
@@ -30,11 +30,13 @@
         "ukore_shot"
       ],
       "required_plugin_ids": [
+        "dw_publish_picker",
         "maya_launcher",
         "ukore_browser",
         "maya_toolkit",
         "publish_api",
         "studio_library",
+        "dreamwall_picker",
         "ukore_menu",
         "ukore_reference_editor"
       ],
@@ -65,6 +67,11 @@
               "id": "c3daa96bcd8a4c5d972b83761056d7a0",
               "label": "Playblast",
               "path": "/movies"
+            },
+            {
+              "id": "01637ab57d594fd986d0e6aa58ee78cf",
+              "label": "DreamwallPicker",
+              "path": "publish/Picker"
             }
           ]
         },
@@ -322,7 +329,7 @@
       "name": "RigPublish",
       "git_url": "https://github.com/tonmaiart/RigPublish.git",
       "local_path": "MerderaProject\\RigPublish",
-      "last_synced": "2026-08-10T16:20:16.971081+00:00",
+      "last_synced": "2026-08-12T10:47:53.903418+00:00",
       "status": "cloned",
       "thumbnail_filename": null,
       "description": "",
@@ -479,8 +486,8 @@
         "ukore_browser": {
           "PYTHONPATH": {
             "*": [
-              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-scripts",
-              "C:\\Tonmai\\UkoreHubDev\\app"
+              "E:\\UkoreWorkspace\\cache\\plugins\\MayaFileBrowser\\maya-scripts",
+              "C:\\Users\\Admin\\Downloads\\UkoreHubLauncher-main (1)\\UkoreHubLauncher-main\\app"
             ]
           }
         },
@@ -505,6 +512,20 @@
               "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\ukore_menu\\maya-scripts"
             ]
           }
+        },
+        "dw_publish_picker": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\dw_publish_picker\\maya-scripts"
+            ]
+          }
+        },
+        "dreamwall_picker": {
+          "PYTHONPATH": {
+            "*": [
+              "C:\\Tonmai\\FileWorkspace\\cache\\plugins\\ukore_dreamwall_picker\\maya-scripts"
+            ]
+          }
         }
       },
       "labels": {
@@ -514,7 +535,9 @@
         "ukore_browser": "Maya File Browser",
         "ukore_playblast": "UkorePlayblast",
         "ukore_reference_editor": "UkoreReferenceEditor",
-        "ukore_menu": "Ukore Menu"
+        "ukore_menu": "Ukore Menu",
+        "dw_publish_picker": "DW Publish Picker",
+        "dreamwall_picker": "DreamwallPicker"
       },
       "launch_hooks": {
         "ukore_menu": {
@@ -525,6 +548,11 @@
         "ukore_reference_editor": {
           "order": 10,
           "post_open_mel": "python(\"try:\\n    import UkoreReferenceEditor\\nexcept ImportError:\\n    pass\");"
+        },
+        "dw_publish_picker": {
+          "order": 100,
+          "post_open_mel": "python(\"import DwPublishPicker; DwPublishPicker.register_menu()\");",
+          "diagnostic_msg": "DwPublishPicker menu registered to UkoreMenu"
         }
       }
     },
@@ -571,6 +599,20 @@
           "git_url": "https://github.com/tonmaiart/ukore_menu.git",
           "folder_name": "ukore_menu",
           "plugin_id": "ukore_menu"
+        },
+        {
+          "id": "efb86efa-31e7-4efc-80f5-13b0b55854f1",
+          "name": "ukore_dreamwall_picker",
+          "git_url": "https://github.com/tonmaiart/ukore_dreamwall_picker.git",
+          "folder_name": "ukore_dreamwall_picker",
+          "plugin_id": "dreamwall_picker"
+        },
+        {
+          "id": "25e2eb1e-f3a3-4b59-acb1-828b2aa9d974",
+          "name": "dw_publish_picker",
+          "git_url": "https://github.com/tonmaiart/dw_publish_picker.git",
+          "folder_name": "dw_publish_picker",
+          "plugin_id": "dw_publish_picker"
         }
       ]
     }

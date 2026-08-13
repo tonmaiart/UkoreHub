@@ -30,12 +30,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.models import Project, Repo
-from interface.program_launch_registry import ProgramLaunchRegistry
-from interface.section_registry import SectionSpec
+from plugin_api import ProgramLaunchRegistry, Project, Repo, SectionSpec, set_bold, set_secondary_text
 
 PLUGIN_ID = "software_linker"
 _CARD_ICON_SIZE = 40
+_STATUS_ICON_SIZE = 14
 
 # The same registry locations Windows' own "Programs and Features" /
 # Settings > Apps reads from.
@@ -360,20 +359,29 @@ class _ProgramLinkCard(QFrame):
             icon_label.setPixmap(fallback_icon.pixmap(_CARD_ICON_SIZE, _CARD_ICON_SIZE))
 
         name_label = QLabel(label)
-        name_label.setProperty("cardTitle", True)
+        set_bold(name_label)
 
         self._path_label = QLabel()
-        self._path_label.setProperty("secondary", True)
+        set_secondary_text(self._path_label)
         self._path_label.setWordWrap(True)
 
+        self._status_icon_label = QLabel()
+        self._status_icon_label.setFixedSize(_STATUS_ICON_SIZE, _STATUS_ICON_SIZE)
         self._status_label = QLabel()
+
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.setSpacing(4)
+        status_row.addWidget(self._status_icon_label)
+        status_row.addWidget(self._status_label)
+        status_row.addStretch()
 
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
         text_layout.addWidget(name_label)
         text_layout.addWidget(self._path_label)
-        text_layout.addWidget(self._status_label)
+        text_layout.addLayout(status_row)
 
         browse_program_btn = QPushButton("Browse Program...")
         browse_program_btn.clicked.connect(self._on_browse_program)
@@ -401,18 +409,18 @@ class _ProgramLinkCard(QFrame):
 
     def refresh(self) -> None:
         linked_path = self._config_store.get(self._key)
-        if linked_path:
+        linked = bool(linked_path)
+        if linked:
             self._path_label.setText(linked_path)
             self._status_label.setText("Linked")
-            self._status_label.setProperty("linkStatus", "linked")
             self.setToolTip("Click to open.")
         else:
             self._path_label.setText("No path linked")
             self._status_label.setText("Not linked")
-            self._status_label.setProperty("linkStatus", "not_linked")
             self.setToolTip("Not linked yet — click to choose an installed program.")
-        self._status_label.style().unpolish(self._status_label)
-        self._status_label.style().polish(self._status_label)
+        standard_icon = QStyle.SP_DialogApplyButton if linked else QStyle.SP_MessageBoxWarning
+        icon = self.style().standardIcon(standard_icon)
+        self._status_icon_label.setPixmap(icon.pixmap(_STATUS_ICON_SIZE, _STATUS_ICON_SIZE))
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
@@ -427,7 +435,7 @@ class _ProgramLinkCard(QFrame):
         _ToastNotification(f"Opening {self._program.name}...", self).present()
         # A plugin (e.g. maya_launcher) may need to launch this Program
         # with its own setProject/env-merge wiring instead of a bare
-        # process launch — see interface/program_launch_registry.py. Falls
+        # process launch — see plugin_api/registries/program_launch_registry.py. Falls
         # back to a raw launch when no repo is active, same as no match.
         launcher = self._program_launch_registry.find_launcher(self._program)
         if launcher is not None and self._repo is not None:
@@ -613,13 +621,12 @@ class SoftwareLinkerPage(QWidget):
 
 
 def register(api) -> None:
-    icons_dir = api.app_root / "assets" / "icons"
     api.register_section(
         SectionSpec(
             key=PLUGIN_ID,
             label="Program Launcher",
             order=40,
-            icon_path=icons_dir / "icons8-booster-64.png",
+            standard_icon=QStyle.SP_ComputerIcon,
             page_factory=lambda: SoftwareLinkerPage(
                 store=api.metadata,
                 config_store=api.plugin_config_store(PLUGIN_ID, shared=False),

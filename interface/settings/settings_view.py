@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from interface.theme import DEFAULT_THEME_NAME, get_theme
 from interface.builtin_settings_tabs import LOCAL_REPOSITORY, REQUIREMENTS_AND_PLUGINS
-from interface.settings_tab_registry import (
+from plugin_api import (
     CATEGORY_DEVELOPER,
     CATEGORY_GENERAL,
     CATEGORY_LABELS,

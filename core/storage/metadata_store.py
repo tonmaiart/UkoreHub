@@ -36,7 +36,7 @@ class MetadataStore:
     this is split into a lightweight index (json_path itself, id/name only)
     plus one file per project under projects_dir — editing one project's repos
     only ever rewrites/pushes that project's own blob, never the whole
-    registry. See data/README.md for the exact layout."""
+    registry. See developer/app/docs/data-layout.md for the exact layout."""
 
     def __init__(
         self,
@@ -78,9 +78,9 @@ class MetadataStore:
         if data.get("schema_version", 1) < 2:
             # Old shape: every project's "repos" were embedded directly in
             # the index file. Split them out once and persist the new
-            # layout immediately (mirrors the git->GCS cutover in
-            # developer/bug-history/2026-08-09-shared-data-git-pull-conflict.md)
-            # so this only ever runs once per machine/bucket.
+            # layout immediately (mirrors the git->cloud-sync cutover, see
+            # the ukorehub-cloud-sync skill) so this only ever runs once
+            # per machine/bucket.
             self.projects = [Project.from_dict(p) for p in data.get("projects", [])]
             for project in self.projects:
                 self._save_project(project)
@@ -116,10 +116,18 @@ class MetadataStore:
         return list(self.projects)
 
     def get_project(self, project_id: str) -> Project:
-        for project in self.projects:
-            if project.id == project_id:
-                return project
-        raise NotFoundError(f"Project not found: {project_id}")
+            for i, project in enumerate(self.projects):
+                if project.id == project_id:
+                    # 🟢 Clean Fix: ถ้า repos เป็น list ว่าง ให้โหลดจาก project blob ย่อยทันที
+                    if not project.repos:
+                        project_blob_path = self.projects_dir / f"{project_id}.json"
+                        if project_blob_path.exists():
+                            project_data = json.loads(project_blob_path.read_text(encoding="utf-8"))
+                            loaded_project = Project.from_dict(project_data)
+                            self.projects[i] = loaded_project
+                            return loaded_project
+                    return project
+            raise NotFoundError(f"Project not found: {project_id}")
 
     def get_repo(self, project_id: str, repo_id: str) -> Repo:
         project = self.get_project(project_id)
@@ -301,7 +309,7 @@ class MetadataStore:
 
         Uses git_service.is_repo_root(), not the cheaper is_cloned(),
         because a folder that didn't come from this app's own clone() call
-        is exactly the case bug-history 2026-08-08 warns about: a
+        is exactly the case the ukorehub-core skill warns about: a
         broken/partial .git directory doesn't stop git's repo-discovery
         walk, so a plain ".git" existence check can silently resolve to
         some unrelated repo further up the tree instead of failing."""

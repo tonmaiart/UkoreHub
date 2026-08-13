@@ -14,17 +14,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.app_core import UkoreCore
-from core.exceptions import NotFoundError
-from core.events.hooks import AppLifecycleContext
-from core.relaunch import relaunch_ukorehub_exe
-from core.version import APP_NAME, APP_VERSION
+from core_api import APP_NAME, APP_VERSION, AppLifecycleContext, NotFoundError, UkoreCore, relaunch_ukorehub_exe
 from interface import builtin_settings_tabs
 from interface.page_protocols import AutoSyncPage, PathFocusablePage, SetRepoPage
-from interface.section_registry import UICommandService
 from interface.settings.settings_view import SettingsDialog
 from interface.sidebar.sidebar import Sidebar
-from interface.ui_registry_manager import UIRegistryManager
+from plugin_api import UICommandService, UIRegistryManager
 
 import subprocess
 
@@ -94,9 +89,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
 
-        # No show()/showMaximized() call here on purpose — see
-        # developer/bug-history/2026-07-20-main-window-not-maximizing.md. Nothing is
-        # ever actually painted on screen until app.exec() starts running
+        # No show()/showMaximized() call here on purpose — see the
+        # ukorehub-interface skill. Nothing is ever actually painted on
+        # screen until app.exec() starts running
         # the event loop, so building the whole widget tree first and only
         # then showing it, once, deferred via launcher.py's
         # QTimer.singleShot(0, window.showMaximized), is what makes the
@@ -126,7 +121,7 @@ class MainWindow(QMainWindow):
         # Generic per-page wiring — lets a plugin page (Explorer, Submit)
         # connect its own signals to app-level services without MainWindow
         # importing that page's specific type. See
-        # interface/section_registry.py's UICommandService/SectionSpec.wire.
+        # plugin_api/registries/section_registry.py's UICommandService/SectionSpec.wire.
         command_service = UICommandService(
             set_status_message=self._set_status_message,
             navigate_and_focus=self._navigate_and_focus,
@@ -171,14 +166,13 @@ class MainWindow(QMainWindow):
 
         self.setMinimumHeight(MAIN_WINDOW_MIN_HEIGHT)
         # This runs synchronously inside __init__ — safe to resize()
-        # unconditionally here because, as of
-        # developer/bug-history/2026-07-20-main-window-not-maximizing.md,
-        # nothing ever calls show()/showMaximized() before this point
-        # anymore (that's now deferred to launcher.py's single
-        # QTimer.singleShot(0, window.showMaximized), after app.exec()
-        # starts). The isMaximized() guard is kept anyway as defense in
-        # depth — see that file's Lesson — in case a future change adds an
-        # early show() call back and needs this to stay safe against it.
+        # unconditionally here because nothing ever calls
+        # show()/showMaximized() before this point anymore (that's now
+        # deferred to launcher.py's single QTimer.singleShot(0,
+        # window.showMaximized), after app.exec() starts — see the
+        # ukorehub-interface skill). The isMaximized() guard is kept anyway
+        # as defense in depth, in case a future change adds an early show()
+        # call back and needs this to stay safe against it.
         if not self.isMaximized() and self.height() < MAIN_WINDOW_MIN_HEIGHT:
             self.resize(self.width(), MAIN_WINDOW_MIN_HEIGHT)
 
@@ -231,7 +225,7 @@ class MainWindow(QMainWindow):
         # to deselect here. select_key lets a section's own "Open Setting"
         # button (via UICommandService.open_settings_tab) land directly on one
         # tab instead of whatever opens by default — see
-        # interface/section_registry.py's UICommandService.
+        # plugin_api/registries/section_registry.py's UICommandService.
         dialog = SettingsDialog(self, settings_tab_registry=self.settings_tab_registry)
         common_settings_page = dialog.view.get_tab_widget(builtin_settings_tabs.COMMON)
         if common_settings_page is not None:
@@ -253,7 +247,7 @@ class MainWindow(QMainWindow):
         # another section and focus a specific file there — switches the
         # sidebar row + view stack to `key`, then calls that page's optional
         # browse_to_path(path) protocol method if it implements one (see
-        # interface/section_registry.py's UICommandService).
+        # plugin_api/registries/section_registry.py's UICommandService).
         self.sidebar.tab_list.select(key)
         self._on_navigation_changed(key)
         page = self.pages.get(key)
@@ -401,9 +395,8 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _relaunch_to_login() -> None:
         # relaunch_ukorehub_exe (core/relaunch.py) owns the _PYI_-env-var
-        # stripping needed to avoid developer/bug-history/2026-08-04-
-        # relaunch-inherits-pyinstaller-onefile-env.md — shared with
-        # launcher.py's own mandatory login gate, see that module's
+        # stripping needed here (see the ukorehub-interface skill) — shared
+        # with launcher.py's own mandatory login gate, see that module's
         # docstring.
         if not relaunch_ukorehub_exe(_REPO_ROOT):
             # Dev environment running via `python launcher.py` directly,

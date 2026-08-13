@@ -32,7 +32,7 @@ only warned about, never blocking).
 `UkoreHub.exe` lives in its own repo,
 [`UkoreHubLauncher`](https://github.com/tonmaiart/UkoreHubLauncher) — split
 out so an ordinary app-code release can never try to overwrite the exe
-file that's busy running it (see `developer/bug-history/2026-08-08-self-update-locked-own-exe.md`).
+file that's busy running it (see the `ukorehub-launcher` skill).
 Double-click `UkoreHub.exe` (or pin it to the taskbar) — this is the
 normal way to run UkoreHub, and the only way to complete a first-time
 GitHub login (see below). In order: it checks `git` is present (showing a
@@ -213,7 +213,7 @@ the app.
   comes from `UKOREHUB_CACHE_DIR`, see "Overriding cache/storage location"
   above.
 - `launcher.py` — entry point.
-- `developer/` — dev-only tooling (bug-history, glossary); lives only in
+- `developer/` — dev-only tooling (docs, tests, GLOSSARY.md); lives only in
   this repo (UkoreHubDev), stripped when publishing to the separate
   UkoreHubRelease repo's `main` by `developer/commit-main.ps1` — see
   `developer/README.md`. `UkoreHub.exe` and its build tooling live in a
@@ -221,7 +221,8 @@ the app.
   all.
 - `storage/` — workspace folder (gitignored; actual cloned repos live here).
   Named `storage/` rather than `projects/` so it can't be confused with
-  `data/projects/`, the per-project metadata blobs (see `data/README.md`).
+  `data/projects/`, the per-project metadata blobs (see
+  `developer/app/docs/data-layout.md`).
   Default location only — actual location comes from `UKOREHUB_STORAGE_DIR`,
   see "Overriding cache/storage location" above.
 

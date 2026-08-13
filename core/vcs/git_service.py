@@ -101,9 +101,9 @@ class GitService:
         `git -C <local_path> status` then silently operates on whatever
         real repository is further up the tree instead of failing, which
         is exactly wrong for a caller about to stage/commit/push against
-        what it believes is local_path's own repo (see bug-history
-        2026-08-08, cache/plugins/<name> entries with a broken `.git`
-        resolving to UkoreHub's own repo root). Prefer this over
+        what it believes is local_path's own repo (a broken/empty
+        cache/plugins/<name> clone with a corrupt `.git` can resolve to
+        UkoreHub's own repo root this way). Prefer this over
         is_cloned() before any mutating git operation on a path whose
         `.git` validity isn't otherwise guaranteed."""
         local_path = Path(local_path)

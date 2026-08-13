@@ -3,14 +3,14 @@ from __future__ import annotations
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
-from core.events.debug_log import DebugLogBus, DebugLogEntry
+from plugin_api import DebugLogBus, DebugLogEntry
 
 _ALL_SOURCES = "All sources"
 
 
 class DebugConsolePage(QWidget):
     """DebugConsole's section page — a filterable, live-updating view of
-    core/app_core.py's UkoreCore.debug_bus's in-memory entries. Subscribes
+    core_api/app_core.py's UkoreCore.debug_bus's in-memory entries. Subscribes
     once via debug_bus.add_listener and never unsubscribes: this page is
     built once in plugin.py's register(api) and lives for the app's whole
     lifetime, same as every other plugin's page_factory-returned instance,

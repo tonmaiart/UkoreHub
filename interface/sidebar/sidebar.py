@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import QSize, Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QPushButton, QStyle, QVBoxLayout, QWidget
 
-from interface.section_registry import SectionRegistry
 from interface.sidebar.active_repo_widget import ActiveRepoWidget
 from interface.sidebar.section_tab_list import SectionTabList
-from interface.sidebar_footer_action_registry import SidebarFooterActionRegistry
+from plugin_api import SectionRegistry, SidebarFooterActionRegistry
 
 SIDEBAR_WIDTH = 230
-SETTING_ICON_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "icons" / "setting.png"
 
 
 class Sidebar(QWidget):
@@ -58,13 +53,9 @@ class Sidebar(QWidget):
         self.account_label = QLabel("")
 
         self.setting_button = QPushButton()
-        self.setting_button.setObjectName("sidebarSettingButton")
         self.setting_button.setToolTip("Setting")
-        if SETTING_ICON_PATH.exists():
-            self.setting_button.setIcon(QIcon(str(SETTING_ICON_PATH)))
-            self.setting_button.setIconSize(QSize(18, 18))
-        else:
-            self.setting_button.setText("Setting")
+        self.setting_button.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
+        self.setting_button.setIconSize(QSize(18, 18))
         self.setting_button.clicked.connect(self.settings_requested.emit)
 
         account_row = QHBoxLayout()

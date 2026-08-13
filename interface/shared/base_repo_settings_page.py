@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from core.exceptions import NotFoundError
-from core.models import Project, Repo
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
+from core_api import LocalConfigStore, MetadataStore, NotFoundError, Project, Repo
 from interface.shared.widget_helpers import show_exclusive
 
 
@@ -13,8 +10,8 @@ class BaseRepoSettingsPage(QWidget):
     """Shared base for a Settings tab that's scoped to a single repo and
     resolves the active project/repo itself from local_config_store, rather
     than waiting for a set_repo() call MainWindow never makes for Settings
-    pages (see interface/repo_settings/README.md — that domain has a tab
-    built on this). Collapses the empty_label/content_widget scaffolding and
+    pages (see developer/app/docs/interface.md's repo_settings/ section —
+    that domain has a tab built on this). Collapses the empty_label/content_widget scaffolding and
     refresh() preamble that LocalRepositoryPage and RequirementsAndPluginsPage
     each had independently, byte-for-byte
     identical, before 2026-07-20.

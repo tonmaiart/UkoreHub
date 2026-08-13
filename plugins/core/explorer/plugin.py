@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from interface.section_registry import SectionSpec
+from PySide6.QtWidgets import QStyle
+
+from plugin_api import SectionSpec
 from plugins.core.explorer.repo_browser_page import RepoBrowserPage
 
 SECTION_KEY = "repo_browser"
@@ -14,7 +16,6 @@ def register(api) -> None:
         cache_dir=api.cache_dir,
         api=api,
     )
-    icons_dir = api.app_root / "assets" / "icons"
     api.debug_bus.register_source("Explorer")
     api.register_section(
         SectionSpec(
@@ -23,6 +24,6 @@ def register(api) -> None:
             order=10,
             page_factory=lambda: page,
             background_threads=lambda p: [p.browser.commit_panel._worker],
-            icon_path=icons_dir / "icons8-folder-50.png",
+            standard_icon=QStyle.SP_DirIcon,
         )
     )

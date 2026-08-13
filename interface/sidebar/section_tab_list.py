@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QWidget
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QStyle, QWidget
 
-from interface.section_registry import SectionRegistry
+from plugin_api import SectionRegistry
 
 
 class SectionTabList(QListWidget):
@@ -21,13 +21,13 @@ class SectionTabList(QListWidget):
     composite QWidget installed via setItemWidget — not native
     QListWidgetItem icon/text — so every row looks identical whether or not
     it uses SectionSpec.trailing_widget_factory (e.g.
-    plugins/core/submit/'s RepoStatusDot). Qt still paints the
-    item's own selection/hover background underneath a transparent
-    itemWidget, so interface/theme.py's ::item/::item:hover/::item:selected rules
-    keep working unchanged; only the *text* color/weight on selection can't
-    come from ::item anymore (there's no native text to color once
-    setItemWidget is used) — QLabel#sectionTabLabel[current="true"] in
-    interface/theme.py covers that instead, toggled by _update_current_label."""
+    plugins/core/submit/'s RepoStatusDot). Qt still paints the item's own
+    selection/hover background underneath a transparent itemWidget, using
+    qdarktheme's default QListWidget item styling now that there's no
+    app-specific QSS; only the *text* color/weight on selection can't come
+    from the native item anymore (there's no native text to color once
+    setItemWidget is used) — _update_current_label sets that directly via
+    QPalette/QFont on the row's own QLabel instead."""
 
     navigation_changed = Signal(str)
 
@@ -36,12 +36,13 @@ class SectionTabList(QListWidget):
         self.setObjectName("sectionTabList")
 
         self._row_labels: dict[str, QLabel] = {}
+        self._normal_label_color: QColor | None = None
         self._current_row = 0
 
         self._fixed_count = 0
         for spec in section_registry.ordered():
             trailing_widget = spec.trailing_widget_factory() if spec.trailing_widget_factory is not None else None
-            self._add_row(spec.key, spec.label, spec.icon_path, trailing_widget)
+            self._add_row(spec.key, spec.label, spec.icon_path, spec.standard_icon, trailing_widget)
             self._fixed_count += 1
 
         self.currentRowChanged.connect(self._on_current_row_changed)
@@ -52,6 +53,7 @@ class SectionTabList(QListWidget):
         key: str,
         label: str,
         icon_path: Path | None,
+        standard_icon: QStyle.StandardPixmap | None,
         trailing_widget: QWidget | None = None,
     ) -> None:
         item = QListWidgetItem()
@@ -66,8 +68,14 @@ class SectionTabList(QListWidget):
             icon_label = QLabel()
             icon_label.setPixmap(QIcon(str(icon_path)).pixmap(18, 18))
             layout.addWidget(icon_label)
+        elif standard_icon is not None:
+            icon_label = QLabel()
+            icon_label.setPixmap(self.style().standardIcon(standard_icon).pixmap(18, 18))
+            layout.addWidget(icon_label)
         text_label = QLabel(label)
         text_label.setObjectName("sectionTabLabel")
+        if self._normal_label_color is None:
+            self._normal_label_color = text_label.palette().color(text_label.foregroundRole())
         layout.addWidget(text_label, 1)
         if trailing_widget is not None:
             layout.addWidget(trailing_widget)
@@ -114,11 +122,12 @@ class SectionTabList(QListWidget):
             if label is None:
                 continue
             is_current = row == current_row
-            if label.property("current") == is_current:
-                continue
-            label.setProperty("current", is_current)
-            label.style().unpolish(label)
-            label.style().polish(label)
+            font = label.font()
+            font.setBold(is_current)
+            label.setFont(font)
+            palette = label.palette()
+            palette.setColor(label.foregroundRole(), QColor(Qt.white) if is_current else self._normal_label_color)
+            label.setPalette(palette)
 
     def _on_current_row_changed(self, row: int) -> None:
         if row < 0:

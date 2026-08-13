@@ -19,14 +19,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.exceptions import GitHubAuthError, GitOperationError, UkoreHubError
-from core.models import Project, Repo, RepoStatus
-from core.storage.config_store import LocalConfigStore
-from core.storage.metadata_store import MetadataStore
-from core.vcs.git_service import GitService
-from core.vcs.repo_access import check_repo_access
-from interface.shared.commit_history import CommitCard, CommitHistoryEntry
-from interface.shared.widget_helpers import confirm_action, show_exclusive, wrap_scrollable
+from plugin_api import (
+    GitHubAuthError,
+    GitOperationError,
+    GitService,
+    LocalConfigStore,
+    MetadataStore,
+    Project,
+    Repo,
+    RepoStatus,
+    UkoreHubError,
+    check_repo_access,
+    confirm_action,
+    show_exclusive,
+    wrap_scrollable,
+)
 from plugins.core.submit.commit_dialog import CommitDialog
 from plugins.core.submit.commit_log_worker import CommitLogWorker
 from plugins.core.submit.conflict_dialog import ConflictResolutionDialog

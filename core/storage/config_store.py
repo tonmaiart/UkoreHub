@@ -10,7 +10,7 @@ LOCAL_CONFIG_SCHEMA_VERSION = 1
 SYSTEM_CONFIG_SCHEMA_VERSION = 1
 
 # Duplicated from interface/theme.py's DEFAULT_THEME_NAME rather than imported:
-# core/ never depends on interface/ (see core/README.md), and this store only
+# core/ never depends on interface/ (see developer/app/docs/core-api.md), and this store only
 # needs the name as a persisted default, not the actual theme registry.
 DEFAULT_THEME_NAME = "grey_dark"
 

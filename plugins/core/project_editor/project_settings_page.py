@@ -4,9 +4,7 @@ from typing import Callable
 
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
-from core.exceptions import ConflictError, UkoreHubError
-from core.storage.metadata_store import MetadataStore
-from interface.shared.widget_helpers import confirm_action
+from plugin_api import ConflictError, MetadataStore, UkoreHubError, confirm_action
 from plugins.core.project_editor.dialogs import ProjectDialog
 
 

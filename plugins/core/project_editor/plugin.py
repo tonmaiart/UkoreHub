@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from interface.section_registry import UICommandService, SectionSpec
-from interface.settings_tab_registry import CATEGORY_PROJECT, CATEGORY_REPO, SettingsTabSpec
+from plugin_api import CATEGORY_PROJECT, CATEGORY_REPO, SectionSpec, SettingsTabSpec, UICommandService
 from plugins.core.project_editor.custom_paths_settings_page import CustomPathsSettingsPage
 from plugins.core.project_editor.pipeline_store import PipelineStore, migrate_legacy_data
 from plugins.core.project_editor.project_editor_page import ProjectEditorPage
 from plugins.core.project_editor.project_settings_page import ProjectSettingsPage
+from PySide6.QtWidgets import QStyle
 
 PLUGIN_ID = "project_editor"
 SECTION_KEY = PLUGIN_ID
@@ -35,6 +35,7 @@ def register(api) -> None:
             order=5,
             page_factory=lambda: page,
             wire=_wire,
+            standard_icon=QStyle.SP_FileDialogListView,
         )
     )
     api.register_settings_tab(

@@ -2,17 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.extensibility.loader import DiscoveredPlugin, PluginLoadFailure
-from core.storage.config_store import LocalConfigStore, SystemConfigStore
-from core.storage.metadata_store import MetadataStore
-from core.vcs.git_service import GitService
-from interface.repo_settings.local_repository_page import LocalRepositoryPage
+from core_api import DiscoveredPlugin, GitService, LocalConfigStore, MetadataStore, PluginLoadFailure, SystemConfigStore
+from interface.repo_settings.local_repository_page import LOCAL_REPOSITORY, LocalRepositoryPage
 from interface.repo_settings.requirements_and_plugins_page import RequirementsAndPluginsPage
 from interface.settings.common_settings_page import CommonSettingsPage
 from interface.settings.github_oauth_settings_page import GithubOAuthSettingsPage
 from interface.settings.plugin_catalog_page import PluginCatalogPage
 from interface.settings.program_database_page import ProgramDatabasePage
-from interface.settings_tab_registry import (
+from plugin_api import (
     CATEGORY_DEVELOPER,
     CATEGORY_GENERAL,
     CATEGORY_PROJECT,
@@ -25,7 +22,6 @@ COMMON = "common"
 PROGRAM_DATABASE = "program_database"
 PLUGINS = "plugins"
 GITHUB_OAUTH = "github_oauth"
-LOCAL_REPOSITORY = "local_repository"
 REQUIREMENTS_AND_PLUGINS = "requirements_and_plugins"
 
 PLUGINS_DESCRIPTION = (
