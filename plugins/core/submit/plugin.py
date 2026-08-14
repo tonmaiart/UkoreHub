@@ -27,12 +27,21 @@ def register(api) -> None:
             label="Submit",
             order=20,
             page_factory=lambda: page,
-            background_threads=lambda p: [p._git_worker, p._status_worker, p._stream_worker, p._commit_log_worker],
+            background_threads=lambda p: [
+                p._git_worker,
+                p._status_worker,
+                p._stream_worker,
+                p._stage_worker,
+                p._unstage_worker,
+                p._revert_worker,
+                p._diagnostics_worker,
+                p._commit_log_worker,
+            ],
             standard_icon=QStyle.SP_DialogSaveButton,
             wire=_wire,
             # SectionTabList lays this out at the right edge of Submit's own
             # row; the page updates its icon directly (see
-            # RepoGitStatusPage.status_dot / RepoStatusDot.set_state).
+            # RepoGitStatusPage.status_dot / _set_status_dot_state).
             trailing_widget_factory=lambda: page.status_dot,
         )
     )

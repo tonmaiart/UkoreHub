@@ -45,7 +45,7 @@ from core.extensibility.loader import (
     discover_plugins,
     plugin_source,
 )
-from core.models import Program, Project, Repo, RepoStatus
+from core.models import FileChange, Program, Project, Repo, RepoStatus
 from core.os_utils import open_in_file_explorer, open_with_default_app
 from core.relaunch import relaunch_ukorehub_exe
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
@@ -67,6 +67,7 @@ __all__ = [
     "DebugLogBus",
     "DebugLogEntry",
     "DiscoveredPlugin",
+    "FileChange",
     "FileOpenerRegistry",
     "FileOpenerSpec",
     "GitHubAuthError",

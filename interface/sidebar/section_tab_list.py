@@ -21,7 +21,7 @@ class SectionTabList(QListWidget):
     composite QWidget installed via setItemWidget — not native
     QListWidgetItem icon/text — so every row looks identical whether or not
     it uses SectionSpec.trailing_widget_factory (e.g.
-    plugins/core/submit/'s RepoStatusDot). Qt still paints the item's own
+    plugins/core/submit/'s status_dot QLabel). Qt still paints the item's own
     selection/hover background underneath a transparent itemWidget, using
     qdarktheme's default QListWidget item styling now that there's no
     app-specific QSS; only the *text* color/weight on selection can't come

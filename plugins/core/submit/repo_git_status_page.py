@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import webbrowser
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QSize, QTimer, Qt, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QFile, QSize, QTimer, Qt, Signal
+from PySide6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QGroupBox,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QMessageBox,
-    QProgressBar,
+    QPlainTextEdit,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QStyle,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -26,6 +23,7 @@ from PySide6.QtWidgets import (
 from plugin_api import (
     CommitFilesDialog,
     CommitHistoryEntry,
+    FileChange,
     GitHubAuthError,
     GitOperationError,
     GitService,
@@ -39,6 +37,7 @@ from plugin_api import (
     confirm_action,
     format_commit_date,
     format_relative_time,
+    open_in_file_explorer,
     show_exclusive,
     wrap_scrollable,
 )
@@ -46,18 +45,48 @@ from plugins.core.submit.commit_dialog import CommitDialog
 from plugins.core.submit.commit_log_worker import CommitLogWorker
 from plugins.core.submit.conflict_dialog import ConflictResolutionDialog
 from plugins.core.submit.git_stream_worker import GitStreamWorker
-from plugins.core.submit.log_panel import LogPanel
-from plugins.core.submit.status_dot import RepoStatusDot
 from plugins.core.submit.status_worker import RepoStatusWorker
 
-# How long a "clean" status stays "fresh" (blue) before _freshness_timer
-# reverts RepoStatusDot to "loading" (no icon), pending the next
+# How long a "clean" status stays "fresh" (blue) before the freshness timer
+# reverts the sidebar status dot to "loading" (no icon), pending the next
 # refresh_status() call.
 FRESHNESS_WINDOW_MS = 10 * 60 * 1000
 # Background repoll of the commit history panel while the app just sits
 # open on this tab — set_repo/refresh_status/push already trigger an
 # immediate poll, this just catches teammates' pushes in between.
 COMMIT_LOG_POLL_INTERVAL_MS = 30 * 60 * 1000
+_STATUS_DOT_SIZE = 14
+_UI_FILE = Path(__file__).resolve().parent / "submit_section.ui"
+
+# FileChange.change_type -> what the Modified column shows.
+_CHANGE_TYPE_LABELS = {
+    "untracked": "Added",
+    "added": "Added",
+    "modified": "Modified",
+    "deleted": "Removed",
+    "renamed": "Renamed",
+}
+
+# Roles used to stash the real repo-relative path (and raw change_type, for
+# revert's untracked/tracked split) on a Modified/Staged row's File Name
+# item, so display formatting/sorting never has to be reverse-parsed.
+_PATH_ROLE = Qt.UserRole + 1
+_CHANGE_TYPE_ROLE = Qt.UserRole + 2
+
+
+def _load_ui_form(parent: QWidget | None = None) -> QWidget:
+    """Loads submit_section.ui at runtime (QUiLoader, no compile step) so a
+    Designer edit to that file takes effect on the next app launch without
+    rebuilding anything. Only stock Qt widget classes are used in the .ui,
+    so no promoted-widget registration is needed."""
+    loader = QUiLoader()
+    ui_file = QFile(str(_UI_FILE))
+    ui_file.open(QFile.ReadOnly)
+    try:
+        form = loader.load(ui_file, parent)
+    finally:
+        ui_file.close()
+    return form
 
 
 class RepoGitStatusPage(QWidget):
@@ -79,163 +108,42 @@ class RepoGitStatusPage(QWidget):
         self._status_worker: RepoStatusWorker | None = None
         self._stream_worker: GitStreamWorker | None = None
         self._stage_worker: GitStreamWorker | None = None
+        self._unstage_worker: GitStreamWorker | None = None
+        self._revert_worker: GitStreamWorker | None = None
+        self._diagnostics_worker: GitStreamWorker | None = None
         self._commit_log_worker: CommitLogWorker | None = None
         self._commit_log_entries: list[CommitHistoryEntry] = []
         self._commit_log_avatar_cache: dict[str, bytes | None] = {}
         self._commit_files_dialog: CommitFilesDialog | None = None
-        self._pending_commit_message = ""
-        self._pending_amend = False
         self._last_status: RepoStatus | None = None
 
         # Sidebar-row status indicator (SectionSpec.trailing_widget_factory —
-        # see plugin.py) — this page owns/updates it directly.
-        # _freshness_timer flips a
-        # "fresh" (clean, just-verified) dot back to "loading" once that
-        # verification is more than FRESHNESS_WINDOW_MS old; every call to
-        # refresh_status() restarts it.
-        self.status_dot = RepoStatusDot()
+        # see plugin.py) — a plain QLabel, no custom widget class. This page
+        # owns/updates it directly via _set_status_dot_state;
+        # _freshness_timer flips a "fresh" (clean, just-verified) state back
+        # to "loading" once that verification is more than
+        # FRESHNESS_WINDOW_MS old; every call to refresh_status() restarts
+        # it. Deliberately independent of tableView_git_status's diagnostics
+        # (auth/clone/up-to-date) — this only ever reflects working-tree
+        # cleanliness.
+        self.status_dot = QLabel()
+        self.status_dot.setFixedSize(_STATUS_DOT_SIZE, _STATUS_DOT_SIZE)
         self._freshness_timer = QTimer(self)
         self._freshness_timer.setSingleShot(True)
-        self._freshness_timer.timeout.connect(lambda: self.status_dot.set_state("loading"))
+        self._freshness_timer.timeout.connect(lambda: self._set_status_dot_state("loading"))
+        self._set_status_dot_state("loading")
 
         self.empty_label = QLabel("Select a repo to see this information.")
 
-        lists_row = QHBoxLayout()
+        self._ui = _load_ui_form()
+        self._setup_ui_widgets()
 
-        # Checkable items instead of row selection — lets the user tick
-        # several files without holding Ctrl/Shift, then Stage/Revert acts
-        # on whatever's checked (see _checked_modified_paths).
-        self.modified_list = QListWidget()
-        self.modified_list.setSelectionMode(QAbstractItemView.NoSelection)
-        self.modified_list.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.modified_list.customContextMenuRequested.connect(
-            lambda pos: self._show_inspect_menu(self.modified_list, pos)
-        )
-        self.select_all_button = QPushButton("Select All")
-        self.select_all_button.clicked.connect(
-            lambda: self._on_select_all_clicked(self.modified_list)
-        )
-        self.stage_button = QPushButton("Stage")
-        self.stage_button.clicked.connect(self._on_stage_clicked)
-        self.revert_button = QPushButton("Revert")
-        self.revert_button.clicked.connect(self._on_revert_clicked)
-        modified_button_row = QHBoxLayout()
-        modified_button_row.addWidget(self.select_all_button)
-        modified_button_row.addWidget(self.stage_button)
-        modified_button_row.addWidget(self.revert_button)
-        modified_group = QGroupBox("Modified")
-        modified_layout = QVBoxLayout(modified_group)
-        modified_layout.addWidget(self.modified_list)
-        modified_layout.addLayout(modified_button_row)
-        lists_row.addWidget(modified_group)
-
-        self.staged_list = QListWidget()
-        self.staged_list.setSelectionMode(QAbstractItemView.NoSelection)
-        self.staged_list.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.staged_list.customContextMenuRequested.connect(
-            lambda pos: self._show_inspect_menu(self.staged_list, pos)
-        )
-        self.staged_select_all_button = QPushButton("Select All")
-        self.staged_select_all_button.clicked.connect(
-            lambda: self._on_select_all_clicked(self.staged_list)
-        )
-        self.restore_button = QPushButton("Restore")
-        self.restore_button.clicked.connect(self._on_restore_clicked)
-        self.pull_push_button = QPushButton("Pull and Push")
-        self.pull_push_button.clicked.connect(self._on_pull_and_push_clicked)
-        staged_button_row = QHBoxLayout()
-        staged_button_row.addWidget(self.staged_select_all_button)
-        staged_button_row.addWidget(self.restore_button)
-        staged_button_row.addWidget(self.pull_push_button)
-        # Indeterminate busy bar shown while a stage runs on _stage_worker
-        # (off the UI thread — a large "Select All" batch can take a while
-        # with core.git_service's chunked git-add calls) — same widget/idiom
-        # as self.progress_bar below for Sync, just scoped to this group.
-        self.staged_progress_bar = QProgressBar()
-        self.staged_progress_bar.setRange(0, 0)
-        self.staged_progress_bar.setFixedHeight(4)
-        self.staged_progress_bar.setTextVisible(False)
-        self.staged_progress_bar.setVisible(False)
-
-        staged_group = QGroupBox("Staged")
-        staged_layout = QVBoxLayout(staged_group)
-        staged_layout.addWidget(self.staged_progress_bar)
-        staged_layout.addWidget(self.staged_list)
-        staged_layout.addLayout(staged_button_row)
-        lists_row.addWidget(staged_group)
-
-        self.sync_button = QPushButton("Sync")
-        self.sync_button.clicked.connect(self.start_sync)
-        self.refresh_button = QPushButton("Refresh Status")
-        self.refresh_button.clicked.connect(self.refresh_status)
-        self.gitweb_button = QPushButton("GitWeb")
-        self.gitweb_button.clicked.connect(self._on_gitweb_clicked)
-
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.sync_button)
-        button_row.addWidget(self.refresh_button)
-        button_row.addWidget(self.gitweb_button)
-        button_row.addStretch()
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)
-        self.progress_bar.setVisible(False)
-
-        self.log_panel = LogPanel()
-
-        git_log_group = QGroupBox("Git Log")
-        git_log_layout = QVBoxLayout(git_log_group)
-        git_log_layout.addWidget(self.progress_bar)
-        git_log_layout.addWidget(self.log_panel)
-        git_log_layout.addLayout(button_row)
-
-        # Whole-repo commit history — every teammate's pushes, not just this
-        # machine's own. Polled on repo switch, Refresh Status, and after a
-        # push (all funneled through refresh_status()/_poll_commit_log), plus
-        # a background QTimer so it stays current while the tab just sits
-        # open. Plain table, not CommitCard (interface/shared/commit_history.py)
-        # — double-clicking a row opens the same CommitFilesDialog CommitCard's
-        # "Files" button does.
-        self.commit_log_status_label = QLabel("")
-        self.commit_log_status_label.setWordWrap(True)
-        # Columns: avatar icon, author, message, relative time ("3 hours
-        # ago"), absolute date — date last since the relative column is the
-        # one worth reading at a glance, absolute is just backup detail.
-        self.commit_log_table = QTableWidget(0, 5)
-        self.commit_log_table.setHorizontalHeaderLabels(["", "Author", "Message", "Time Ago", "Date"])
-        self.commit_log_table.verticalHeader().setVisible(False)
-        self.commit_log_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.commit_log_table.setSelectionMode(QAbstractItemView.NoSelection)
-        self.commit_log_table.setIconSize(QSize(20, 20))
-        self.commit_log_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.commit_log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.commit_log_table.doubleClicked.connect(self._on_commit_row_double_clicked)
-        commit_log_group = QGroupBox("Commit History")
-        commit_log_layout = QVBoxLayout(commit_log_group)
-        commit_log_layout.addWidget(self.commit_log_status_label)
-        commit_log_layout.addWidget(self.commit_log_table)
-
-        self._commit_log_timer = QTimer(self)
-        self._commit_log_timer.setInterval(COMMIT_LOG_POLL_INTERVAL_MS)
-        self._commit_log_timer.timeout.connect(self._poll_commit_log)
-        self._commit_log_timer.start()
-
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.addLayout(lists_row)
-        content_layout.addWidget(git_log_group)
-        content_layout.addWidget(commit_log_group, 1)
-
-        # Without this outer scroll wrapper, content_layout has no room to
-        # spare on a typical window height: Modified/Staged/Git Log all get
-        # the default stretch (0, "keep my sizeHint"), so Qt satisfies them
-        # first and squeezes the one item stretch=1 was meant to *grow*
-        # (commit_log_group) all the way down to 0 height under space
-        # pressure instead — the whole "Commit History" box disappears
-        # rather than just showing fewer cards. Same wrap_scrollable(page
-        # content) shape as custom_paths_settings_page.py and friends.
-        scroll = wrap_scrollable(content)
-
+        # Without this scroll wrapper, a window-height squeeze can shrink a
+        # whole group box (border and title included) to 0 height instead of
+        # just showing fewer rows — see the "Card->table rewrite" note this
+        # plugin's doc keeps. Same wrap_scrollable(page content) shape as
+        # project_editor/custom_paths_settings_page.py and friends.
+        scroll = wrap_scrollable(self._ui)
         self.content_widget = QWidget()
         content_wrap_layout = QVBoxLayout(self.content_widget)
         content_wrap_layout.setContentsMargins(0, 0, 0, 0)
@@ -246,13 +154,91 @@ class RepoGitStatusPage(QWidget):
         layout.addWidget(self.content_widget)
         self.content_widget.setVisible(False)
 
+        self._commit_log_timer = QTimer(self)
+        self._commit_log_timer.setInterval(COMMIT_LOG_POLL_INTERVAL_MS)
+        self._commit_log_timer.timeout.connect(self._poll_commit_log)
+        self._commit_log_timer.start()
+
+    # -- .ui wiring -----------------------------------------------------
+
+    def _setup_ui_widgets(self) -> None:
+        find = self._ui.findChild
+        self.sync_button: QPushButton = find(QPushButton, "pushButton_sync")
+        self.refresh_button: QPushButton = find(QPushButton, "pushButton_refresh_status")
+        self.plain_text_git_log: QPlainTextEdit = find(QPlainTextEdit, "plainTextEdit_git_log")
+        self.plain_text_git_log.setMaximumBlockCount(5000)
+
+        self.table_git_status: QTableView = find(QTableView, "tableView_git_status")
+        self.table_modified: QTableView = find(QTableView, "tableView_modified")
+        self.table_staged: QTableView = find(QTableView, "tableView_staged")
+        self.table_commit_history: QTableView = find(QTableView, "tableView_commit_history")
+
+        self.revert_button: QPushButton = find(QPushButton, "pushButton_revert")
+        self.stage_button: QPushButton = find(QPushButton, "pushButton_stage")
+        self.unstage_button: QPushButton = find(QPushButton, "pushButton_unstage")
+        self.submit_all_staged_button: QPushButton = find(QPushButton, "pushButton_submit_all_staged")
+        self.local_dir_button: QPushButton = find(QPushButton, "pushButton_local_dir")
+        self.repo_website_button: QPushButton = find(QPushButton, "pushButton_repo_website")
+
+        self.modified_model = QStandardItemModel(0, 3, self)
+        self.modified_model.setHorizontalHeaderLabels(["File Name", "File Path", "Modified"])
+        self.table_modified.setModel(self.modified_model)
+
+        self.staged_model = QStandardItemModel(0, 3, self)
+        self.staged_model.setHorizontalHeaderLabels(["File Name", "File Path", "Modified"])
+        self.table_staged.setModel(self.staged_model)
+
+        for table in (self.table_modified, self.table_staged):
+            table.setSelectionBehavior(QAbstractItemView.SelectRows)
+            table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            table.verticalHeader().setVisible(False)
+            table.setContextMenuPolicy(Qt.CustomContextMenu)
+            table.customContextMenuRequested.connect(lambda pos, t=table: self._show_inspect_menu(t, pos))
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+
+        self.git_status_model = QStandardItemModel(0, 3, self)
+        self.git_status_model.setHorizontalHeaderLabels(["Name", "Detail", "Status"])
+        self.table_git_status.setModel(self.git_status_model)
+        self.table_git_status.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table_git_status.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_git_status.verticalHeader().setVisible(False)
+        status_header = self.table_git_status.horizontalHeader()
+        status_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        status_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        status_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+
+        self.commit_log_model = QStandardItemModel(0, 5, self)
+        self.commit_log_model.setHorizontalHeaderLabels(["", "Author", "Message", "Time Ago", "Date"])
+        self.table_commit_history.setModel(self.commit_log_model)
+        self.table_commit_history.setSelectionMode(QAbstractItemView.NoSelection)
+        self.table_commit_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_commit_history.verticalHeader().setVisible(False)
+        self.table_commit_history.setIconSize(QSize(20, 20))
+        history_header = self.table_commit_history.horizontalHeader()
+        history_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        history_header.setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table_commit_history.doubleClicked.connect(self._on_commit_row_double_clicked)
+
+        self.sync_button.clicked.connect(self.start_sync)
+        self.refresh_button.clicked.connect(self.refresh_status)
+        self.stage_button.clicked.connect(self._on_stage_clicked)
+        self.revert_button.clicked.connect(self._on_revert_clicked)
+        self.unstage_button.clicked.connect(self._on_unstage_clicked)
+        self.submit_all_staged_button.clicked.connect(self._on_submit_all_staged_clicked)
+        self.local_dir_button.clicked.connect(self._on_local_dir_clicked)
+        self.repo_website_button.clicked.connect(self._on_repo_website_clicked)
+
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
         self._project = project
         self._repo = repo
         self._workspace_root = workspace_root
         if repo is None:
             self._freshness_timer.stop()
-            self.status_dot.set_state("loading")
+            self._set_status_dot_state("loading")
             show_exclusive(self.empty_label, self.content_widget)
             return
         show_exclusive(self.content_widget, self.empty_label)
@@ -265,8 +251,25 @@ class RepoGitStatusPage(QWidget):
         self.set_repo(project, repo, workspace_root)
         self.start_sync()
 
-    def _dest_path(self):
+    def _dest_path(self) -> Path:
         return Path(self._workspace_root) / self._repo.local_path
+
+    def _append_log(self, text: str) -> None:
+        self.plain_text_git_log.appendPlainText(text)
+        scrollbar = self.plain_text_git_log.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def _set_status_dot_state(self, state: str) -> None:
+        if state == "loading":
+            self.status_dot.setVisible(False)
+            return
+        standard_icon = QStyle.SP_MessageBoxWarning if state == "dirty" else QStyle.SP_DialogApplyButton
+        icon = self.style().standardIcon(standard_icon)
+        self.status_dot.setPixmap(icon.pixmap(_STATUS_DOT_SIZE, _STATUS_DOT_SIZE))
+        self.status_dot.setToolTip("Uncommitted changes" if state == "dirty" else "Up to date")
+        self.status_dot.setVisible(True)
+
+    # -- status (Modified / Staged tables + diagnostics) -----------------
 
     def refresh_status(self) -> None:
         if self._repo is None or self._workspace_root is None:
@@ -276,13 +279,14 @@ class RepoGitStatusPage(QWidget):
         # new check reports back, so the dot never shows a stale/wrong-repo
         # color while a fresh one is in flight.
         self._freshness_timer.stop()
-        self.status_dot.set_state("loading")
+        self._set_status_dot_state("loading")
         dest_path = self._dest_path()
         if not (dest_path / ".git").exists():
-            self.modified_list.clear()
-            self.staged_list.clear()
+            self.modified_model.removeRows(0, self.modified_model.rowCount())
+            self.staged_model.removeRows(0, self.staged_model.rowCount())
             return
         self._poll_commit_log()
+        self._run_diagnostics()
         if self._status_worker is not None and self._status_worker.isRunning():
             # A previous refresh is still in flight (e.g. rapid clicks on
             # Refresh Status/tab switches) — don't orphan it mid-run, which
@@ -296,26 +300,125 @@ class RepoGitStatusPage(QWidget):
 
     def _on_status_ready(self, status: RepoStatus) -> None:
         self._last_status = status
-        self.modified_list.clear()
-        for path in sorted(status.untracked + status.modified):
-            item = QListWidgetItem(path)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Unchecked)
-            self.modified_list.addItem(item)
-        self.staged_list.clear()
-        for path in sorted(status.staged):
-            item = QListWidgetItem(path)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Unchecked)
-            self.staged_list.addItem(item)
+        self._populate_file_table(self.modified_model, status.unstaged_changes)
+        self._populate_file_table(self.staged_model, status.staged_changes)
         if status.is_clean:
-            self.status_dot.set_state("fresh")
+            self._set_status_dot_state("fresh")
             self._freshness_timer.start(FRESHNESS_WINDOW_MS)
         else:
-            self.status_dot.set_state("dirty")
+            self._set_status_dot_state("dirty")
 
     def _on_status_failed(self, message: str) -> None:
-        self.log_panel.append_line(f"--- Failed to read status: {message} ---")
+        self._append_log(f"--- Failed to read status: {message} ---")
+
+    def _populate_file_table(self, model: QStandardItemModel, changes: list[FileChange]) -> None:
+        model.removeRows(0, model.rowCount())
+        for change in sorted(changes, key=lambda c: c.path):
+            pure_path = PurePosixPath(change.path)
+            name_item = QStandardItem(pure_path.name)
+            name_item.setData(change.path, _PATH_ROLE)
+            name_item.setData(change.change_type, _CHANGE_TYPE_ROLE)
+            parent = str(pure_path.parent)
+            path_item = QStandardItem("" if parent == "." else parent)
+            type_item = QStandardItem(_CHANGE_TYPE_LABELS.get(change.change_type, change.change_type.title()))
+            model.appendRow([name_item, path_item, type_item])
+
+    def _selected_rows_data(self, table: QTableView, model: QStandardItemModel) -> list[tuple[str, str]]:
+        rows = {index.row() for index in table.selectionModel().selectedRows()}
+        return [
+            (model.item(row, 0).data(_PATH_ROLE), model.item(row, 0).data(_CHANGE_TYPE_ROLE)) for row in sorted(rows)
+        ]
+
+    def _show_inspect_menu(self, table: QTableView, pos) -> None:
+        index = table.indexAt(pos)
+        if not index.isValid() or self._repo is None:
+            return
+        path = table.model().item(index.row(), 0).data(_PATH_ROLE)
+        menu = QMenu(self)
+        inspect_action = menu.addAction("Inspect in Explorer")
+        action = menu.exec(table.viewport().mapToGlobal(pos))
+        if action == inspect_action:
+            self.browse_file_requested.emit(self._dest_path() / path)
+
+    # -- diagnostics table (Token & Auth / Clone / Up-to-date) ------------
+
+    def _run_diagnostics(self) -> None:
+        if self._repo is None:
+            return
+        if self._diagnostics_worker is not None and self._diagnostics_worker.isRunning():
+            # Same "don't orphan an in-flight worker" guard every other
+            # worker on this page uses.
+            return
+        repo = self._repo
+        dest_path = self._dest_path()
+        git_service = self.git_service
+
+        def action(_on_output):
+            results: list[tuple[str, str, bool]] = []
+
+            token = git_service.get_github_token()
+            owner_repo = git_service.parse_github_owner_repo(repo.git_url)
+            if token is None:
+                results.append(("Token & Auth", "No GitHub token found — please log in.", False))
+            elif owner_repo is not None:
+                try:
+                    has_access = check_repo_access(owner_repo[0], owner_repo[1], token)
+                    detail = (
+                        "Authenticated, repo access confirmed."
+                        if has_access
+                        else f"No access to {owner_repo[0]}/{owner_repo[1]}."
+                    )
+                    results.append(("Token & Auth", detail, has_access))
+                except GitHubAuthError as exc:
+                    results.append(("Token & Auth", str(exc), False))
+            else:
+                results.append(("Token & Auth", "Token present (non-GitHub remote, access not checked).", True))
+
+            is_cloned = git_service.is_cloned(dest_path)
+            results.append(
+                ("Clone", "Repo cloned and .git present." if is_cloned else "Repo not cloned locally.", is_cloned)
+            )
+
+            if is_cloned:
+                try:
+                    git_service.fetch(dest_path)
+                except GitOperationError:
+                    pass  # offline/auth hiccup — fall back to whatever's already local
+                ahead_behind = git_service.get_ahead_behind(dest_path)
+                if ahead_behind is None:
+                    results.append(("Up-to-date", "No upstream branch configured.", False))
+                else:
+                    ahead, behind = ahead_behind
+                    if behind > 0:
+                        results.append(("Up-to-date", f"{behind} commit(s) behind origin — sync to update.", False))
+                    else:
+                        detail = (
+                            "Up to date."
+                            if ahead == 0
+                            else f"Up to date locally, {ahead} commit(s) ahead (not yet pushed)."
+                        )
+                        results.append(("Up-to-date", detail, True))
+            else:
+                results.append(("Up-to-date", "Not cloned yet.", False))
+
+            return results
+
+        self._diagnostics_worker = GitStreamWorker(action)
+        self._diagnostics_worker.finished_ok.connect(self._on_diagnostics_ready)
+        self._diagnostics_worker.failed.connect(
+            lambda message: self._append_log(f"--- Diagnostics check failed: {message} ---")
+        )
+        self._diagnostics_worker.start()
+
+    def _on_diagnostics_ready(self, results: list[tuple[str, str, bool]]) -> None:
+        self.git_status_model.removeRows(0, self.git_status_model.rowCount())
+        for name, detail, ok in results:
+            name_item = QStandardItem(name)
+            detail_item = QStandardItem(detail)
+            status_item = QStandardItem()
+            standard_icon = QStyle.SP_DialogApplyButton if ok else QStyle.SP_MessageBoxWarning
+            status_item.setIcon(self.style().standardIcon(standard_icon))
+            self.git_status_model.appendRow([name_item, detail_item, status_item])
 
     # -- commit history panel ------------------------------------------------
 
@@ -330,7 +433,6 @@ class RepoGitStatusPage(QWidget):
         dest_path = self._dest_path()
         if not self.git_service.is_cloned(dest_path):
             return
-        self.commit_log_status_label.setText("Loading...")
         self._commit_log_worker = CommitLogWorker(
             self.git_service, dest_path, self.git_service.get_github_token(), avatar_cache=self._commit_log_avatar_cache
         )
@@ -339,32 +441,35 @@ class RepoGitStatusPage(QWidget):
 
     def _on_commit_log_ready(self, entries: list[CommitHistoryEntry]) -> None:
         self._commit_log_entries = entries
-        self.commit_log_status_label.setText("No commit history found." if not entries else "")
-        self.commit_log_table.setRowCount(len(entries))
-        for row, entry in enumerate(entries):
-            avatar_item = QTableWidgetItem()
+        self.commit_log_model.removeRows(0, self.commit_log_model.rowCount())
+        for entry in entries:
+            avatar_item = QStandardItem()
             if entry.avatar_bytes:
                 pixmap = QPixmap()
                 pixmap.loadFromData(entry.avatar_bytes)
                 avatar_item.setIcon(QIcon(pixmap))
             else:
                 # No avatar (local-git fallback, or the download failed) —
-                # same generic person glyph CommitCard falls back to.
+                # same generic person glyph the previous CommitCard-based
+                # panel fell back to.
                 avatar_item.setText("\U0001F464")
                 avatar_item.setTextAlignment(Qt.AlignCenter)
-            self.commit_log_table.setItem(row, 0, avatar_item)
-            self.commit_log_table.setItem(row, 1, QTableWidgetItem(entry.author_display))
-            self.commit_log_table.setItem(row, 2, QTableWidgetItem(entry.message))
-            self.commit_log_table.setItem(row, 3, QTableWidgetItem(format_relative_time(entry.date)))
-            self.commit_log_table.setItem(row, 4, QTableWidgetItem(format_commit_date(entry.date)))
+            self.commit_log_model.appendRow(
+                [
+                    avatar_item,
+                    QStandardItem(entry.author_display),
+                    QStandardItem(entry.message),
+                    QStandardItem(format_relative_time(entry.date)),
+                    QStandardItem(format_commit_date(entry.date)),
+                ]
+            )
 
     def _on_commit_row_double_clicked(self, index) -> None:
         row = index.row()
         if not (0 <= row < len(self._commit_log_entries)):
             return
         # Non-modal, fresh dialog per double-click — replaces the previous
-        # one (if a row was already open) rather than stacking windows, same
-        # idiom CommitCard's own "Files" button uses.
+        # one (if a row was already open) rather than stacking windows.
         if self._commit_files_dialog is not None:
             self._commit_files_dialog.close()
         self._commit_files_dialog = CommitFilesDialog(
@@ -376,42 +481,28 @@ class RepoGitStatusPage(QWidget):
         )
         self._commit_files_dialog.show()
 
-    def _on_gitweb_clicked(self) -> None:
+    def _on_repo_website_clicked(self) -> None:
         if self._repo is None:
             return
         owner_repo = self.git_service.parse_github_owner_repo(self._repo.git_url)
         if owner_repo is None:
-            QMessageBox.warning(self, "GitWeb", "This repo's remote isn't a github.com URL.")
+            QMessageBox.warning(self, "Repo Site", "This repo's remote isn't a github.com URL.")
             return
         owner, name = owner_repo
         webbrowser.open(f"https://github.com/{owner}/{name}")
 
-    # -- stage / unstage / revert --------------------------------------------
+    def _on_local_dir_clicked(self) -> None:
+        if self._repo is None:
+            return
+        open_in_file_explorer(self._dest_path())
 
-    def _checked_paths(self, list_widget: QListWidget) -> list[str]:
-        return [
-            list_widget.item(i).text()
-            for i in range(list_widget.count())
-            if list_widget.item(i).checkState() == Qt.Checked
-        ]
-
-    def _checked_modified_paths(self) -> list[str]:
-        return self._checked_paths(self.modified_list)
-
-    def _on_select_all_clicked(self, list_widget: QListWidget) -> None:
-        # Toggle: if everything's already checked, the button clears
-        # instead — one button covers both directions rather than needing
-        # a separate "Deselect All". Shared by both the Modified and Staged
-        # panels' Select All buttons.
-        count = list_widget.count()
-        all_checked = count > 0 and len(self._checked_paths(list_widget)) == count
-        new_state = Qt.Unchecked if all_checked else Qt.Checked
-        for i in range(count):
-            list_widget.item(i).setCheckState(new_state)
+    # -- stage / unstage / revert (multi-selection) --------------------------
 
     def _on_stage_clicked(self) -> None:
-        selected = self._checked_modified_paths()
-        if not selected or self._repo is None:
+        if self._repo is None:
+            return
+        paths = [path for path, _ in self._selected_rows_data(self.table_modified, self.modified_model)]
+        if not paths:
             return
         if self._stage_worker is not None and self._stage_worker.isRunning():
             # Same "don't orphan an in-flight worker" guard as start_sync /
@@ -420,48 +511,47 @@ class RepoGitStatusPage(QWidget):
             return
         dest_path = self._dest_path()
         self.stage_button.setEnabled(False)
-        self.staged_progress_bar.setVisible(True)
-        self._stage_worker = GitStreamWorker(
-            lambda on_output: self.git_service.stage_paths(dest_path, selected)
-        )
+        self._stage_worker = GitStreamWorker(lambda on_output: self.git_service.stage_paths(dest_path, paths))
         self._stage_worker.finished_ok.connect(self._on_stage_finished)
         self._stage_worker.failed.connect(self._on_stage_failed)
         self._stage_worker.start()
 
     def _on_stage_finished(self, _result: object) -> None:
         self.stage_button.setEnabled(True)
-        self.staged_progress_bar.setVisible(False)
         self.refresh_status()
 
     def _on_stage_failed(self, message: str) -> None:
         self.stage_button.setEnabled(True)
-        self.staged_progress_bar.setVisible(False)
         QMessageBox.warning(self, "Stage Failed", message)
 
-    def _on_restore_clicked(self) -> None:
-        selected = self._checked_paths(self.staged_list)
-        if not selected or self._repo is None:
+    def _on_unstage_clicked(self) -> None:
+        if self._repo is None:
             return
-        try:
-            self.git_service.unstage_paths(self._dest_path(), selected)
-        except GitOperationError as exc:
-            QMessageBox.warning(self, "Restore Failed", str(exc))
+        paths = [path for path, _ in self._selected_rows_data(self.table_staged, self.staged_model)]
+        if not paths:
             return
+        if self._unstage_worker is not None and self._unstage_worker.isRunning():
+            return
+        dest_path = self._dest_path()
+        self.unstage_button.setEnabled(False)
+        self._unstage_worker = GitStreamWorker(lambda on_output: self.git_service.unstage_paths(dest_path, paths))
+        self._unstage_worker.finished_ok.connect(self._on_unstage_finished)
+        self._unstage_worker.failed.connect(self._on_unstage_failed)
+        self._unstage_worker.start()
+
+    def _on_unstage_finished(self, _result: object) -> None:
+        self.unstage_button.setEnabled(True)
         self.refresh_status()
 
-    def _show_inspect_menu(self, list_widget: QListWidget, pos) -> None:
-        item = list_widget.itemAt(pos)
-        if item is None or self._repo is None:
-            return
-        menu = QMenu(self)
-        inspect_action = menu.addAction("Inspect in Explorer")
-        action = menu.exec(list_widget.viewport().mapToGlobal(pos))
-        if action == inspect_action:
-            self.browse_file_requested.emit(self._dest_path() / item.text())
+    def _on_unstage_failed(self, message: str) -> None:
+        self.unstage_button.setEnabled(True)
+        QMessageBox.warning(self, "Restore Failed", message)
 
     def _on_revert_clicked(self) -> None:
-        selected = self._checked_modified_paths()
-        if not selected or self._repo is None:
+        if self._repo is None:
+            return
+        selected = self._selected_rows_data(self.table_modified, self.modified_model)
+        if not selected:
             return
         confirmed = confirm_action(
             self,
@@ -470,15 +560,28 @@ class RepoGitStatusPage(QWidget):
         )
         if not confirmed:
             return
-        untracked = set(self._last_status.untracked) if self._last_status is not None else set()
-        untracked_paths = [path for path in selected if path in untracked]
-        modified_paths = [path for path in selected if path not in untracked]
-        try:
-            self.git_service.revert_paths(self._dest_path(), modified_paths=modified_paths, untracked_paths=untracked_paths)
-        except GitOperationError as exc:
-            QMessageBox.warning(self, "Revert Failed", str(exc))
+        if self._revert_worker is not None and self._revert_worker.isRunning():
             return
+        untracked_paths = [path for path, change_type in selected if change_type == "untracked"]
+        modified_paths = [path for path, change_type in selected if change_type != "untracked"]
+        dest_path = self._dest_path()
+        self.revert_button.setEnabled(False)
+        self._revert_worker = GitStreamWorker(
+            lambda on_output: self.git_service.revert_paths(
+                dest_path, modified_paths=modified_paths, untracked_paths=untracked_paths
+            )
+        )
+        self._revert_worker.finished_ok.connect(self._on_revert_finished)
+        self._revert_worker.failed.connect(self._on_revert_failed)
+        self._revert_worker.start()
+
+    def _on_revert_finished(self, _result: object) -> None:
+        self.revert_button.setEnabled(True)
         self.refresh_status()
+
+    def _on_revert_failed(self, message: str) -> None:
+        self.revert_button.setEnabled(True)
+        QMessageBox.warning(self, "Revert Failed", message)
 
     # -- sync (clone/pull, unchanged) ----------------------------------------
 
@@ -496,7 +599,6 @@ class RepoGitStatusPage(QWidget):
             return
         dest_path = self._dest_path()
         self.sync_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
         self.sync_started.emit()
 
         if not self.git_service.is_cloned(dest_path):
@@ -508,7 +610,7 @@ class RepoGitStatusPage(QWidget):
             # error after it's already tried and failed.
             owner_repo = self.git_service.parse_github_owner_repo(self._repo.git_url)
             if owner_repo is not None:
-                self.log_panel.append_line(f"--- Checking access to '{self._repo.name}' ---")
+                self._append_log(f"--- Checking access to '{self._repo.name}' ---")
                 self._begin_access_check(owner_repo, dest_path)
                 return
         self._begin_sync_worker(dest_path)
@@ -536,8 +638,7 @@ class RepoGitStatusPage(QWidget):
     def _on_access_checked(self, has_access: bool, owner: str, name: str, dest_path: Path) -> None:
         if not has_access:
             self.sync_button.setEnabled(True)
-            self.progress_bar.setVisible(False)
-            self.log_panel.append_line(f"--- Access denied to '{owner}/{name}' ---")
+            self._append_log(f"--- Access denied to '{owner}/{name}' ---")
             QMessageBox.warning(
                 self,
                 "Access Denied",
@@ -549,96 +650,89 @@ class RepoGitStatusPage(QWidget):
         self._begin_sync_worker(dest_path)
 
     def _begin_sync_worker(self, dest_path: Path) -> None:
-        self.log_panel.append_line(f"--- Syncing '{self._repo.name}' ---")
+        self._append_log(f"--- Syncing '{self._repo.name}' ---")
         self._git_worker = GitStreamWorker(
             lambda on_output: self.git_service.open_or_sync(self._repo.git_url, dest_path, on_output=on_output)
         )
-        self._git_worker.output.connect(self.log_panel.append_line)
+        self._git_worker.output.connect(self._append_log)
         self._git_worker.finished_ok.connect(self._on_sync_finished)
         self._git_worker.failed.connect(self._on_sync_failed)
         self._git_worker.start()
 
     def _on_sync_finished(self, status: str) -> None:
         self.sync_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
         try:
             self.store.mark_synced(self._project.id, self._repo.id, "cloned")
         except UkoreHubError:
             pass
-        self.log_panel.append_line(f"--- Done ({status}) ---")
+        self._append_log(f"--- Done ({status}) ---")
         self.refresh_status()
         self.sync_finished.emit()
 
     def _on_sync_failed(self, message: str) -> None:
         self.sync_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
         try:
             self.store.mark_status(self._project.id, self._repo.id, "error")
         except UkoreHubError:
             pass
-        self.log_panel.append_line(f"--- Failed: {message} ---")
+        self._append_log(f"--- Failed: {message} ---")
         QMessageBox.warning(self, "Sync Failed", message)
         self.sync_failed.emit(message)
 
     # -- commit -> pull -> (resolve conflicts) -> push -----------------------
 
-    def _on_pull_and_push_clicked(self) -> None:
+    def _on_submit_all_staged_clicked(self) -> None:
         if self._repo is None:
             return
         dialog = CommitDialog(self)
         if not dialog.exec():
             return
-        self._pending_commit_message = dialog.message()
-        self._pending_amend = dialog.amend()
+        message = dialog.message()
+        amend = dialog.amend()
 
         dest_path = self._dest_path()
         try:
-            self.git_service.commit(
-                dest_path,
-                self._pending_commit_message,
-                amend=self._pending_amend,
-            )
+            self.git_service.commit(dest_path, message, amend=amend)
         except GitOperationError as exc:
             QMessageBox.warning(self, "Commit Failed", str(exc))
             return
-        self.log_panel.append_line("--- Committed ---")
+        self._append_log("--- Committed ---")
         self._start_pull_step()
 
     def _set_workflow_running(self, running: bool) -> None:
-        self.pull_push_button.setEnabled(not running)
+        self.submit_all_staged_button.setEnabled(not running)
         self.stage_button.setEnabled(not running)
-        self.restore_button.setEnabled(not running)
-        self.progress_bar.setVisible(running)
+        self.unstage_button.setEnabled(not running)
 
     def _start_pull_step(self) -> None:
         dest_path = self._dest_path()
-        self.log_panel.append_line("--- Pulling ---")
+        self._append_log("--- Pulling ---")
         self._set_workflow_running(True)
         self._stream_worker = GitStreamWorker(
             lambda on_output: self.git_service.pull(dest_path, on_output=on_output)
         )
-        self._stream_worker.output.connect(self.log_panel.append_line)
+        self._stream_worker.output.connect(self._append_log)
         self._stream_worker.finished_ok.connect(self._on_pull_step_finished)
         self._stream_worker.failed.connect(self._on_pull_step_failed)
         self._stream_worker.start()
 
     def _on_pull_step_finished(self) -> None:
-        self.log_panel.append_line("--- Pull done ---")
+        self._append_log("--- Pull done ---")
         self._start_push_step()
 
     def _on_pull_step_failed(self, message: str) -> None:
         dest_path = self._dest_path()
         if not self.git_service.has_unresolved_merge(dest_path):
             self._set_workflow_running(False)
-            self.log_panel.append_line(f"--- Pull failed: {message} ---")
+            self._append_log(f"--- Pull failed: {message} ---")
             QMessageBox.warning(self, "Pull Failed", message)
             return
-        self.log_panel.append_line("--- Merge conflict detected ---")
+        self._append_log("--- Merge conflict detected ---")
         conflicted = self.git_service.get_conflicted_files(dest_path)
         dialog = ConflictResolutionDialog(self, conflicted_files=conflicted)
         if not dialog.exec():
             self._set_workflow_running(False)
-            self.log_panel.append_line("--- Conflicts left unresolved — resolve and try again ---")
+            self._append_log("--- Conflicts left unresolved — resolve and try again ---")
             return
         resolutions = dialog.resolutions()
         try:
@@ -649,26 +743,26 @@ class RepoGitStatusPage(QWidget):
             self._set_workflow_running(False)
             QMessageBox.warning(self, "Conflict Resolution Failed", str(exc))
             return
-        self.log_panel.append_line("--- Conflicts resolved, merge completed ---")
+        self._append_log("--- Conflicts resolved, merge completed ---")
         self._start_push_step()
 
     def _start_push_step(self) -> None:
         dest_path = self._dest_path()
-        self.log_panel.append_line("--- Pushing ---")
+        self._append_log("--- Pushing ---")
         self._stream_worker = GitStreamWorker(
             lambda on_output: self.git_service.push(dest_path, on_output=on_output)
         )
-        self._stream_worker.output.connect(self.log_panel.append_line)
+        self._stream_worker.output.connect(self._append_log)
         self._stream_worker.finished_ok.connect(self._on_push_finished)
         self._stream_worker.failed.connect(self._on_push_failed)
         self._stream_worker.start()
 
     def _on_push_finished(self) -> None:
         self._set_workflow_running(False)
-        self.log_panel.append_line("--- Push done ---")
+        self._append_log("--- Push done ---")
         self.refresh_status()
 
     def _on_push_failed(self, message: str) -> None:
         self._set_workflow_running(False)
-        self.log_panel.append_line(f"--- Push failed: {message} ---")
+        self._append_log(f"--- Push failed: {message} ---")
         QMessageBox.warning(self, "Push Failed", message)

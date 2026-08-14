@@ -66,7 +66,7 @@ class SectionSpec:
     standard_icon: QStyle.StandardPixmap | None = None
     # Optional: a small widget shown at the right edge of this section's own
     # row in Sidebar's SectionTabList (e.g. plugins/core/submit/'s
-    # RepoStatusDot) — built once, alongside page_factory, and never
+    # status_dot QLabel) — built once, alongside page_factory, and never
     # rebuilt by SectionTabList. The plugin that supplies the factory keeps
     # its own reference to the returned widget and updates it directly
     # (text/visibility/whatever) — SectionTabList only lays it out, it does

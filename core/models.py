@@ -103,11 +103,16 @@ class CommitInfo:
 
 
 @dataclass
+class FileChange:
+    path: str
+    change_type: str  # "untracked" | "added" | "modified" | "deleted" | "renamed"
+
+
+@dataclass
 class RepoStatus:
     commit: CommitInfo | None
-    untracked: list[str]
-    modified: list[str]
-    staged: list[str]
+    unstaged_changes: list[FileChange]
+    staged_changes: list[FileChange]
     is_clean: bool
 
 

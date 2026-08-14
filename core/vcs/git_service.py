@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from core.exceptions import GitOperationError
-from core.models import CommitInfo, RepoStatus
+from core.models import CommitInfo, FileChange, RepoStatus
 
 OutputCallback = Callable[[str], None] | None
 
@@ -521,8 +521,15 @@ class GitService:
         left, right = output.split()
         return int(left), int(right)
 
-    def get_working_tree_status(self, repo_path: Path) -> tuple[list[str], list[str], list[str]]:
-        repo_path = Path(repo_path)
+    _INDEX_CHANGE_TYPE = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed", "C": "renamed"}
+    _WORKTREE_CHANGE_TYPE = {"M": "modified", "D": "deleted"}
+
+    def _parse_status_porcelain(self, repo_path: Path) -> tuple[list[FileChange], list[FileChange]]:
+        """Returns (unstaged_changes, staged_changes) — unstaged merges
+        untracked files (change_type "untracked") with working-tree
+        modifications/deletions of already-tracked files; staged reflects
+        the index against HEAD. See get_working_tree_status for the legacy
+        bucketed-paths view derived from this same parse."""
         # -z gives NUL-delimited, unquoted paths. Without it, git wraps any
         # path containing a space (or other "unusual" characters) in double
         # quotes, which would otherwise end up baked into the path string
@@ -532,9 +539,8 @@ class GitService:
             ["status", "--porcelain=v1", "--untracked-files=all", "-z"], cwd=repo_path
         )
         entries = output.split("\0")
-        untracked: list[str] = []
-        modified: list[str] = []
-        staged: list[str] = []
+        unstaged: list[FileChange] = []
+        staged: list[FileChange] = []
         i = 0
         while i < len(entries):
             entry = entries[i]
@@ -549,24 +555,30 @@ class GitService:
                 # in non-z porcelain output) that we don't need here.
                 i += 1
             if index_status == "?" and worktree_status == "?":
-                untracked.append(path)
+                unstaged.append(FileChange(path=path, change_type="untracked"))
                 continue
             if index_status not in (" ", "?"):
-                staged.append(path)
+                staged.append(FileChange(path=path, change_type=self._INDEX_CHANGE_TYPE.get(index_status, "modified")))
             if worktree_status not in (" ", "?"):
-                modified.append(path)
-        return untracked, modified, staged
+                unstaged.append(FileChange(path=path, change_type=self._WORKTREE_CHANGE_TYPE.get(worktree_status, "modified")))
+        return unstaged, staged
+
+    def get_working_tree_status(self, repo_path: Path) -> tuple[list[str], list[str], list[str]]:
+        repo_path = Path(repo_path)
+        unstaged, staged = self._parse_status_porcelain(repo_path)
+        untracked = [fc.path for fc in unstaged if fc.change_type == "untracked"]
+        modified = [fc.path for fc in unstaged if fc.change_type != "untracked"]
+        return untracked, modified, [fc.path for fc in staged]
 
     def get_status(self, repo_path: Path) -> RepoStatus:
         repo_path = Path(repo_path)
         commit = self.get_latest_commit(repo_path)
-        untracked, modified, staged = self.get_working_tree_status(repo_path)
-        is_clean = not (untracked or modified or staged)
+        unstaged, staged = self._parse_status_porcelain(repo_path)
+        is_clean = not (unstaged or staged)
         return RepoStatus(
             commit=commit,
-            untracked=untracked,
-            modified=modified,
-            staged=staged,
+            unstaged_changes=unstaged,
+            staged_changes=staged,
             is_clean=is_clean,
         )
 
