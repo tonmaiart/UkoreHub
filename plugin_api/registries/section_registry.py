@@ -41,6 +41,17 @@ class UICommandService:
     # for plugins/core/project_editor's Settings > Project "Switch
     # Project..." button.
     switch_project: Callable[[], None]
+    # Lets a section ask another section to re-read its own on-disk/data
+    # state without switching the visible tab — wraps
+    # MainWindow._refresh_section, which looks the target page up by
+    # SectionRegistry key and calls its optional refresh_content()
+    # protocol method (interface/page_protocols.py's RefreshablePage) if it
+    # implements one. A no-op if the key doesn't resolve to a page, or the
+    # page doesn't implement RefreshablePage. Added specifically for
+    # plugins/core/submit's Sync button telling Explorer to rescan — a
+    # QFileSystemModel watcher can miss/lag a bulk filesystem change like a
+    # git clone/pull.
+    refresh_section: Callable[[str], None]
 
 
 @dataclass(frozen=True)

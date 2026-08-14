@@ -17,6 +17,12 @@ def _wire(page: RepoGitStatusPage, host: UICommandService) -> None:
     # import, so this plugin's register(api) doesn't fail to load if
     # Explorer's plugin were ever missing/broken.
     page.browse_file_requested.connect(lambda path: host.navigate_and_focus("repo_browser", path))
+    # Sync clones/pulls files on disk without switching the active repo, so
+    # nothing else would ever tell Explorer's QFileSystemModel to rescan —
+    # its own watcher can miss/lag a bulk change like this. Doesn't switch
+    # Explorer's tab (see UICommandService.refresh_section), just tells it
+    # to re-read its current folder if/when the user looks.
+    page.sync_finished.connect(lambda: host.refresh_section("repo_browser"))
 
 
 def register(api) -> None:

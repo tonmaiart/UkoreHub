@@ -48,3 +48,17 @@ class AutoSyncPage(Protocol):
     implements it (today, just Submit)."""
 
     def sync_active_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None: ...
+
+
+@runtime_checkable
+class RefreshablePage(Protocol):
+    """Can re-read its own on-disk/data state without a full repo switch —
+    called by interface/main_window.py's _refresh_section
+    (UICommandService.refresh_section(key)) when another section knows the
+    working tree changed underneath a page it doesn't own (e.g. Submit's
+    "Sync Others Commit" telling Explorer to rescan, since a QFileSystemModel
+    watcher can miss/lag a bulk change like a git clone/pull). Unlike
+    navigate_and_focus, this never switches the visible tab — it's a
+    same-tab, no-navigation refresh."""
+
+    def refresh_content(self) -> None: ...

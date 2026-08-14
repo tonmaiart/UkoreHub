@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from core_api import APP_NAME, APP_VERSION, AppLifecycleContext, NotFoundError, UkoreCore, relaunch_ukorehub_exe
 from interface import builtin_settings_tabs
-from interface.page_protocols import AutoSyncPage, PathFocusablePage, SetRepoPage
+from interface.page_protocols import AutoSyncPage, PathFocusablePage, RefreshablePage, SetRepoPage
 from interface.settings.settings_view import SettingsDialog
 from interface.sidebar.sidebar import Sidebar
 from plugin_api import UICommandService, UIRegistryManager
@@ -128,6 +128,7 @@ class MainWindow(QMainWindow):
             set_active_repo=self._set_active_repo,
             open_settings_tab=lambda key: self._on_settings_requested(select_key=key),
             switch_project=self._request_switch_project,
+            refresh_section=self._refresh_section,
         )
         for spec in section_registry.ordered():
             if spec.wire is not None:
@@ -253,6 +254,17 @@ class MainWindow(QMainWindow):
         page = self.pages.get(key)
         if isinstance(page, PathFocusablePage):
             page.browse_to_path(path)
+
+    def _refresh_section(self, key: str) -> None:
+        # Unlike _navigate_and_focus, this never touches the sidebar/
+        # view_stack — a section (e.g. Submit after a sync) telling another
+        # section (Explorer) its on-disk state changed shouldn't yank the
+        # user's current tab. A no-op if the key doesn't resolve to a page,
+        # or the page doesn't implement RefreshablePage (see
+        # interface/page_protocols.py).
+        page = self.pages.get(key)
+        if isinstance(page, RefreshablePage):
+            page.refresh_content()
 
     def _apply_plugin_visibility(self) -> None:
         """Hides the sidebar row of any plugins/ section the active repo
