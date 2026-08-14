@@ -18,20 +18,24 @@ REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# CACHE_DIR (below) is deliberately allowed to live outside REPO_ROOT, so a
-# process spawned from CACHE_DIR/cache/plugins/... (e.g. Maya, via
-# maya_launcher's os.environ.copy()) has no relative path back to REPO_ROOT.
-# Exported here so such processes can read data/ straight off disk without
-# guessing — see PublishApi/repo_paths.py's find_ukorehub_root().
+# CACHE_DIR/DATA_DIR (below) are deliberately allowed to live outside
+# REPO_ROOT, so a process spawned from CACHE_DIR/cache/plugins/... (e.g.
+# Maya, via maya_launcher's os.environ.copy()) has no relative path back to
+# REPO_ROOT. Exported here so such processes can still find the app's own
+# code/plugins folder without guessing — see PublishApi/repo_paths.py's
+# find_ukorehub_root(). Finding data/ itself is a separate concern now (see
+# UKOREHUB_DATA_DIR below) — data/ no longer lives under REPO_ROOT, so
+# UKOREHUB_APP_ROOT alone isn't enough for that anymore.
 os.environ["UKOREHUB_APP_ROOT"] = str(REPO_ROOT)
 
-# cache/ (per-machine app state) and storage/ (cloned workspace repos) used to
-# be hardcoded as REPO_ROOT-relative — a problem for Update, which replaces
-# this whole app/ folder (see UkoreHubLauncher's README.md): anything left
-# inside it is either wiped or, worse, silently orphaned next to the new copy.
-# Sourced from env vars instead so the real launcher exe (UkoreHub.exe, built
-# from the separate UkoreHubLauncher repo) can point them at a path outside
-# app/ before spawning this file — same UKOREHUB_-prefixed convention as
+# cache/ (per-machine app state), storage/ (cloned workspace repos), and
+# data/ (the R2 cloud-synced JSON registry) used to be hardcoded as
+# REPO_ROOT-relative — a problem for Update, which replaces this whole app/
+# folder (see UkoreHubLauncher's README.md): anything left inside it is
+# either wiped or, worse, silently orphaned next to the new copy. Sourced
+# from env vars instead so the real launcher exe (UkoreHub.exe, built from
+# the separate UkoreHubLauncher repo) can point them at a path outside app/
+# before spawning this file — same UKOREHUB_-prefixed convention as
 # core/vcs/git_service.py's UKOREHUB_GITHUB_TOKEN. Falls back to a folder
 # under the user's own Documents (never REPO_ROOT — see root CLAUDE.md's
 # "program folder stays program-only" rule) only for the `python launcher.py`
@@ -44,6 +48,14 @@ CACHE_DIR = (
 STORAGE_DIR = (
     Path(os.environ["UKOREHUB_STORAGE_DIR"]) if os.environ.get("UKOREHUB_STORAGE_DIR") else USER_DATA_DIR / "storage"
 )
+DATA_DIR = Path(os.environ["UKOREHUB_DATA_DIR"]) if os.environ.get("UKOREHUB_DATA_DIR") else USER_DATA_DIR / "data"
+# Re-exported (unlike CACHE_DIR/STORAGE_DIR) so a Maya session spawned later
+# from this running app inherits the *resolved* path regardless of whether
+# it came from the env var above or the Documents fallback — same treatment
+# UKOREHUB_APP_ROOT gets above. This is what Maya-side repo_paths.py clones
+# should switch to reading instead of assuming data/ sits under
+# UKOREHUB_APP_ROOT (not yet done for any of them — separate follow-up).
+os.environ["UKOREHUB_DATA_DIR"] = str(DATA_DIR)
 
 REQUIRED_PACKAGES = [
     ("PySide6", "PySide6>=6.7,<7.0"),
@@ -207,8 +219,8 @@ def main() -> None:
         UIRegistryManager,
     )
 
-    data_dir = REPO_ROOT / "data"
-    data_dir.mkdir(exist_ok=True)
+    data_dir = DATA_DIR
+    data_dir.mkdir(parents=True, exist_ok=True)
     # assets/ holds the git-tracked binary images (thumbnails, program
     # icons, browser link icon overrides, static app-chrome icons) — never
     # cloud-synced, so deliberately kept out of data/ (which is now either
