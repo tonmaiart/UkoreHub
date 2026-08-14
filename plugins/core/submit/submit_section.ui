@@ -7,15 +7,27 @@
     <x>0</x>
     <y>0</y>
     <width>883</width>
-    <height>782</height>
+    <height>859</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
   <layout class="QGridLayout" name="gridLayout">
+   <property name="leftMargin">
+    <number>50</number>
+   </property>
+   <property name="topMargin">
+    <number>50</number>
+   </property>
+   <property name="rightMargin">
+    <number>50</number>
+   </property>
+   <property name="bottomMargin">
+    <number>50</number>
+   </property>
    <item row="0" column="0">
-    <layout class="QVBoxLayout" name="verticalLayout" stretch="7,3,0">
+    <layout class="QVBoxLayout" name="verticalLayout" stretch="7,3">
      <item>
       <layout class="QGridLayout" name="gridLayout_5">
        <item row="0" column="2">
@@ -83,7 +95,7 @@
          <property name="title">
           <string>Git</string>
          </property>
-         <layout class="QGridLayout" name="gridLayout_3" rowstretch="0,3,7">
+         <layout class="QGridLayout" name="gridLayout_3" rowstretch="0,3,7,0">
           <item row="2" column="0">
            <widget class="QPlainTextEdit" name="plainTextEdit_git_log">
             <property name="readOnly">
@@ -122,6 +134,24 @@
             </item>
            </layout>
           </item>
+          <item row="3" column="0">
+           <layout class="QHBoxLayout" name="horizontalLayout_5">
+            <item>
+             <widget class="QPushButton" name="pushButton_local_dir">
+              <property name="text">
+               <string>Open Local Directory</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_repo_website">
+              <property name="text">
+               <string>Open Repo Site</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
          </layout>
         </widget>
        </item>
@@ -142,42 +172,6 @@
            <bool>false</bool>
           </attribute>
          </widget>
-        </item>
-       </layout>
-      </widget>
-     </item>
-     <item>
-      <widget class="QGroupBox" name="groupBox_2">
-       <property name="title">
-        <string>Others Command</string>
-       </property>
-       <layout class="QGridLayout" name="gridLayout_8">
-        <item row="0" column="0">
-         <widget class="QPushButton" name="pushButton_local_dir">
-          <property name="text">
-           <string>Open Local Directory</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1">
-         <widget class="QPushButton" name="pushButton_repo_website">
-          <property name="text">
-           <string>Open Repo Site</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="2">
-         <spacer name="horizontalSpacer">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>40</width>
-            <height>20</height>
-           </size>
-          </property>
-         </spacer>
         </item>
        </layout>
       </widget>
