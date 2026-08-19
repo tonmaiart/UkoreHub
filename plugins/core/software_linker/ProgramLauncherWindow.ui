@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>837</width>
-    <height>625</height>
+    <width>1154</width>
+    <height>714</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,24 +18,21 @@
     <widget class="QWidget" name="widget" native="true">
      <layout class="QGridLayout" name="gridLayout">
       <property name="leftMargin">
-       <number>80</number>
+       <number>100</number>
       </property>
       <property name="topMargin">
-       <number>80</number>
+       <number>100</number>
       </property>
       <property name="rightMargin">
-       <number>80</number>
+       <number>100</number>
       </property>
       <property name="bottomMargin">
-       <number>80</number>
+       <number>100</number>
       </property>
       <item row="0" column="0">
-       <widget class="QListWidget" name="listWidget_program_list"/>
-      </item>
-      <item row="1" column="0">
-       <layout class="QHBoxLayout" name="horizontalLayout">
+       <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="5,2,5">
         <item>
-         <spacer name="horizontalSpacer">
+         <spacer name="horizontalSpacer_2">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
           </property>
@@ -48,39 +45,76 @@
          </spacer>
         </item>
         <item>
-         <widget class="QCheckBox" name="checkBox_ShowOnlyRequirement">
-          <property name="text">
-           <string>Show Only Requirement for current repo only</string>
-          </property>
-         </widget>
+         <layout class="QVBoxLayout" name="verticalLayout">
+          <item>
+           <widget class="QListWidget" name="listWidget_program_list"/>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout">
+            <item>
+             <spacer name="horizontalSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="checkBox_ShowOnlyRequirement">
+              <property name="text">
+               <string>Requirement Only</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_auto_resolve">
+              <property name="text">
+               <string>Auto Resolve</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_browse_path">
+              <property name="text">
+               <string>Browse Path...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_browse_program">
+              <property name="text">
+               <string>Browse Program...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="pushButton_clear_link_path">
+              <property name="text">
+               <string>Clear Link Path</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
         </item>
         <item>
-         <widget class="QPushButton" name="pushButton_auto_resolve">
-          <property name="text">
-           <string>Auto Resolve to Unlink Path</string>
+         <spacer name="horizontalSpacer_3">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
           </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushButton_browse_path">
-          <property name="text">
-           <string>Browse Path...</string>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
           </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushButton_browse_program">
-          <property name="text">
-           <string>Browse Program</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pushButton_clear_link_path">
-          <property name="text">
-           <string>Clear Link Path</string>
-          </property>
-         </widget>
+         </spacer>
         </item>
        </layout>
       </item>

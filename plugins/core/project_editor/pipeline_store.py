@@ -54,20 +54,20 @@ class CustomPath:
 
 @dataclass
 class Category:
-    """One named container ProjectGraphView's node grid groups repos into
-    (added 2026-08-19), replacing the old pipeline-derived automatic
-    layout with a deliberate per-repo "Assign to Category..." choice
-    (project_graph_view.py's AssignCategoryDialog/assign_repo_category).
-    Scoped to the whole Project rather than one repo — lives in
+    """One named group a repo can be assigned to (added 2026-08-19 for the
+    since-removed node graph's box-per-category layout; the graph is gone
+    as of the 2026-08-19 list-view rewrite, but the assignment itself is
+    still set via project_editor_page.py's "Assign Categories" button,
+    dialogs.py's AssignCategoryDialog). Scoped to the whole Project rather
+    than one repo — lives in
     Project.plugin_data["project_editor"]["categories"]
     (api.project_plugin_config_store(PLUGIN_ID), see PipelineStore.get_categories),
     not Repo.plugin_data, since the same category is shared across every
     repo assigned to it. `id` is a stable uuid4 (not derived from `name`)
     so renaming a category doesn't invalidate every repo's own
     category_id pointing at it. A repo with no category_id (or one
-    pointing at a category that's since been deleted) falls back to the
-    graph's synthetic "Uncategorized" bucket — see
-    ProjectGraphView._layout_nodes."""
+    pointing at a category that's since been deleted) is simply
+    unassigned — nothing currently groups the repo list by this field."""
 
     id: str
     name: str
@@ -141,11 +141,14 @@ class PipelineStore:
     """Wraps each repo's own Repo.plugin_data["project_editor"] entry — one
     repo's declared pipeline connections ("Connect Pipeline Input Path...",
     each a RepoRef pointing at another repo's declared CustomPath), plus
-    the repo's own declared CustomPath catalog (see that class). Rendered
-    as directed edges between repo nodes in ProjectGraphView — see
-    project_graph_view.py's _collect_edges. Named "inputs" (matching the
-    node context menu's own "Connect Pipeline Input Path..." wording) even
-    though a connection can represent either direction of real data flow
+    the repo's own declared CustomPath catalog (see that class). Surfaced
+    to the user via custom_paths_settings_page.py's "Connect Input Path"
+    section and, as icons, project_editor_page.py's
+    listWidget_repositories_requirements (see get_required_repos below) —
+    used to also render as directed edges in the since-removed node graph.
+    Named "inputs" (matching the settings page's own "Connect Pipeline
+    Input Path..." wording) even though a connection can represent either
+    direction of real data flow
     — see RepoRef's docstring and this plugin's README for why the
     separate "outputs" concept was removed 2026-07-19.
 
@@ -241,34 +244,47 @@ class PipelineStore:
         return category
 
     def set_categories(self, categories: list[Category]) -> None:
-        """Persists the full Category list, in the given order — this
-        list's own order is what ProjectGraphView._layout_nodes stacks
-        category boxes in, so reordering (move_category, a category box's
-        own right-click "Move Category Up"/"Move Category Down") is just
-        a swap-and-save through here, same as add_category's
-        append-and-save."""
+        """Persists the full Category list, in the given order — the order
+        used to be load-bearing for the since-removed node graph's
+        top-to-bottom category-box stack (its own right-click "Move
+        Category Up"/"Move Category Down"); nothing reads the order for
+        display purposes anymore, but it still round-trips unchanged, same
+        as add_category's append-and-save."""
         if self._project_config_store is not None:
             self._project_config_store.set(_CATEGORIES_KEY, [c.to_dict() for c in categories])
 
     def reload_categories(self) -> None:
         """Re-pulls the project config store's own on-disk file after a
-        ConflictError from add_category (project_graph_view.py's
-        assign_repo_category) — the rejected push already re-pulled the
-        latest data into the local file, but a store held for the whole
+        ConflictError from add_category (project_editor_page.py's
+        _on_assign_category_clicked) — the rejected push already re-pulled
+        the latest data into the local file, but a store held for the whole
         session keeps a stale in-memory copy until this runs, same caveat
         as any other long-lived cloud-synced store."""
         if self._project_config_store is not None:
             self._project_config_store.load()
 
     def get_repo_category_id(self, project_id: str, repo_id: str) -> str | None:
-        """Which Category (by id) this repo is assigned to, or None for
-        the graph's synthetic "Uncategorized" bucket — see
-        ProjectGraphView._layout_nodes."""
+        """Which Category (by id) this repo is assigned to, or None if
+        unassigned. Currently unused by project_editor_page.py — the
+        "Assign Categories" button/action was cut from the list UI
+        2026-08-19 (same day it was added) per the user's own request; kept
+        here since real repos may already have a category_id saved."""
         entry = self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID)
         return entry.get("category_id")
 
     def set_repo_category_id(self, project_id: str, repo_id: str, category_id: str | None) -> None:
         self._set_field(project_id, repo_id, "category_id", category_id)
+
+    def get_repo_info(self, project_id: str, repo_id: str) -> str:
+        """This repo's free-form info note — textBrowser_info/
+        pushButton_edit_info in ProjectEditorTabWindows.ui
+        (project_editor_page.py's EditInfoDialog usage). Plain text, empty
+        string if never set."""
+        entry = self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID)
+        return entry.get("info", "")
+
+    def set_repo_info(self, project_id: str, repo_id: str, text: str) -> None:
+        self._set_field(project_id, repo_id, "info", text)
 
     def _set_field(self, project_id: str, repo_id: str, field_name: str, value) -> None:
         entry = dict(self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID))

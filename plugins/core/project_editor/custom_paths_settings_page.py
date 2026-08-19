@@ -32,8 +32,9 @@ _CONNECTED_COLUMN_LABELS = ("Custom Path Name", "Repo Name", "Relative Path")
 class ConnectInputPathDialog(QDialog):
     """Compact single-window replacement for the old two-dialog
     RepoPickerDialog -> CustomPathPickerDialog flow that used to live behind
-    the Graph View's "Connect Pipeline Input Path..." node context-menu
-    action (removed 2026-07-19, see project_graph_view.py) — one repo combo
+    the old node graph's "Connect Pipeline Input Path..." node context-menu
+    action (removed 2026-07-19, the graph itself removed later, 2026-08-19)
+    — one repo combo
     box plus one custom-path combo box, refreshed together in a single small
     window instead of two separate modal round-trips through a heavy
     thumbnail-card picker. Also picks this connection's `direction`

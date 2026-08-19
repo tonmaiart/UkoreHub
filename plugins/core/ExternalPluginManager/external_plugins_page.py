@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QFile, Qt
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
-    QHBoxLayout,
     QHeaderView,
     QInputDialog,
-    QLabel,
     QMessageBox,
     QPushButton,
     QStyle,
@@ -49,6 +49,8 @@ _CHECKING = "Checking..."
 
 _BROKEN_GIT_DETAIL = "Broken .git directory (not a valid clone) — delete the folder and Clone again."
 _PENDING_RESTART_DETAIL = "Cloned/updated this session — restart UkoreHub to load it."
+
+_UI_FILE = Path(__file__).resolve().parent / "ExternalPluginManagerWindow.ui"
 
 
 def _format_relative(iso_str: str) -> str:
@@ -121,11 +123,20 @@ class ExternalPluginsPage(QWidget):
     manifest.json parsing here). An entry that isn't cloned yet shows no
     requires text — there's no manifest to read until it is.
 
-    The table supports multi-selection: "Update Selected" and "Check for
-    Status" both operate over every selected row; "Check for Status" with
-    nothing selected falls back to checking every row (its old, single
-    default behavior). Add/Edit/Delete/Clone/Open Git Directory/Bulk Push
-    stay single-entry actions, guarded to require exactly one selected row.
+    The table supports multi-selection: "Update Selected", "Force Update
+    Selected", and "Check for Status" all operate over every selected row;
+    "Check for Status" with nothing selected falls back to checking every
+    row (its old, single default behavior). "Force Update Selected"
+    bypasses every status gate the others respect — not cloned -> Clone,
+    broken .git -> delete + re-clone, anything else -> fetch + reset --hard
+    + clean -fd (GitService.force_sync) — for a "just make it match remote,
+    I don't care what's pending" escape hatch, confirmed once up front since
+    it's destructive. Add/Edit/Delete/Clone/Unclone/Open Git Directory/Bulk
+    Push stay single-entry actions, guarded to require exactly one selected
+    row. "Unclone" deletes the selected entry's local clone from disk (the
+    catalog entry itself stays, same shutil.rmtree pattern as
+    interface/repo_settings/local_repository_page.py's "Remove Local
+    Repositories").
 
     Entries the active repo currently requires are also cloned/updated
     automatically at app start and on repo switch, off the UI thread — see
@@ -166,20 +177,23 @@ class ExternalPluginsPage(QWidget):
             _UP_TO_DATE: self.style().standardIcon(QStyle.SP_DialogApplyButton),
         }
 
-        description = QLabel(
-            "External (repo) plugins declared for this project — cloned into cache/plugins/ or not yet. "
-            "Add one that hasn't been cloned here yet, then Clone it; use Check for Status to see which "
-            "cloned ones are behind their remote (also untracks any accidentally-tracked .gitignore'd files "
-            "along the way — local commit only, never pushed). Select multiple rows to Update Selected or "
-            "Check for Status together; with nothing selected, Check for Status checks every row. Every "
-            "entry here is offered as a choice on this project's Requirements & Plugins tab. Entries a repo "
-            "currently requires clone/update themselves at app start and on repo switch — an Error status "
-            "here can mean an automatic update hit a merge conflict and needs a dev to resolve it by hand "
-            "(Open Git Directory)."
-        )
-        description.setWordWrap(True)
+        # UI is authored in Qt Designer (ExternalPluginManagerWindow.ui) and
+        # loaded at runtime instead of being built widget-by-widget in code,
+        # same QUiLoader pattern plugins/core/explorer/browser_widget.py
+        # uses for explorer_section.ui.
+        loader = QUiLoader()
+        ui_file = QFile(str(_UI_FILE))
+        ui_file.open(QFile.ReadOnly)
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
 
-        self.table_widget = QTableWidget(0, 5)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.ui)
+
+        find = self.ui.findChild
+        self.table_widget: QTableWidget = find(QTableWidget, "tableWidget_external_plugin_repo")
+        self.table_widget.setColumnCount(5)
         self.table_widget.setHorizontalHeaderLabels(["Name", "Requires", "Status", "Detail", "Last Checked"])
         self.table_widget.verticalHeader().setVisible(False)
         self.table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -192,20 +206,29 @@ class ExternalPluginsPage(QWidget):
         header.setSectionResizeMode(3, QHeaderView.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
 
-        add_btn = QPushButton("Add")
-        edit_btn = QPushButton("Edit")
-        delete_btn = QPushButton("Delete")
-        clone_btn = QPushButton("Clone")
-        pull_btn = QPushButton("Update Selected")
+        add_btn: QPushButton = find(QPushButton, "pushButton_add_repo")
+        edit_btn: QPushButton = find(QPushButton, "pushButton_edit_repo")
+        delete_btn: QPushButton = find(QPushButton, "pushButton_remove_repo")
+        clone_btn: QPushButton = find(QPushButton, "pushButton_clone_repo")
+        unclone_btn: QPushButton = find(QPushButton, "pushButton_unclone_repo")
+        unclone_btn.setToolTip("Delete the selected plugin's local clone from disk. The catalog entry stays.")
+
+        pull_btn: QPushButton = find(QPushButton, "pushButton_update_selected")
         pull_btn.setToolTip("Pull from the remote for every selected plugin (or select one).")
 
-        check_btn = QPushButton("Check for Status")
+        force_update_btn: QPushButton = find(QPushButton, "pushButton_force_update_selected")
+        force_update_btn.setToolTip(
+            "Overwrite every selected plugin to exactly match its remote — discards any local "
+            "changes/unpushed commits and ignores merge conflicts, no matter its current Status."
+        )
+
+        check_btn: QPushButton = find(QPushButton, "pushButton_check_for_status")
         check_btn.setToolTip("Check status for selected plugins, or every plugin if nothing is selected.")
 
-        open_dir_btn = QPushButton("Open Selected Cloned Directory")
+        open_dir_btn: QPushButton = find(QPushButton, "pushButton_open_dir")
         open_dir_btn.setToolTip("Open the directory of the selected cloned plugin.")
 
-        stage_push_btn = QPushButton("Bulk Push")
+        stage_push_btn: QPushButton = find(QPushButton, "pushButton_bulk_push")
         stage_push_btn.setToolTip(
             "Stage untracked/modified changes (or push already-committed local work) for the "
             "selected plugin — enabled only when its Status is 'Modified'."
@@ -217,21 +240,13 @@ class ExternalPluginsPage(QWidget):
         edit_btn.clicked.connect(self._on_edit)
         delete_btn.clicked.connect(self._on_delete)
         clone_btn.clicked.connect(self._on_clone)
+        unclone_btn.clicked.connect(self._on_unclone)
         pull_btn.clicked.connect(self._on_pull)
+        force_update_btn.clicked.connect(self._on_force_update)
         check_btn.clicked.connect(self._on_check_for_updates)
         open_dir_btn.clicked.connect(self._on_open_git_directory)
         stage_push_btn.clicked.connect(self._on_stage_untracked_and_push)
         self.table_widget.itemSelectionChanged.connect(self._update_stage_push_enabled)
-
-        button_row = QHBoxLayout()
-        for button in (add_btn, edit_btn, delete_btn, clone_btn, pull_btn, check_btn, open_dir_btn, stage_push_btn):
-            button_row.addWidget(button)
-        button_row.addStretch()
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(description)
-        layout.addLayout(button_row)
-        layout.addWidget(self.table_widget)
 
         self.refresh_list()
 
@@ -442,6 +457,45 @@ class ExternalPluginsPage(QWidget):
 
         self._run_with_wait_cursor(action, "Clone")
 
+    def _on_unclone(self) -> None:
+        """Deletes the selected entry's local clone from disk — the catalog
+        entry itself stays and can be Cloned again later. Mirrors
+        interface/repo_settings/local_repository_page.py's "Remove Local
+        Repositories" (plain shutil.rmtree + the same OSError message for a
+        file still open elsewhere) — same idea, scoped to one
+        cache/plugins/ entry instead of a repo's own clone."""
+        row = self._selected_row()
+        if row is None:
+            QMessageBox.information(self, "Unclone", "Select exactly one entry first.")
+            return
+        local_path = self.plugins_root / row.entry.folder_name
+        if not self.git_service.is_cloned(local_path):
+            QMessageBox.information(self, "Unclone", "Not cloned yet — nothing to remove.")
+            return
+        if not confirm_action(
+            self,
+            "Unclone",
+            f"Delete the local clone of '{row.entry.name}' at:\n{local_path}\n\n"
+            "This removes the folder from disk — any uncommitted changes are lost. "
+            "The catalog entry itself stays and can be cloned again later.",
+        ):
+            return
+        try:
+            shutil.rmtree(local_path)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Unclone",
+                f"Could not remove '{local_path}':\n{exc}\n\n"
+                "Make sure no program (Explorer, an editor, ...) has a file open in it.",
+            )
+            self.refresh_list()
+            return
+        if row.entry.id:
+            self.sync_status_store.clear(row.entry.id)
+            self.last_check_store.clear(row.entry.id)
+        self.refresh_list()
+
     def _on_pull(self) -> None:
         rows = self._selected_rows()
         if not rows:
@@ -474,6 +528,64 @@ class ExternalPluginsPage(QWidget):
         self._run_with_wait_cursor(action, "Update Selected")
         if problems:
             QMessageBox.warning(self, "Update Selected", "\n".join(problems))
+
+    def _on_force_update(self) -> None:
+        """Overwrites every selected entry to exactly match its remote,
+        ignoring whatever Status currently shows — unlike Update Selected,
+        never gated on a clean working tree or a resolved merge. Not
+        cloned yet -> Clone; a broken .git directory (is_repo_root() False)
+        -> delete and re-clone (there is no working tree to reset in a repo
+        git can't even resolve as its own root — see _require_valid_clone's
+        docstring); anything else -> GitService.force_sync (fetch + reset
+        --hard + clean -fd, also clearing any in-progress merge)."""
+        rows = self._selected_rows()
+        if not rows:
+            QMessageBox.information(self, "Force Update Selected", "Select at least one entry first.")
+            return
+        plural = "entry" if len(rows) == 1 else "entries"
+        if not confirm_action(
+            self,
+            "Force Update Selected",
+            f"This discards ALL local changes and unpushed commits in the selected {plural} and resets "
+            "each to exactly match its remote branch. This cannot be undone. Continue?",
+        ):
+            return
+
+        problems: list[str] = []
+
+        def action() -> None:
+            for row in rows:
+                local_path = self.plugins_root / row.entry.folder_name
+                if not self.git_service.is_cloned(local_path) or not self.git_service.is_repo_root(local_path):
+                    if self.git_service.is_cloned(local_path):
+                        # Broken/interrupted clone — nothing valid to reset,
+                        # so start over instead of leaving it broken.
+                        try:
+                            shutil.rmtree(local_path)
+                        except OSError as exc:
+                            problems.append(f"{row.entry.name}: could not remove broken clone: {exc}")
+                            continue
+                    if not row.entry.git_url:
+                        problems.append(f"{row.entry.name}: no Git URL set — edit it first.")
+                        continue
+                    try:
+                        self.git_service.clone(row.entry.git_url, local_path)
+                    except GitOperationError as exc:
+                        problems.append(f"{row.entry.name}: {exc}")
+                        continue
+                else:
+                    try:
+                        self.git_service.force_sync(local_path)
+                    except GitOperationError as exc:
+                        problems.append(f"{row.entry.name}: {exc}")
+                        continue
+                if row.entry.id:
+                    self.sync_status_store.clear(row.entry.id)
+                    self.last_check_store.clear(row.entry.id)
+
+        self._run_with_wait_cursor(action, "Force Update Selected")
+        if problems:
+            QMessageBox.warning(self, "Force Update Selected", "\n".join(problems))
 
     def _on_open_git_directory(self) -> None:
         row = self._selected_row()

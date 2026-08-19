@@ -246,6 +246,27 @@ class GitService:
         # forever if the network stalls instead of cleanly refusing.
         self._run_capture([*auth_args, "fetch", "--quiet"], cwd=repo_path, extra_env=auth_env, timeout=30)
 
+    def force_sync(self, repo_path: Path, on_output: OutputCallback = None) -> None:
+        """Discards every local change and unpushed commit and makes
+        repo_path exactly match its remote's current branch — fetch +
+        reset --hard origin/<branch> + clean -fd. Also clears any
+        in-progress merge (reset --hard drops MERGE_HEAD). Deliberately
+        bypasses every dirty-tree/unpushed-commit/merge-conflict gate
+        pull()/push() respect — callers must confirm with the user first,
+        this method itself never asks."""
+        repo_path = Path(repo_path)
+        try:
+            remote_url = self._run_capture(["remote", "get-url", "origin"], cwd=repo_path).strip()
+        except GitOperationError:
+            remote_url = ""
+        auth_args, auth_env = self._github_auth_args_and_env(remote_url)
+        self._run_streaming(
+            [*auth_args, "fetch", "--progress"], cwd=repo_path, on_output=on_output, extra_env=auth_env
+        )
+        branch = self.get_current_branch(repo_path)
+        self._run_capture(["reset", "--hard", f"origin/{branch}"], cwd=repo_path)
+        self._run_capture(["clean", "-fd"], cwd=repo_path)
+
     def open_or_sync(self, git_url: str, dest: Path, on_output: OutputCallback = None) -> str:
         dest = Path(dest)
         if not self.is_cloned(dest):

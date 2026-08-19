@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
 )
@@ -211,9 +212,38 @@ class AssignCategoryDialog(QDialog):
 
     def selected_category_id(self) -> str | None:
         """None for both "(Uncategorized)" and "New Category..." — the
-        latter is meaningless until ProjectGraphView.assign_repo_category
-        actually creates the category and gets back its real id."""
+        latter is meaningless until the caller actually creates the
+        category and gets back its real id."""
         data = self.category_combo.currentData()
         if data in (self._UNCATEGORIZED_DATA, self._NEW_CATEGORY_DATA):
             return None
         return data
+
+
+class EditInfoDialog(QDialog):
+    """The Info panel's "Edit Info..." popup (pushButton_edit_info in
+    ProjectEditorTabWindows.ui) — a big plain-text editor for one repo's
+    free-form info note (PipelineStore.get_repo_info/set_repo_info, stored
+    on Repo.plugin_data same as every other per-repo field this plugin
+    owns, so it rides along on that project's own already-cloud-synced
+    blob with no extra sync plumbing needed). Hands the caller back plain
+    text on accept, same as every other dialog in this file — never talks
+    to PipelineStore itself."""
+
+    def __init__(self, parent=None, *, text: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Info")
+        self.resize(520, 420)
+
+        self.text_edit = QPlainTextEdit(text)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.text_edit)
+        layout.addWidget(buttons)
+
+    def text(self) -> str:
+        return self.text_edit.toPlainText()
