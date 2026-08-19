@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from plugin_api import MetadataStore, NotFoundError, Repo
+from plugin_api import MetadataStore, NotFoundError, ProjectPluginConfigStore, Repo
 
 # This plugin's id, also its Repo.plugin_data key (core/models.py's Repo) —
 # each repo's own pipeline_inputs/custom_paths live at
@@ -20,6 +20,7 @@ from plugin_api import MetadataStore, NotFoundError, Repo
 # data flow is "I publish into this" or "I read from this".
 PLUGIN_ID = "project_editor"
 _LEGACY_PROJECTS_KEY = "projects"
+_CATEGORIES_KEY = "categories"
 
 
 @dataclass
@@ -45,6 +46,38 @@ class CustomPath:
     @classmethod
     def from_dict(cls, data: dict) -> "CustomPath":
         return cls(id=data["id"], label=data["label"], path=data["path"])
+
+    @staticmethod
+    def new_id() -> str:
+        return uuid.uuid4().hex
+
+
+@dataclass
+class Category:
+    """One named container ProjectGraphView's node grid groups repos into
+    (added 2026-08-19), replacing the old pipeline-derived automatic
+    layout with a deliberate per-repo "Assign to Category..." choice
+    (project_graph_view.py's AssignCategoryDialog/assign_repo_category).
+    Scoped to the whole Project rather than one repo — lives in
+    Project.plugin_data["project_editor"]["categories"]
+    (api.project_plugin_config_store(PLUGIN_ID), see PipelineStore.get_categories),
+    not Repo.plugin_data, since the same category is shared across every
+    repo assigned to it. `id` is a stable uuid4 (not derived from `name`)
+    so renaming a category doesn't invalidate every repo's own
+    category_id pointing at it. A repo with no category_id (or one
+    pointing at a category that's since been deleted) falls back to the
+    graph's synthetic "Uncategorized" bucket — see
+    ProjectGraphView._layout_nodes."""
+
+    id: str
+    name: str
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Category":
+        return cls(id=data["id"], name=data["name"])
 
     @staticmethod
     def new_id() -> str:
@@ -114,10 +147,21 @@ class PipelineStore:
     node context menu's own "Connect Pipeline Input Path..." wording) even
     though a connection can represent either direction of real data flow
     — see RepoRef's docstring and this plugin's README for why the
-    separate "outputs" concept was removed 2026-07-19."""
+    separate "outputs" concept was removed 2026-07-19.
 
-    def __init__(self, metadata_store: MetadataStore):
+    Also wraps the Project-scoped Category catalog (added 2026-08-19,
+    project_config_store — see get_categories) and each repo's own
+    category_id (get_repo_category_id) that ProjectGraphView's node grid
+    groups on instead of the old pipeline-derived automatic layout."""
+
+    def __init__(self, metadata_store: MetadataStore, project_config_store: ProjectPluginConfigStore | None = None):
         self._metadata_store = metadata_store
+        # None when no project is active yet (api.project_plugin_config_store's
+        # own documented contract) — every category method below no-ops/
+        # returns empty rather than assuming this is always real, though in
+        # practice this plugin only ever constructs PipelineStore once a
+        # project is already guaranteed active (see project_editor.md).
+        self._project_config_store = project_config_store
 
     def get_inputs(self, project_id: str, repo_id: str) -> list[RepoRef]:
         entry = self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID)
@@ -174,7 +218,59 @@ class PipelineStore:
             required.append((ref.project_id, target_repo))
         return required
 
-    def _set_field(self, project_id: str, repo_id: str, field_name: str, value: list[dict]) -> None:
+    def get_categories(self) -> list[Category]:
+        """Every Category declared for the whole active Project — stored
+        in Project.plugin_data["project_editor"]["categories"]
+        (api.project_plugin_config_store, riding on that project's own
+        already-cloud-synced blob, not a separate file). Empty when no
+        project config store exists (see __init__)."""
+        if self._project_config_store is None:
+            return []
+        data = self._project_config_store.get(_CATEGORIES_KEY)
+        return [Category.from_dict(d) for d in (data or [])]
+
+    def add_category(self, name: str) -> Category:
+        """Appends a brand-new Category and persists it immediately —
+        used by AssignCategoryDialog's "New Category..." option, which
+        needs the real generated id back right away to assign it to the
+        repo that triggered the dialog in the same action."""
+        category = Category(id=Category.new_id(), name=name)
+        categories = self.get_categories()
+        categories.append(category)
+        self.set_categories(categories)
+        return category
+
+    def set_categories(self, categories: list[Category]) -> None:
+        """Persists the full Category list, in the given order — this
+        list's own order is what ProjectGraphView._layout_nodes stacks
+        category boxes in, so reordering (move_category, a category box's
+        own right-click "Move Category Up"/"Move Category Down") is just
+        a swap-and-save through here, same as add_category's
+        append-and-save."""
+        if self._project_config_store is not None:
+            self._project_config_store.set(_CATEGORIES_KEY, [c.to_dict() for c in categories])
+
+    def reload_categories(self) -> None:
+        """Re-pulls the project config store's own on-disk file after a
+        ConflictError from add_category (project_graph_view.py's
+        assign_repo_category) — the rejected push already re-pulled the
+        latest data into the local file, but a store held for the whole
+        session keeps a stale in-memory copy until this runs, same caveat
+        as any other long-lived cloud-synced store."""
+        if self._project_config_store is not None:
+            self._project_config_store.load()
+
+    def get_repo_category_id(self, project_id: str, repo_id: str) -> str | None:
+        """Which Category (by id) this repo is assigned to, or None for
+        the graph's synthetic "Uncategorized" bucket — see
+        ProjectGraphView._layout_nodes."""
+        entry = self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID)
+        return entry.get("category_id")
+
+    def set_repo_category_id(self, project_id: str, repo_id: str, category_id: str | None) -> None:
+        self._set_field(project_id, repo_id, "category_id", category_id)
+
+    def _set_field(self, project_id: str, repo_id: str, field_name: str, value) -> None:
         entry = dict(self._metadata_store.get_repo_plugin_data(project_id, repo_id, PLUGIN_ID))
         entry[field_name] = value
         self._metadata_store.set_repo_plugin_data(project_id, repo_id, PLUGIN_ID, entry)

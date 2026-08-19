@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from plugin_api import MetadataStore, RequirementsTreeWidget, pick_image_file
+from plugins.core.project_editor.pipeline_store import Category
 
 
 class ProjectDialog(QDialog):
@@ -139,3 +141,79 @@ class RepoDialog(QDialog):
 
     def selected_program_version_pins(self) -> dict[str, str]:
         return self.requirements_tree.selected_program_version_pins() if self.requirements_tree else {}
+
+
+class AssignCategoryDialog(QDialog):
+    """Node right-click "Assign to Category..." (added 2026-08-19) — a
+    single QComboBox listing "(Uncategorized)", every existing Category,
+    then "New Category..." (which reveals a name field below it, focused
+    automatically). Returns either an existing category id, None
+    (Uncategorized), or a brand-new name for
+    ProjectGraphView.assign_repo_category to create via
+    PipelineStore.add_category — this dialog never talks to PipelineStore
+    itself, matching every other dialog in this file (RepoDialog/
+    ProjectDialog also just hand back plain values for the caller to act
+    on)."""
+
+    _UNCATEGORIZED_DATA = "__uncategorized__"
+    _NEW_CATEGORY_DATA = "__new__"
+
+    def __init__(self, parent=None, *, categories: list[Category], current_category_id: str | None):
+        super().__init__(parent)
+        self.setWindowTitle("Assign to Category")
+
+        self.category_combo = QComboBox()
+        self.category_combo.addItem("(Uncategorized)", self._UNCATEGORIZED_DATA)
+        for category in categories:
+            self.category_combo.addItem(category.name, category.id)
+        self.category_combo.addItem("New Category...", self._NEW_CATEGORY_DATA)
+        selected_index = self.category_combo.findData(current_category_id or self._UNCATEGORIZED_DATA)
+        self.category_combo.setCurrentIndex(selected_index if selected_index >= 0 else 0)
+
+        self.new_name_edit = QLineEdit()
+        self.new_name_edit.setPlaceholderText("Category name")
+
+        form = QFormLayout()
+        form.addRow("Category:", self.category_combo)
+        form.addRow("New Name:", self.new_name_edit)
+        self._new_name_label = form.labelForField(self.new_name_edit)
+
+        self.category_combo.currentIndexChanged.connect(self._on_combo_changed)
+        self._on_combo_changed()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+    def _on_combo_changed(self) -> None:
+        is_new = self.is_new_category()
+        self.new_name_edit.setVisible(is_new)
+        if self._new_name_label is not None:
+            self._new_name_label.setVisible(is_new)
+        if is_new:
+            self.new_name_edit.setFocus()
+
+    def _on_accept(self) -> None:
+        if self.is_new_category() and not self.new_name_edit.text().strip():
+            self.new_name_edit.setFocus()
+            return
+        self.accept()
+
+    def is_new_category(self) -> bool:
+        return self.category_combo.currentData() == self._NEW_CATEGORY_DATA
+
+    def new_category_name(self) -> str:
+        return self.new_name_edit.text().strip()
+
+    def selected_category_id(self) -> str | None:
+        """None for both "(Uncategorized)" and "New Category..." — the
+        latter is meaningless until ProjectGraphView.assign_repo_category
+        actually creates the category and gets back its real id."""
+        data = self.category_combo.currentData()
+        if data in (self._UNCATEGORIZED_DATA, self._NEW_CATEGORY_DATA):
+            return None
+        return data

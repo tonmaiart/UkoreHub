@@ -86,6 +86,7 @@ class RepoBrowserWidget(QWidget):
         self._back_stack: list[Path] = []
         self._last_opened_store: LastOpenedStore | None = None
         self._bookmarks_store: BookmarksStore | None = None
+        self._path_mode: str = "relative"
 
         # UI is authored in Qt Designer (explorer_section.ui) and loaded at
         # runtime instead of being built widget-by-widget in code, so the
@@ -105,6 +106,7 @@ class RepoBrowserWidget(QWidget):
         self.reload_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_refresh")
         self.add_folder_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_create_folder")
         self.open_directory_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_open_current_directory")
+        self.absolute_relative_switch: QPushButton = self.ui.findChild(QPushButton, "pushButton_absolute_relative_switch")
         self.breadcrumb: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_path")
         self.search_edit: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_search")
         self.table: QTableView = self.ui.findChild(QTableView, "tableView_current_directory")
@@ -135,6 +137,8 @@ class RepoBrowserWidget(QWidget):
         self.open_directory_button.clicked.connect(self._on_open_directory_clicked)
 
         self.breadcrumb.returnPressed.connect(self._on_breadcrumb_entered)
+        self.absolute_relative_switch.clicked.connect(self._on_absolute_relative_switch_clicked)
+        self.absolute_relative_switch.setText(self._path_mode.capitalize())
 
         self.search_timer = QTimer(self)
         self.search_timer.setSingleShot(True)
@@ -290,7 +294,7 @@ class RepoBrowserWidget(QWidget):
             self.history_back_button.setEnabled(True)
 
         self._current_path = path
-        self.breadcrumb.setText(str(path))
+        self._update_breadcrumb_text(path)
 
         posix_path = path.as_posix()
         source_index = self.fs_model.index(posix_path)
@@ -332,6 +336,54 @@ class RepoBrowserWidget(QWidget):
         rel_str = str(rel)
         return "" if rel_str == "." else rel_str
 
+    def _relative_display_str(self, path: Path) -> str:
+        """Repo-relative path for display/copy — always starts with the
+        repo's own folder name (unlike _relative_path_str, which is
+        relative to _root and omits it), per the "relative path always
+        starts at the repo name" convention."""
+        if self._root is None:
+            return str(path)
+        try:
+            rel = path.relative_to(self._root)
+        except ValueError:
+            return str(path)
+        root_name = self._root.name
+        return root_name if str(rel) == "." else str(Path(root_name) / rel)
+
+    def _update_breadcrumb_text(self, path: Path) -> None:
+        self.breadcrumb.setText(self._relative_display_str(path) if self._path_mode == "relative" else str(path))
+
+    def _set_path_mode(self, mode: str) -> None:
+        if mode not in ("absolute", "relative"):
+            return
+        self._path_mode = mode
+        self.absolute_relative_switch.setText(mode.capitalize())
+        if self._current_path is not None:
+            self._update_breadcrumb_text(self._current_path)
+
+    def _on_absolute_relative_switch_clicked(self) -> None:
+        self._set_path_mode("relative" if self._path_mode == "absolute" else "absolute")
+
+    def _resolve_typed_path(self, text: str) -> Path | None:
+        """Resolves a user-typed breadcrumb path, whether relative
+        (starting with the repo's own folder name, e.g. "MyRepo/assets")
+        or absolute (possibly from a different machine, e.g.
+        "D:/OtherUser/storage/MyRepo/assets") — both are rebased onto this
+        machine's own root by finding the repo folder name in the typed
+        path's parts and reattaching the remainder to _root, so an
+        absolute path copied from a teammate's machine still resolves
+        locally instead of failing outright."""
+        if self._root is None or not text:
+            return None
+        candidate = Path(text)
+        root_name = self._root.name.lower()
+        for idx, part in enumerate(candidate.parts):
+            if part.lower() == root_name:
+                return self._root.joinpath(*candidate.parts[idx + 1 :])
+        if candidate.is_absolute():
+            return candidate
+        return None
+
     def _on_table_selection_changed(self, current, _previous) -> None:
         if not current.isValid():
             return
@@ -364,11 +416,20 @@ class RepoBrowserWidget(QWidget):
         open_in_file_explorer(self._current_path)
 
     def _on_breadcrumb_entered(self) -> None:
-        typed_path = Path(self.breadcrumb.text().strip())
-        if typed_path.exists():
-            self._navigate_to(typed_path)
-        else:
-            self.breadcrumb.setText(str(self._current_path))
+        typed_text = self.breadcrumb.text().strip()
+        resolved_path = self._resolve_typed_path(typed_text)
+        if resolved_path is not None and resolved_path.exists():
+            if resolved_path.is_dir():
+                self._navigate_to(resolved_path)
+            else:
+                # File path pasted in — same behavior as clicking a Last
+                # Opened File entry: land on its parent folder with the
+                # file itself selected, rather than trying to "open" it.
+                self._navigate_to(resolved_path.parent)
+                self._select_file_in_table(resolved_path)
+            self._set_path_mode("absolute" if Path(typed_text).is_absolute() else "relative")
+        elif self._current_path is not None:
+            self._update_breadcrumb_text(self._current_path)
 
     def _apply_search(self) -> None:
         self.proxy.set_search_text(self.search_edit.text())
@@ -504,7 +565,8 @@ class RepoBrowserWidget(QWidget):
         act_bookmark.setEnabled(self._bookmarks_store is not None)
         menu.addSeparator()
         act_copy_name = menu.addAction("Copy Name")
-        act_copy_path = menu.addAction("Copy File Path")
+        act_copy_relative_path = menu.addAction("Copy File Relative Path")
+        act_copy_absolute_path = menu.addAction("Copy File Absolute Path")
         menu.addSeparator()
         act_rename = menu.addAction("Rename")
         act_delete = menu.addAction("Delete")
@@ -514,7 +576,9 @@ class RepoBrowserWidget(QWidget):
             self._add_to_bookmarks(path)
         elif action == act_copy_name:
             QApplication.clipboard().setText(path.name)
-        elif action == act_copy_path:
+        elif action == act_copy_relative_path:
+            QApplication.clipboard().setText(self._relative_display_str(path))
+        elif action == act_copy_absolute_path:
             QApplication.clipboard().setText(str(path))
         elif action == act_rename:
             self._rename(path)

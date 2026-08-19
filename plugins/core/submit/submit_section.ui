@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>883</width>
+    <width>1012</width>
     <height>859</height>
    </rect>
   </property>
@@ -29,7 +29,7 @@
    <item row="0" column="0">
     <layout class="QVBoxLayout" name="verticalLayout" stretch="7,3">
      <item>
-      <layout class="QGridLayout" name="gridLayout_5">
+      <layout class="QGridLayout" name="gridLayout_5" columnstretch="1,5,5">
        <item row="0" column="2">
         <widget class="QGroupBox" name="groupBox_4">
          <property name="title">

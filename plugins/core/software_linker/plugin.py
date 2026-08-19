@@ -5,9 +5,11 @@ import os
 import shutil
 import subprocess
 import winreg
+from pathlib import Path
 
-from PySide6.QtCore import QFileInfo, QPropertyAnimation, QSize, Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QFile, QFileInfo, QSize, Qt
+from PySide6.QtGui import QCursor, QIcon, QPalette
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -15,26 +17,22 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFileIconProvider,
-    QFrame,
-    QGraphicsOpacityEffect,
-    QHBoxLayout,
-    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QStyle,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
-from plugin_api import ProgramLaunchRegistry, Project, Repo, SectionSpec, set_bold, set_secondary_text
+from plugin_api import ProgramLaunchRegistry, Project, Repo, SectionSpec
 
 PLUGIN_ID = "software_linker"
-_CARD_ICON_SIZE = 40
-_STATUS_ICON_SIZE = 14
+_UI_FILE = Path(__file__).parent / "ProgramLauncherWindow.ui"
+_ICON_SIZE = 32
 
 # The same registry locations Windows' own "Programs and Features" /
 # Settings > Apps reads from.
@@ -272,217 +270,36 @@ def _link_rows(store, project_id):
     return rows
 
 
-class _ToastNotification(QFrame):
-    """Small self-dismissing popup used for click-to-launch feedback below,
-    instead of a blocking QMessageBox — appears near the card that
-    triggered it, holds briefly, then fades out on its own with nothing to
-    click through (a notification, not a confirmation)."""
-
-    def __init__(self, text: str, anchor: QWidget):
-        super().__init__(anchor, Qt.ToolTip | Qt.FramelessWindowHint)
-        self.setObjectName("softwareLinkToast")
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WA_DeleteOnClose)
-        self._anchor = anchor
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel(text, self))
-
-        opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(opacity_effect)
-        self._fade_animation = QPropertyAnimation(opacity_effect, b"opacity", self)
-        self._fade_animation.setDuration(600)
-        self._fade_animation.setStartValue(1.0)
-        self._fade_animation.setEndValue(0.0)
-        self._fade_animation.finished.connect(self.close)
-
-    def present(self, *, hold_ms: int = 900) -> None:
-        self.adjustSize()
-        center = self._anchor.mapToGlobal(self._anchor.rect().center())
-        self.move(center.x() - self.width() // 2, center.y() - self.height() - 12)
-        self.show()
-        QTimer.singleShot(hold_ms, self._fade_animation.start)
-
-
-class _ProgramLinkCard(QFrame):
-    """One program's link status: its own icon (Program Database's
-    icon_filename, resolved via store.resolve_program_icon_path — falls
-    back to a generic icon when the program has none set), name, linked
-    path, and status each on their own line, plus this row's own actions —
-    "Browse Program...", "Browse Path...", and "Clear" each their own
-    button in their own column (a plain QHBoxLayout), no dropdown/split
-    button. Highlights on hover (QFrame#softwareLinkCard:hover in
-    interface/theme.py) to make clear the whole card is clickable.
-
-    A single left-click anywhere on the card outside those buttons opens
-    the linked executable directly (same as the retired plugins/core/
-    program_launcher/'s card grid) — or, if nothing is linked yet, jumps
-    straight into the same "Browse Program..." picker instead of leaving
-    the click a no-op. Qt delivers the click to whichever child widget is
-    under the cursor first, so clicking the Browse/Clear buttons themselves
-    still just activates that button. Launch feedback is a
-    _ToastNotification, not a blocking QMessageBox — errors get the same
-    fade-out treatment as the success case, nothing needs to be dismissed
-    by hand."""
-
-    def __init__(
-        self,
-        parent,
-        *,
-        store,
-        config_store,
-        key: str,
-        program,
-        label: str,
-        program_launch_registry: ProgramLaunchRegistry,
-        repo: Repo | None,
-    ):
-        super().__init__(parent)
-        self.setObjectName("softwareLinkCard")
-        self.setCursor(Qt.PointingHandCursor)
-        self._config_store = config_store
-        self._key = key
-        self._program = program
-        self._program_launch_registry = program_launch_registry
-        self._repo = repo
-
-        icon_label = QLabel()
-        icon_label.setFixedSize(_CARD_ICON_SIZE, _CARD_ICON_SIZE)
-        icon_label.setScaledContents(True)
-        icon_path = store.resolve_program_icon_path(program)
-        if icon_path and icon_path.exists():
-            icon_label.setPixmap(QPixmap(str(icon_path)))
-        else:
-            fallback_icon = self.style().standardIcon(QStyle.SP_ComputerIcon)
-            icon_label.setPixmap(fallback_icon.pixmap(_CARD_ICON_SIZE, _CARD_ICON_SIZE))
-
-        name_label = QLabel(label)
-        set_bold(name_label)
-
-        self._path_label = QLabel()
-        set_secondary_text(self._path_label)
-        self._path_label.setWordWrap(True)
-
-        self._status_icon_label = QLabel()
-        self._status_icon_label.setFixedSize(_STATUS_ICON_SIZE, _STATUS_ICON_SIZE)
-        self._status_label = QLabel()
-
-        status_row = QHBoxLayout()
-        status_row.setContentsMargins(0, 0, 0, 0)
-        status_row.setSpacing(4)
-        status_row.addWidget(self._status_icon_label)
-        status_row.addWidget(self._status_label)
-        status_row.addStretch()
-
-        text_layout = QVBoxLayout()
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(2)
-        text_layout.addWidget(name_label)
-        text_layout.addWidget(self._path_label)
-        text_layout.addLayout(status_row)
-
-        browse_program_btn = QPushButton("Browse Program...")
-        browse_program_btn.clicked.connect(self._on_browse_program)
-
-        browse_path_btn = QPushButton("Browse Path...")
-        browse_path_btn.clicked.connect(self._on_browse_path)
-
-        clear_btn = QPushButton("Clear")
-        clear_btn.clicked.connect(self._on_clear)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(4)
-        button_row.addWidget(browse_program_btn)
-        button_row.addWidget(browse_path_btn)
-        button_row.addWidget(clear_btn)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(10)
-        layout.addWidget(icon_label)
-        layout.addLayout(text_layout, 1)
-        layout.addLayout(button_row)
-
-        self.refresh()
-
-    def refresh(self) -> None:
-        linked_path = self._config_store.get(self._key)
-        linked = bool(linked_path)
-        if linked:
-            self._path_label.setText(linked_path)
-            self._status_label.setText("Linked")
-            self.setToolTip("Click to open.")
-        else:
-            self._path_label.setText("No path linked")
-            self._status_label.setText("Not linked")
-            self.setToolTip("Not linked yet — click to choose an installed program.")
-        standard_icon = QStyle.SP_DialogApplyButton if linked else QStyle.SP_MessageBoxWarning
-        icon = self.style().standardIcon(standard_icon)
-        self._status_icon_label.setPixmap(icon.pixmap(_STATUS_ICON_SIZE, _STATUS_ICON_SIZE))
-
-    def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton:
-            self._on_click()
-        super().mousePressEvent(event)
-
-    def _on_click(self) -> None:
-        exe_path = self._config_store.get(self._key)
-        if not exe_path:
-            self._on_browse_program()
-            return
-        _ToastNotification(f"Opening {self._program.name}...", self).present()
-        # A plugin (e.g. maya_launcher) may need to launch this Program
-        # with its own setProject/env-merge wiring instead of a bare
-        # process launch — see plugin_api/registries/program_launch_registry.py. Falls
-        # back to a raw launch when no repo is active, same as no match.
-        launcher = self._program_launch_registry.find_launcher(self._program)
-        if launcher is not None and self._repo is not None:
-            launcher(self._repo)
-            return
-        try:
-            subprocess.Popen([exe_path])
-        except OSError as exc:
-            _ToastNotification(f"Could not launch {self._program.name}: {exc}", self).present()
-
-    def _on_browse_program(self) -> None:
-        dialog = ProgramPickerDialog(self)
-        if dialog.exec() and dialog.selected_path():
-            self._config_store.set(self._key, dialog.selected_path())
-            self.refresh()
-
-    def _on_browse_path(self) -> None:
-        file_path, _filter = QFileDialog.getOpenFileName(self, "Select Executable")
-        if not file_path:
-            return
-        self._config_store.set(self._key, file_path)
-        self.refresh()
-
-    def _on_clear(self) -> None:
-        self._config_store.set(self._key, None)
-        self.refresh()
-
-
 class SoftwareLinkerPage(QWidget):
     """The app's main "Program Launcher" tab — lets the user link each
     Program Database entry to a local executable path on this machine
     (per-machine data, PluginConfigStore shared=False, since "what's
-    installed here" is never team-shared) and click a linked card once to
+    installed here" is never team-shared) and double-click a linked row to
     open it. Other plugins/add-ons (e.g. maya_launcher) read the same
     linked-path mapping by calling api.plugin_config_store("software_linker",
     shared=False) themselves — no coupling API needed, just agreeing on that
     id string; this is why PLUGIN_ID stays "software_linker" even though the
     tab itself is now labeled "Program Launcher" (see this folder's
-    README.md). Renders one _ProgramLinkCard per linkable (Program,
-    version) slot.
+    README.md).
+
+    UI is authored in Qt Designer (ProgramLauncherWindow.ui) and loaded at
+    runtime via QUiLoader instead of being built widget-by-widget in code
+    (same convention as plugins/core/explorer/browser_widget.py) — one
+    QListWidget row per linkable (Program, version) slot, with the
+    "Auto Resolve to Unlink Path"/"Browse Path..."/"Browse Program"/
+    "Clear Link Path" buttons acting on whichever row is currently
+    selected. All status styling (bold for linked, QPalette.PlaceholderText
+    for not-linked) uses Qt's own QFont/QPalette directly rather than
+    interface/shared/widget_helpers.py's set_bold/set_secondary_text, and
+    launch feedback uses QToolTip.showText — no plugin-specific QSS in
+    interface/theme.py to keep in sync.
 
     Program Database is per-Project (core/models.py's Project.programs), so
     this page's underlying catalog is every Program in the active Project's
     own catalog — same as the retired plugins/core/program_launcher/, this
     can be narrowed down to just the active repo's required_program_ids via
     the "Show Only Requirement for current repo only" checkbox (checked by
-    default; see _rebuild_cards). The click-to-launch below still uses
+    default; see _rebuild_list). Double-click-to-launch below still uses
     whichever repo is currently active (SectionSpec's standard set_repo
     protocol) for any Program with its own ProgramLaunchRegistry entry."""
 
@@ -494,39 +311,38 @@ class SoftwareLinkerPage(QWidget):
         self._project: Project | None = None
         self._repo: Repo | None = None
 
-        self._require_filter_checkbox = QCheckBox("Show Only Requirement for current repo only")
+        loader = QUiLoader()
+        ui_file = QFile(str(_UI_FILE))
+        ui_file.open(QFile.ReadOnly)
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.ui)
+
+        self._list_widget: QListWidget = self.ui.findChild(QListWidget, "listWidget_program_list")
+        self._list_widget.setIconSize(QSize(_ICON_SIZE, _ICON_SIZE))
+        self._require_filter_checkbox: QCheckBox = self.ui.findChild(QCheckBox, "checkBox_ShowOnlyRequirement")
         self._require_filter_checkbox.setChecked(True)
-        self._require_filter_checkbox.toggled.connect(lambda _checked: self._rebuild_cards())
-
-        self.project_label = QLabel()
-
-        header_layout = QHBoxLayout()
-        header_layout.addWidget(QLabel("Project:"))
-        header_layout.addWidget(self.project_label)
-        header_layout.addStretch()
-        auto_resolve_btn = QPushButton("Auto-Resolve Path")
-        auto_resolve_btn.setToolTip(
+        self._auto_resolve_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_auto_resolve")
+        self._auto_resolve_btn.setToolTip(
             "Already runs automatically for unlinked programs — use this to "
             "re-scan on demand and see a summary of how many were resolved."
         )
-        auto_resolve_btn.clicked.connect(self._on_auto_resolve_path)
-        header_layout.addWidget(auto_resolve_btn)
+        self._browse_path_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_browse_path")
+        self._browse_program_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_browse_program")
+        self._clear_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_clear_link_path")
 
-        self._cards_container = QWidget()
-        self._cards_layout = QVBoxLayout(self._cards_container)
-        self._cards_layout.setContentsMargins(0, 0, 0, 0)
-        self._cards_layout.setSpacing(6)
-        self._cards_layout.addStretch(1)
+        self._require_filter_checkbox.toggled.connect(lambda _checked: self._rebuild_list())
+        self._auto_resolve_btn.clicked.connect(self._on_auto_resolve_path)
+        self._browse_path_btn.clicked.connect(self._on_browse_path)
+        self._browse_program_btn.clicked.connect(self._on_browse_program)
+        self._clear_btn.clicked.connect(self._on_clear)
+        self._list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._list_widget.currentItemChanged.connect(lambda *_args: self._update_action_buttons_enabled())
 
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidget(self._cards_container)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self._require_filter_checkbox)
-        layout.addLayout(header_layout)
-        layout.addWidget(scroll_area)
+        self._update_action_buttons_enabled()
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
         self._project = project
@@ -534,60 +350,92 @@ class SoftwareLinkerPage(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        """Re-reads the active project's current name and rebuilds the
-        link cards. Called from set_repo whenever this becomes the visible
-        section (interface/main_window.py's _apply_to_current_page) and on
-        every active-repo switch."""
-        self.project_label.setText(self._project.name if self._project is not None else "(no project)")
-        self._rebuild_cards()
+        """Rebuilds the program list. Called from set_repo whenever this
+        becomes the visible section (interface/main_window.py's
+        _apply_to_current_page) and on every active-repo switch."""
+        self._rebuild_list()
 
-    def _rebuild_cards(self) -> None:
-        while self._cards_layout.count() > 1:  # keep the trailing addStretch
-            item = self._cards_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+    def _update_action_buttons_enabled(self) -> None:
+        has_selection = self._list_widget.currentItem() is not None
+        self._browse_path_btn.setEnabled(has_selection)
+        self._browse_program_btn.setEnabled(has_selection)
+        self._clear_btn.setEnabled(has_selection)
+
+    def _selected_row(self) -> tuple[str, object, str, str] | None:
+        item = self._list_widget.currentItem()
+        if item is None:
+            return None
+        return item.data(Qt.UserRole)
+
+    def _icon_for_program(self, program) -> QIcon:
+        icon_path = self._store.resolve_program_icon_path(program)
+        if icon_path and icon_path.exists():
+            return QIcon(str(icon_path))
+        return self.style().standardIcon(QStyle.SP_ComputerIcon)
+
+    def _apply_item_state(self, item: QListWidgetItem) -> None:
+        key, _program, _version, label = item.data(Qt.UserRole)
+        linked_path = self._config_store.get(key)
+        font = item.font()
+        font.setBold(bool(linked_path))
+        item.setFont(font)
+        if linked_path:
+            item.setText(f"{label}\n{linked_path}")
+            item.setForeground(self.palette().color(QPalette.Text))
+            item.setToolTip(f"{linked_path}\n\nDouble-click to open.")
+        else:
+            item.setText(f"{label}\nNot linked")
+            item.setForeground(self.palette().color(QPalette.PlaceholderText))
+            item.setToolTip("Not linked yet — double-click to choose an installed program.")
+
+    def _rebuild_list(self) -> None:
+        current = self._list_widget.currentItem()
+        previous_key = current.data(Qt.UserRole)[0] if current is not None else None
+
+        self._list_widget.clear()
 
         if self._project is None:
+            self._update_action_buttons_enabled()
             return
         project_id = self._project.id
 
         self._auto_detect_missing(project_id)
         rows = _link_rows(self._store, project_id)
-        
+
         if self._require_filter_checkbox.isChecked() and self._repo is not None:
             required_ids = set(self._repo.required_program_ids)
             pins = self._repo.program_version_pins  # เช่น {"<maya_program_id>": "2026"}
-            
+
             filtered_rows = []
             for row in rows:
                 key, program, version, label = row
                 # 1. ต้องเป็น Program ID ที่ Repo นี้ Require ไว้ก่อน
                 if program.id not in required_ids:
                     continue
-                
+
                 # 2. ถ้า Program นี้มีการตั้งค่า Pin เวอร์ชันไว้สำหรับ Repo นี้
                 #    ให้แสดงเฉพาะแถวที่เวอร์ชันตรงกับ Pin เท่านั้น
                 pinned_ver = pins.get(program.id)
                 if pinned_ver and version and version != pinned_ver:
                     continue
-                
+
                 filtered_rows.append(row)
-            
+
             rows = filtered_rows
 
-        for key, program, _version, label in rows:
-            card = _ProgramLinkCard(
-                self._cards_container,
-                store=self._store,
-                config_store=self._config_store,
-                key=key,
-                program=program,
-                label=label,
-                program_launch_registry=self._program_launch_registry,
-                repo=self._repo,
-            )
-            self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
+        restore_item = None
+        for key, program, version, label in rows:
+            item = QListWidgetItem()
+            item.setIcon(self._icon_for_program(program))
+            item.setData(Qt.UserRole, (key, program, version, label))
+            self._apply_item_state(item)
+            self._list_widget.addItem(item)
+            if key == previous_key:
+                restore_item = item
+
+        if restore_item is not None:
+            self._list_widget.setCurrentItem(restore_item)
+        self._update_action_buttons_enabled()
 
     def _auto_detect_missing(self, project_id: str) -> None:
         installed = list_installed_programs()
@@ -612,12 +460,62 @@ class SoftwareLinkerPage(QWidget):
             if guess:
                 self._config_store.set(key, guess)
                 resolved += 1
-        self._rebuild_cards()
+        self._rebuild_list()
         QMessageBox.information(
             self,
             "Auto-Resolve Path",
             f"Resolved {resolved} program(s)." if resolved else "No new programs could be resolved automatically.",
         )
+
+    def _on_browse_program(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        key, _program, _version, _label = row
+        dialog = ProgramPickerDialog(self)
+        if dialog.exec() and dialog.selected_path():
+            self._config_store.set(key, dialog.selected_path())
+            self._apply_item_state(self._list_widget.currentItem())
+
+    def _on_browse_path(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        key, _program, _version, _label = row
+        file_path, _filter = QFileDialog.getOpenFileName(self, "Select Executable")
+        if not file_path:
+            return
+        self._config_store.set(key, file_path)
+        self._apply_item_state(self._list_widget.currentItem())
+
+    def _on_clear(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        key, _program, _version, _label = row
+        self._config_store.set(key, None)
+        self._apply_item_state(self._list_widget.currentItem())
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        key, program, _version, _label = item.data(Qt.UserRole)
+        exe_path = self._config_store.get(key)
+        if not exe_path:
+            self._list_widget.setCurrentItem(item)
+            self._on_browse_program()
+            return
+        QToolTip.showText(QCursor.pos(), f"Opening {program.name}...", self._list_widget)
+        # A plugin (e.g. maya_launcher) may need to launch this Program
+        # with its own setProject/env-merge wiring instead of a bare
+        # process launch — see plugin_api/registries/program_launch_registry.py. Falls
+        # back to a raw launch when no repo is active, same as no match.
+        launcher = self._program_launch_registry.find_launcher(program)
+        if launcher is not None and self._repo is not None:
+            launcher(self._repo)
+            return
+        try:
+            subprocess.Popen([exe_path])
+        except OSError as exc:
+            QToolTip.showText(QCursor.pos(), f"Could not launch {program.name}: {exc}", self._list_widget)
 
 
 def register(api) -> None:

@@ -45,13 +45,16 @@ class MetadataStore:
         assets_dir: Path | None = None,
         on_save: Callable[[str], None] | None = None,
         on_delete: Callable[[str], None] | None = None,
+        on_asset_upload: Callable[[str, Path], None] | None = None,
+        on_asset_missing: Callable[[str, Path], None] | None = None,
     ):
         self.json_path = Path(json_path)
-        # Binary images (thumbnails, browser link icon overrides) are
-        # git-tracked assets, not cloud-synced data — they live in their own
-        # assets/ tree, not alongside json_path. Defaults to json_path's
-        # grandparent / "assets" (<repo_root>/assets) for callers that don't
-        # care about resolving image paths and never pass this explicitly.
+        # Binary images (thumbnails, program icons) are cloud-synced like
+        # everything else in data/ — just lazily, per-file, instead of
+        # pulled eagerly at launch (see on_asset_missing below). Defaults to
+        # json_path's grandparent / "assets" (<data_dir>/assets) for callers
+        # that don't care about resolving image paths and never pass this
+        # explicitly.
         self.assets_dir = Path(assets_dir) if assets_dir is not None else self.json_path.parent.parent / "assets"
         # Per-project blobs live in a sibling "projects" folder next to the
         # index, e.g. data/projects.json (index) + data/projects/<id>.json.
@@ -67,6 +70,17 @@ class MetadataStore:
         # shared bucket so removing a project doesn't leave a permanent
         # orphan behind.
         self.on_delete = on_delete
+        # Fired by set_repo_thumbnail/set_program_icon with (blob_name,
+        # local_path) right after the local image file already exists on
+        # disk, so the caller (launcher.py) can push it to the shared
+        # bucket. Never fired when filename is None (clearing an image).
+        self.on_asset_upload = on_asset_upload
+        # Fired by resolve_thumbnail_path/resolve_program_icon_path with
+        # (blob_name, local_path) when the computed local path doesn't
+        # exist yet, so the caller can pull it down before the image is
+        # rendered. Best-effort — callers should swallow failures and just
+        # leave the file missing (same as "no image set" today).
+        self.on_asset_missing = on_asset_missing
         self.load()
 
     def load(self) -> None:
@@ -241,6 +255,8 @@ class MetadataStore:
         repo = self.get_repo(project_id, repo_id)
         repo.thumbnail_filename = filename
         self._save_project(project)
+        if filename and self.on_asset_upload:
+            self.on_asset_upload(f"thumbnails/{filename}", self.thumbnails_dir / filename)
 
     def set_repo_description(self, project_id: str, repo_id: str, description: str) -> None:
         project = self.get_project(project_id)
@@ -296,7 +312,10 @@ class MetadataStore:
     def resolve_thumbnail_path(self, repo: Repo) -> Path | None:
         if not repo.thumbnail_filename:
             return None
-        return self.thumbnails_dir / repo.thumbnail_filename
+        local_path = self.thumbnails_dir / repo.thumbnail_filename
+        if not local_path.exists() and self.on_asset_missing:
+            self.on_asset_missing(f"thumbnails/{repo.thumbnail_filename}", local_path)
+        return local_path
 
     def refresh_statuses_from_disk(self, project_id: str, workspace_root: str, git_service: GitService) -> None:
         """Reconciles Repo.status against what's actually on disk, for the
@@ -384,6 +403,8 @@ class MetadataStore:
         program = self.get_program(project_id, program_id)
         program.icon_filename = filename
         self._save_project(project)
+        if filename and self.on_asset_upload:
+            self.on_asset_upload(f"program_icons/{filename}", self.program_icons_dir / filename)
 
     @property
     def program_icons_dir(self) -> Path:
@@ -392,7 +413,10 @@ class MetadataStore:
     def resolve_program_icon_path(self, program: Program) -> Path | None:
         if not program.icon_filename:
             return None
-        return self.program_icons_dir / program.icon_filename
+        local_path = self.program_icons_dir / program.icon_filename
+        if not local_path.exists() and self.on_asset_missing:
+            self.on_asset_missing(f"program_icons/{program.icon_filename}", local_path)
+        return local_path
 
 
 def migrate_legacy_programs(store: MetadataStore, legacy_path: Path) -> None:

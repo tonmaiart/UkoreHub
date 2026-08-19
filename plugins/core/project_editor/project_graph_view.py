@@ -49,7 +49,7 @@ from plugin_api import (
     pick_image_file,
     save_image_asset,
 )
-from plugins.core.project_editor.dialogs import RepoDialog
+from plugins.core.project_editor.dialogs import AssignCategoryDialog, RepoDialog
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.required_repo_clone_worker import RequiredRepoCloneWorker
 
@@ -57,13 +57,25 @@ NODE_WIDTH = 160.0
 NODE_HEIGHT = 110.0
 NODE_CORNER_RADIUS = 6.0
 NODE_H_SPACING = 40.0
-LEVEL_V_SPACING = 60.0
-# A repo with this many total pipeline connections (in + out) or fewer gets
-# pushed up toward the top rows by _layout_nodes' final_level_of, instead of
-# staying at its baseline (longest-path-from-root) row — added 2026-07-19
-# per the user's own request to declutter the busy, well-connected rows.
-_LOW_DEGREE_THRESHOLD = 1
 _ARROW_SIZE = 8.0
+# Category-box vertical stack (_layout_nodes/CategoryBoxItem, replaced the
+# old pipeline-derived Sugiyama-style layered layout 2026-08-19, then
+# switched from an auto-wrapping grid of boxes to a single top-to-bottom
+# column per the user's own request, same day). A repo's box is picked by
+# a deliberate "Assign to Category..." choice (assign_repo_category), not
+# inferred from pipeline edges, which are still drawn but no longer affect
+# node position. Box order (top to bottom) is PipelineStore.get_categories'
+# own stored list order, user-editable via a box's own right-click "Move
+# Category Up"/"Move Category Down" (ProjectGraphView.move_category).
+_CATEGORY_BOX_PADDING = 20.0
+_CATEGORY_BOX_HEADER_HEIGHT = 32.0
+_CATEGORY_BOX_V_SPACING = 60.0
+_NODE_V_SPACING_IN_BOX = 30.0
+_CATEGORY_BOX_Z_VALUE = -1
+_CATEGORY_BOX_CORNER_RADIUS = 10.0
+_CATEGORY_BOX_FILL_ALPHA = 70
+_CATEGORY_BOX_BORDER_ALPHA = 120
+_UNCATEGORIZED_TITLE = "Uncategorized"
 _EDGE_WIDTH = 2
 _EDGE_HIGHLIGHT_WIDTH = 3
 _EDGE_HIGHLIGHT_COLOR_HEX = "#ffcc00"
@@ -258,6 +270,7 @@ class RepoNodeItem(QGraphicsItem):
     def contextMenuEvent(self, event: QGraphicsSceneContextMenuEvent) -> None:
         menu = QMenu()
         settings_action = menu.addAction("Repository Setting...")
+        category_action = menu.addAction("Assign to Category...")
         menu.addSeparator()
         rename_action = menu.addAction("Rename Repo...")
         thumbnail_action = menu.addAction("Change Thumbnail...")
@@ -276,6 +289,8 @@ class RepoNodeItem(QGraphicsItem):
         repo_id = self.repo_id
         if chosen is settings_action:
             view.open_repo_settings()
+        elif chosen is category_action:
+            QTimer.singleShot(0, lambda: view.assign_repo_category(project_id, repo_id))
         elif chosen is rename_action:
             QTimer.singleShot(0, lambda: view.rename_repo(project_id, repo_id))
         elif chosen is thumbnail_action:
@@ -324,9 +339,8 @@ class PipelineEdgeItem(QGraphicsPathItem):
     connected-to repo instead. See ProjectGraphView.load_project for how
     the edge set is derived from PipelineStore (inputs and outputs are
     independently curated, so both are read and de-duplicated rather than
-    assuming one mirrors the other) and how it also drives node layering
-    (the connected-to repo above, the connecting repo below, regardless of
-    `direction` — see _layout_nodes, inverted 2026-07-19).
+    assuming one mirrors the other). Node position no longer depends on
+    this edge set at all as of 2026-08-19 — see _layout_nodes.
 
     A plain straight line from source's border to target's border, each
     end pointed directly at the *other* node's center (see _border_point)
@@ -399,16 +413,98 @@ class PipelineEdgeItem(QGraphicsPathItem):
         painter.drawPolygon(QPolygonF([line.p2(), arrow_p1, arrow_p2]))
 
 
+class CategoryBoxItem(QGraphicsItem):
+    """One rectangle per Category (plus a synthetic "Uncategorized" bucket
+    for repos with no category_id) — added 2026-08-19 alongside
+    ProjectGraphView._layout_nodes' category-box stack. Purely a
+    background/title label: a RepoNodeItem placed "inside" one of these
+    stays an independent scene item positioned in absolute scene
+    coordinates that happens to fall within this rect, not an actual
+    child of it — the same flat-scene-siblings relationship
+    PipelineEdgeItem already has with the nodes it connects, so dragging
+    or rebuilding the graph never needs to reparent anything. Painted at
+    `_CATEGORY_BOX_Z_VALUE` (below RepoNodeItem's default zValue of 0) so
+    every node visually floats on top of its own box.
+
+    `category_id` is None for the synthetic Uncategorized bucket, which
+    isn't a real PipelineStore Category and so can't be reordered — its
+    right-click menu is empty (no move actions) for every other box."""
+
+    def __init__(self, width: float, height: float, title: str, *, view: "ProjectGraphView", category_id: str | None):
+        super().__init__()
+        self._width = width
+        self._height = height
+        self._title = title
+        self._view = view
+        self.category_id = category_id
+        self.setZValue(_CATEGORY_BOX_Z_VALUE)
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(0, 0, self._width, self._height)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        colors = _theme_colors()
+        rect = self.boundingRect()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Plain black rather than colors.surface_alt (a light theme gray) —
+        # over the graph's own dark radial-gradient background
+        # (_GRAPH_BACKGROUND_CENTER_HEX/_EDGE_HEX), a black fill reads as a
+        # darker recessed panel instead of a lighter highlighted one.
+        fill = QColor(0, 0, 0)
+        fill.setAlpha(_CATEGORY_BOX_FILL_ALPHA)
+        border = QColor(colors.border)
+        border.setAlpha(_CATEGORY_BOX_BORDER_ALPHA)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(QPen(border, 1))
+        painter.drawRoundedRect(rect, _CATEGORY_BOX_CORNER_RADIUS, _CATEGORY_BOX_CORNER_RADIUS)
+
+        painter.save()
+        font = painter.font()
+        font.setBold(True)
+        font.setPixelSize(13)
+        painter.setFont(font)
+        painter.setPen(QColor(colors.text_primary))
+        header_rect = QRectF(rect.left() + 12, rect.top(), rect.width() - 24, _CATEGORY_BOX_HEADER_HEIGHT)
+        painter.drawText(header_rect, Qt.AlignLeft | Qt.AlignVCenter, self._title)
+        painter.restore()
+
+    def contextMenuEvent(self, event: QGraphicsSceneContextMenuEvent) -> None:
+        if self.category_id is None:
+            return  # synthetic Uncategorized bucket — nothing to reorder
+        menu = QMenu()
+        move_up_action = menu.addAction("Move Category Up")
+        move_down_action = menu.addAction("Move Category Down")
+        chosen = menu.exec(event.screenPos())
+        # Same QTimer deferral as RepoNodeItem's own context menu actions —
+        # move_category ends up reloading the scene (load_project's
+        # scene.clear()), which would destroy this very item while its own
+        # event handler is still on the call stack.
+        view = self._view
+        category_id = self.category_id
+        if chosen is move_up_action:
+            QTimer.singleShot(0, lambda: view.move_category(category_id, -1))
+        elif chosen is move_down_action:
+            QTimer.singleShot(0, lambda: view.move_category(category_id, 1))
+
+
 class ProjectGraphView(QGraphicsView):
-    """1 node = 1 repo, for whichever project is currently loaded, laid out
-    bottom-up by pipeline dependency (roots — the connecting repos — at
-    the bottom, rows rising toward the top, inverted 2026-07-19 — see
-    _layout_nodes). Each edge's arrowhead points into the connecting repo
-    by default ("input" direction) or out toward the target repo instead
-    ("output" — a per-connection choice, RepoRef.direction, added
-    2026-07-19, see load_project) — direction only ever changes the
-    arrowhead end, never which row a node lands in. A single left-click
-    on a node requests an active-repo switch (see request_active_repo — the
+    """1 node = 1 repo, for whichever project is currently loaded, grouped
+    into one box per Category plus a synthetic "Uncategorized" bucket,
+    stacked top to bottom in one column (see _layout_nodes/CategoryBoxItem)
+    — a repo's box is a deliberate per-node "Assign to Category..." choice
+    (assign_repo_category/AssignCategoryDialog, added 2026-08-19),
+    replacing the old pipeline-derived automatic layered layout entirely;
+    the stack's own top-to-bottom order is user-editable too, via a box's
+    own right-click "Move Category Up"/"Move Category Down"
+    (move_category). Each edge's
+    arrowhead points into the connecting repo by default ("input"
+    direction) or out toward the target repo instead ("output" — a
+    per-connection choice, RepoRef.direction, added 2026-07-19, see
+    load_project) — direction only ever changes the arrowhead end, never
+    which box a node lands in (pipeline edges no longer affect node
+    position at all). A single left-click on a node requests an
+    active-repo switch (see request_active_repo — the
     actual switch happens via the callback bound from plugin.py's _wire,
     not here; a repo that's never been cloned gets a one-time confirmation
     first). Pipeline inputs/outputs render as directed edges between nodes.
@@ -643,7 +739,7 @@ class ProjectGraphView(QGraphicsView):
             self._scene.addItem(node)
             self._nodes[repo.id] = node
 
-        self._layout_nodes(repos, edges)
+        self._layout_nodes(repos)
 
         for source_id, target_id, direction in edges:
             if source_id == target_id:
@@ -672,9 +768,10 @@ class ProjectGraphView(QGraphicsView):
         Repository Setting (custom_paths_settings_page.py — moved there
         2026-07-19 from this node's right-click menu). `direction` (added
         2026-07-19, per RepoRef — "input" or "output") only affects which
-        end load_project draws the arrowhead at, never the topology here or
-        in _layout_nodes' level assignment — both always treat
-        connecting_repo_id as the "source" of the dependency and
+        end load_project draws the arrowhead at, never the topology here
+        (_layout_nodes doesn't read this edge set at all as of 2026-08-19
+        — see that method) — this always treats connecting_repo_id as the
+        "source" of the dependency and
         target_repo_id (the repo whose CustomPath it connected to) as the
         "target", regardless of direction. As of 2026-07-19 there's also no
         separate "Set as Pipeline Output" action anymore — every
@@ -693,162 +790,86 @@ class ProjectGraphView(QGraphicsView):
                     edges.add((repo.id, ref.repo_id, ref.direction))
         return edges
 
-    def _layout_nodes(self, repos: list[Repo], edges: set[tuple[str, str, str]]) -> None:
-        """Layered bottom-up layout (a simplified Sugiyama-style pass):
-        baseline level = longest path from a "root" (no predecessors)
-        through pipeline edges, so the repo whose Custom Path was connected
-        to always sits in a row above the repo that connected to it — this
-        ordering always holds regardless of each edge's `direction` (added
-        2026-07-19), which only affects load_project's arrowhead
-        placement, never row assignment.
+    def _layout_nodes(self, repos: list[Repo]) -> None:
+        """Groups nodes into one CategoryBoxItem per PipelineStore.get_categories
+        entry, plus a synthetic "Uncategorized" box for any repo with no
+        category_id (or one pointing at a category that's since been
+        deleted) — replaced the old pipeline-dependency Sugiyama-style
+        layered layout entirely on 2026-08-19, per the user's own request:
+        node position is now a deliberate per-repo "Assign to Category..."
+        choice (assign_repo_category/AssignCategoryDialog), not something
+        an algorithm infers from pipeline edges. Pipeline edges themselves
+        are unaffected by this — load_project still draws one between
+        whichever two node positions this method ends up picking.
 
-        On top of that baseline, a repo with `_LOW_DEGREE_THRESHOLD` or
-        fewer total connections (in + out) is pushed UP as far as its own
-        successors' rows allow (added 2026-07-19, per the user's own
-        request to declutter the busy, well-connected rows) — see
-        final_level_of below for how that stays provably consistent with
-        the "target above source" ordering even after boosting. A
-        well-connected repo (more than _LOW_DEGREE_THRESHOLD connections,
-        e.g. a busy "...Publish" hub) keeps its original baseline row,
-        unchanged from before 2026-07-19. Isolated repos with no pipeline
-        edges at all have zero connections, so they're always boosted all
-        the way to the top row.
+        Each category's own repos fill a near-square grid inside its own
+        box (_category_grid_columns/_category_box_size), in declaration
+        order (project.repos' own order, same as every other repo listing
+        in this plugin). Boxes themselves stack top to bottom, one column,
+        in PipelineStore.get_categories' own stored order (Uncategorized
+        always last, since it isn't a real stored Category) — that stored
+        order is what a box's own right-click "Move Category Up"/"Move
+        Category Down" (move_category) edits, so dragging a category's
+        position in the stack is really just reordering this list and
+        reloading."""
+        categories = self.pipeline_store.get_categories()
+        category_by_id = {category.id: category for category in categories}
 
-        Level 0 (the lowest row after boosting) is placed at the BOTTOM
-        and higher levels rise toward the top (inverted 2026-07-19, was
-        top-down). Within each row, nodes are ordered by the average
-        x-position of their predecessors one row down (barycenter
-        heuristic, using the *baseline* predecessor relationship — a
-        boosted repo's true predecessor may no longer sit in the row
-        immediately below it once boosted, so this heuristic is only
-        approximate for boosted repos, falling back to declaration order
-        same as any other repo with no predecessor in the row below) to
-        reduce edge crossings, then the whole row is horizontally centered
-        against the widest level."""
-        repo_order = {repo.id: index for index, repo in enumerate(repos)}
-        predecessors: dict[str, list[str]] = {repo.id: [] for repo in repos}
-        successors: dict[str, list[str]] = {repo.id: [] for repo in repos}
-        degree: dict[str, int] = {repo.id: 0 for repo in repos}
-        for source_id, target_id, _direction in edges:
-            if source_id == target_id:
-                continue
-            if target_id in predecessors:
-                predecessors[target_id].append(source_id)
-            if source_id in successors and target_id in successors:
-                successors[source_id].append(target_id)
-            if source_id in degree:
-                degree[source_id] += 1
-            if target_id in degree:
-                degree[target_id] += 1
-
-        levels: dict[str, int] = {}
-        visiting: set[str] = set()
-
-        def level_of(repo_id: str) -> int:
-            if repo_id in levels:
-                return levels[repo_id]
-            if repo_id in visiting:
-                # Cycle in declared pipeline data (curated independently per
-                # repo, never validated as acyclic) — treat as a root here
-                # rather than recursing forever.
-                return 0
-            visiting.add(repo_id)
-            preds = predecessors.get(repo_id, [])
-            result = 0 if not preds else 1 + max(level_of(p) for p in preds)
-            visiting.discard(repo_id)
-            levels[repo_id] = result
-            return result
-
+        repos_by_category_id: dict[str | None, list[Repo]] = {}
         for repo in repos:
-            level_of(repo.id)
+            category_id = self.pipeline_store.get_repo_category_id(self._project_id, repo.id)
+            if category_id not in category_by_id:
+                category_id = None
+            repos_by_category_id.setdefault(category_id, []).append(repo)
 
-        overall_max_level = max(levels.values(), default=0)
-        final_levels: dict[str, int] = {}
-        final_visiting: set[str] = set()
+        ordered_group_ids: list[str | None] = [
+            category.id for category in categories if category.id in repos_by_category_id
+        ]
+        if None in repos_by_category_id:
+            ordered_group_ids.append(None)
 
-        def final_level_of(repo_id: str) -> int:
-            """The baseline level_of(repo_id) unless this repo is
-            low-degree, in which case it's pushed up to the highest row
-            still strictly below every one of its own successors' *final*
-            rows. Recurses into successors first (so that bound reflects
-            each successor's actual chosen row, whether boosted or not),
-            which by induction guarantees final_level_of(repo) is always
-            strictly less than final_level_of(successor) for every edge:
-              - An unboosted repo keeps base = level_of(repo_id), and
-                level_of already guarantees level_of(successor) >=
-                level_of(repo_id) + 1 for every edge — and every final
-                level is >= its own baseline level (boosting only ever
-                raises a level), so final_level_of(successor) >= base + 1.
-              - A boosted repo's result is at most
-                min(final_level_of(s) for s in successors) - 1, i.e.
-                strictly below every successor's own final row by
-                construction.
-            Cycle-guarded the same way level_of is — a repo_id already on
-            the current recursion stack falls back to its own baseline
-            level rather than recursing forever."""
-            if repo_id in final_levels:
-                return final_levels[repo_id]
-            if repo_id in final_visiting:
-                return levels.get(repo_id, 0)
-            final_visiting.add(repo_id)
-            succs = successors.get(repo_id, [])
-            upper_bound = min((final_level_of(s) - 1 for s in succs), default=overall_max_level)
-            base = levels.get(repo_id, 0)
-            result = max(base, upper_bound) if degree.get(repo_id, 0) <= _LOW_DEGREE_THRESHOLD else base
-            final_visiting.discard(repo_id)
-            final_levels[repo_id] = result
-            return result
+        y_cursor = 0.0
+        for group_id in ordered_group_ids:
+            group_repos = repos_by_category_id[group_id]
+            title = category_by_id[group_id].name if group_id is not None else _UNCATEGORIZED_TITLE
+            box_width, box_height = self._category_box_size(len(group_repos))
 
-        for repo in repos:
-            final_level_of(repo.id)
+            box = CategoryBoxItem(box_width, box_height, title, view=self, category_id=group_id)
+            box.setPos(0.0, y_cursor)
+            self._scene.addItem(box)
 
-        # Compact whatever final levels were actually used down to
-        # consecutive integers starting at 0 — boosting can leave gaps
-        # (e.g. nothing left at level 2 because everything that would've
-        # landed there got pushed higher), and the barycenter pass below
-        # indexes "the row immediately below" by literal level number,
-        # which needs no gaps. A strictly increasing renumbering can't
-        # change the relative order between any two repos, so it can't
-        # reintroduce a "successor at or below its source" ordering
-        # violation either.
-        distinct_levels = sorted(set(final_levels.values()))
-        level_rank = {level: rank for rank, level in enumerate(distinct_levels)}
-        levels_for_layout = {repo_id: level_rank[level] for repo_id, level in final_levels.items()}
+            columns = self._category_grid_columns(len(group_repos))
+            for index, repo in enumerate(group_repos):
+                column, row = index % columns, index // columns
+                node_x = _CATEGORY_BOX_PADDING + column * (NODE_WIDTH + NODE_H_SPACING)
+                node_y = (
+                    y_cursor
+                    + _CATEGORY_BOX_HEADER_HEIGHT
+                    + _CATEGORY_BOX_PADDING
+                    + row * (NODE_HEIGHT + _NODE_V_SPACING_IN_BOX)
+                )
+                self._nodes[repo.id].setPos(node_x, node_y)
 
-        repos_by_level: dict[int, list[str]] = {}
-        for repo in repos:
-            repos_by_level.setdefault(levels_for_layout[repo.id], []).append(repo.id)
+            y_cursor += box_height + _CATEGORY_BOX_V_SPACING
 
-        for level in sorted(repos_by_level):
-            if level == 0:
-                repos_by_level[level].sort(key=lambda rid: repo_order[rid])
-                continue
-            prev_position = {rid: index for index, rid in enumerate(repos_by_level[level - 1])}
+    @staticmethod
+    def _category_grid_columns(count: int) -> int:
+        """Near-square column count for `count` nodes inside one category
+        box — e.g. 4 -> 2 columns, 5 -> 3 columns (one short in the last
+        row rather than a lopsided single row)."""
+        return max(1, math.ceil(math.sqrt(count))) if count else 1
 
-            def sort_key(rid: str, prev_position=prev_position) -> tuple[int, float]:
-                preds_above = [p for p in predecessors.get(rid, []) if p in prev_position]
-                if preds_above:
-                    return (0, sum(prev_position[p] for p in preds_above) / len(preds_above))
-                return (1, repo_order[rid])
-
-            repos_by_level[level].sort(key=sort_key)
-
-        row_widths = {
-            level: len(row) * NODE_WIDTH + max(len(row) - 1, 0) * NODE_H_SPACING
-            for level, row in repos_by_level.items()
-        }
-        max_width = max(row_widths.values(), default=0.0)
-        max_level = max(repos_by_level, default=0)
-
-        for level, row in repos_by_level.items():
-            x_offset = (max_width - row_widths[level]) / 2
-            # Inverted 2026-07-19: level 0 (roots) at the bottom row, rising
-            # toward the top as level increases — see this method's
-            # docstring for why (arrows now point up instead of down).
-            y = (max_level - level) * (NODE_HEIGHT + LEVEL_V_SPACING)
-            for index, repo_id in enumerate(row):
-                x = x_offset + index * (NODE_WIDTH + NODE_H_SPACING)
-                self._nodes[repo_id].setPos(x, y)
+    def _category_box_size(self, count: int) -> tuple[float, float]:
+        columns = self._category_grid_columns(count)
+        rows = math.ceil(count / columns) if count else 1
+        width = _CATEGORY_BOX_PADDING * 2 + columns * NODE_WIDTH + max(columns - 1, 0) * NODE_H_SPACING
+        height = (
+            _CATEGORY_BOX_HEADER_HEIGHT
+            + _CATEGORY_BOX_PADDING * 2
+            + rows * NODE_HEIGHT
+            + max(rows - 1, 0) * _NODE_V_SPACING_IN_BOX
+        )
+        return width, height
 
     def set_active_repo(self, project: Project | None, repo: Repo | None) -> None:
         self._active_project = project
@@ -975,6 +996,61 @@ class ProjectGraphView(QGraphicsView):
         # without requiring a separate repo switch/reload.
         if self._project_id is not None:
             self.load_project(self._project_id)
+
+    def assign_repo_category(self, project_id: str, repo_id: str) -> None:
+        """"Assign to Category..." — AssignCategoryDialog picks one of
+        PipelineStore.get_categories, "(Uncategorized)" to clear the
+        repo's own category_id, or "New Category..." to create one on the
+        spot (add_category, since a freshly organized repo usually needs a
+        brand-new category rather than an existing one). Reloads the graph
+        afterward so _layout_nodes' grid reflects the new grouping right
+        away, same as every other mutating node action in this file."""
+        categories = self.pipeline_store.get_categories()
+        current_category_id = self.pipeline_store.get_repo_category_id(project_id, repo_id)
+        dialog = AssignCategoryDialog(self, categories=categories, current_category_id=current_category_id)
+        if not dialog.exec():
+            return
+
+        category_id = dialog.selected_category_id()
+        if dialog.is_new_category():
+            try:
+                category_id = self.pipeline_store.add_category(dialog.new_category_name()).id
+            except ConflictError as exc:
+                self.pipeline_store.reload_categories()
+                QMessageBox.warning(self, "Assign to Category", str(exc))
+                self.load_project(self._project_id)
+                return
+
+        try:
+            self.pipeline_store.set_repo_category_id(project_id, repo_id, category_id)
+        except ConflictError as exc:
+            self.store.load()
+            QMessageBox.warning(self, "Assign to Category", str(exc))
+        self.load_project(self._project_id)
+
+    def move_category(self, category_id: str, direction: int) -> None:
+        """A category box's own right-click "Move Category Up" (direction
+        -1) / "Move Category Down" (direction +1) — swaps this category
+        with its neighbor in PipelineStore.get_categories' own stored
+        order (what _layout_nodes stacks boxes top-to-bottom in) and
+        persists it. A no-op, without touching the store or reloading, if
+        category_id is already at that end of the list — the synthetic
+        Uncategorized bucket is never in this list at all, so it's never
+        a valid neighbor to swap into either."""
+        categories = self.pipeline_store.get_categories()
+        index = next((i for i, category in enumerate(categories) if category.id == category_id), None)
+        if index is None:
+            return
+        new_index = index + direction
+        if not (0 <= new_index < len(categories)):
+            return
+        categories[index], categories[new_index] = categories[new_index], categories[index]
+        try:
+            self.pipeline_store.set_categories(categories)
+        except ConflictError as exc:
+            self.pipeline_store.reload_categories()
+            QMessageBox.warning(self, "Reorder Category", str(exc))
+        self.load_project(self._project_id)
 
     def rename_repo(self, project_id: str, repo_id: str) -> None:
         repo = self.store.get_repo(project_id, repo_id)

@@ -221,13 +221,13 @@ def main() -> None:
 
     data_dir = DATA_DIR
     data_dir.mkdir(parents=True, exist_ok=True)
-    # assets/ holds the git-tracked binary images (thumbnails, program
-    # icons, browser link icon overrides, static app-chrome icons) — never
-    # cloud-synced, so deliberately kept out of data/ (which is now either
-    # an R2 blob cache or a git-tracked JSON default) to keep that
-    # separation obvious on disk. See developer/app/docs/data-layout.md.
-    assets_dir = REPO_ROOT / "assets"
-    assets_dir.mkdir(exist_ok=True)
+    # data/assets/ holds thumbnails/program_icons — like every other file
+    # under data/, these are just a local cache of an R2 blob (pulled
+    # lazily per-file on first read instead of eagerly at launch, since
+    # unlike the JSON stores there's no small fixed set of them to pull
+    # upfront — see MetadataStore's on_asset_upload/on_asset_missing and
+    # _push_asset/_pull_asset below). See developer/app/docs/data-layout.md.
+    assets_dir = data_dir / "assets"
     # appdata/ holds the git-tracked static files data/ itself doesn't own —
     # bootstrap defaults and examples that are never cloud-synced and never
     # written by the running app. Kept out of data/ so data/ is unambiguously
@@ -326,12 +326,44 @@ def main() -> None:
             print(f"UkoreHub: cloud delete of '{blob_name}' failed ({exc}) — it may linger in the bucket.")
             debug_bus.log("CloudSync", f"delete of '{blob_name}' failed ({exc}) — it may linger in the bucket")
 
+    def _push_asset(blob_name: str, local_path: Path) -> None:
+        # Thumbnails/program icons: last-write-wins is fine (no structural
+        # data to lose the way a conflicting JSON edit would), so unlike
+        # _push_shared_blob this swallows ConflictError too instead of
+        # propagating it — the artist's own local upload already succeeded
+        # and is what they expect to see; whoever's push "lost" is still
+        # safely in the bucket for anyone else who pulls it.
+        if cloud_sync is None:
+            return
+        try:
+            cloud_sync.push(blob_name, local_path)
+            debug_bus.log("CloudSync", f"pushed asset '{blob_name}'")
+        except Exception as exc:
+            print(f"UkoreHub: cloud push of asset '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
+            debug_bus.log("CloudSync", f"push of asset '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+
+    def _pull_asset(blob_name: str, local_path: Path) -> None:
+        # Best-effort lazy pull, called by resolve_thumbnail_path/
+        # resolve_program_icon_path when the local file is missing. Silent
+        # on failure either way (no network, or genuinely nobody's
+        # uploaded this blob yet) — the caller just falls back to "no
+        # image", the same as today when no filename is set at all.
+        if cloud_sync is None:
+            return
+        try:
+            cloud_sync.pull(blob_name, local_path)
+            debug_bus.log("CloudSync", f"pulled asset '{blob_name}'")
+        except Exception as exc:
+            debug_bus.log("CloudSync", f"pull of asset '{blob_name}' failed ({exc}) — leaving it unset")
+
     core = UkoreCore(
         data_dir=data_dir,
         cache_dir=cache_dir,
         assets_dir=assets_dir,
         on_metadata_save=_push_shared_blob,
         on_metadata_delete=_delete_shared_blob,
+        on_metadata_asset_upload=_push_asset,
+        on_metadata_asset_missing=_pull_asset,
         on_system_config_save=lambda: _push_shared_blob("system_config.json"),
         debug_bus=debug_bus,
     )

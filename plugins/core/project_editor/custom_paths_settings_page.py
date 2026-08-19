@@ -2,25 +2,31 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import QFile, Qt
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QGroupBox,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from plugin_api import LocalConfigStore, MetadataStore, NotFoundError, set_secondary_text, show_exclusive, wrap_scrollable
+from plugin_api import LocalConfigStore, MetadataStore, NotFoundError, show_exclusive
 from plugins.core.project_editor.pipeline_store import CustomPath, PipelineStore, RepoRef
+
+_UI_FILE = Path(__file__).parent / "CustomPathWindow.ui"
+_OWN_COLUMN_LABELS = ("Custom Path Name", "Path")
+_CONNECTED_COLUMN_LABELS = ("Custom Path Name", "Repo Name", "Relative Path")
 
 
 class ConnectInputPathDialog(QDialog):
@@ -135,7 +141,7 @@ class ConnectInputPathDialog(QDialog):
                 repo_name = "This repo"
             self.hint_label.setText(
                 f"{repo_name} has no Custom Paths declared yet — switch to it and add one under its own "
-                "Repository Setting > Custom Paths > Create Input Path first."
+                "Repository Setting > Custom Paths > Create This Repo Custom Path first."
             )
             self.hint_label.setVisible(True)
             self.path_combo.setEnabled(False)
@@ -159,30 +165,116 @@ class ConnectInputPathDialog(QDialog):
         return "output" if self.output_radio.isChecked() else "input"
 
 
-class CustomPathsSettingsPage(QWidget):
-    """Active repo's Custom Paths tab, split into two sections:
+class CustomPathEditDialog(QDialog):
+    """Add/Edit dialog for one of this repo's own declared CustomPath
+    entries — used by tableWidget_currrent_repo_custom_path's Add/Edit
+    buttons (CustomPathWindow.ui). Replaces the old always-visible
+    label/path input row + separate "Rename"/"Edit Path" row actions with a
+    single small dialog, matching how ConnectInputPathDialog already
+    handles the "Connected Custom Path" side."""
 
-    - "Create Input Path" — add/rename/edit/remove this repo's own declared
-      CustomPath catalog (named locations other repos' pipeline refs can
-      point at — see ProjectGraphView's now-removed add_pipeline_ref
-      docstring history, pipeline_store.py's CustomPath/RepoRef). Unchanged
-      from before 2026-07-19 beyond being wrapped in its own group box.
-    - "Connect Input Path" — this repo's own outgoing pipeline connections
-      (each a RepoRef pointing at another repo's declared CustomPath,
-      driving ProjectGraphView._collect_edges' graph edges). Moved here
-      2026-07-19 from the Graph View node's right-click menu, with a
-      compact single-dialog picker (ConnectInputPathDialog above) replacing
-      the old two-step RepoPickerDialog/CustomPathPickerDialog flow, plus
-      Edit and Remove buttons per connection — there was previously no way
-      to change or remove a connection at all (graph edges are
-      non-interactive); Edit reopens the same dialog pre-filled via
-      ConnectInputPathDialog's initial_ref (added 2026-07-19).
+    def __init__(
+        self,
+        parent=None,
+        *,
+        repo_root: Path,
+        label: str = "",
+        path: str = "",
+        title: str = "Add Custom Path",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self._repo_root = repo_root
+
+        self.label_edit = QLineEdit(label)
+        self.label_edit.setPlaceholderText("Label (e.g. Character)")
+        self.path_edit = QLineEdit(path)
+        self.path_edit.setPlaceholderText("Path relative to this repo's root (e.g. Character)")
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self._on_browse)
+
+        path_row = QHBoxLayout()
+        path_row.addWidget(self.path_edit, stretch=1)
+        path_row.addWidget(browse_button)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self._on_accept)
+        self.buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Label:"))
+        layout.addWidget(self.label_edit)
+        layout.addWidget(QLabel("Path:"))
+        layout.addLayout(path_row)
+        layout.addStretch()
+        layout.addWidget(self.buttons)
+
+    def _on_browse(self) -> None:
+        """Rooted at the active repo's own folder; rejects a folder picked
+        from outside it, since CustomPath.path is always relative to the
+        repo's own root — same rule custom_paths_settings_page.py enforced
+        before this dialog existed. Auto-fills the label from the folder
+        name too if the label field is still empty."""
+        chosen = QFileDialog.getExistingDirectory(self, "Choose Folder", str(self._repo_root))
+        if not chosen:
+            return
+        chosen_path = Path(chosen)
+        try:
+            relative = chosen_path.relative_to(self._repo_root)
+        except ValueError:
+            QMessageBox.information(
+                self,
+                "Choose Folder",
+                "Pick a folder inside this repo's own root — Custom Paths are always relative to it.",
+            )
+            return
+        self.path_edit.setText(str(relative).replace("\\", "/"))
+        if not self.label_edit.text().strip():
+            self.label_edit.setText(chosen_path.name)
+
+    def _on_accept(self) -> None:
+        if not self.label_edit.text().strip() or not self.path_edit.text().strip():
+            QMessageBox.information(self, self.windowTitle(), "Enter both a label and a path.")
+            return
+        self.accept()
+
+    def result_values(self) -> tuple[str, str]:
+        return self.label_edit.text().strip(), self.path_edit.text().strip()
+
+
+class CustomPathsSettingsPage(QWidget):
+    """Active repo's Custom Paths tab — UI authored in Qt Designer
+    (CustomPathWindow.ui) and loaded at runtime instead of being built
+    widget-by-widget in code, same QUiLoader pattern
+    plugins/core/explorer/browser_widget.py uses for explorer_section.ui.
+    Two tables:
+
+    - tableWidget_currrent_repo_custom_path ("Create This Repo Custom
+      Path") — this repo's own declared CustomPath catalog (named
+      locations other repos' pipeline refs can point at — see
+      pipeline_store.py's CustomPath/RepoRef). Add/Edit open
+      CustomPathEditDialog above; Remove drops the selected entry
+      directly, no confirmation (unchanged from before this rewrite).
+    - tableWidget_connected_custom_path ("Connected Custom Path") — every
+      path this repo is "connected" to: its own CustomPath entries
+      (tagged ("own", id) via Qt.UserRole on each row) *and* its outgoing
+      pipeline connections (tagged ("connection", index), each a RepoRef
+      pointing at another repo's declared CustomPath, driving
+      ProjectGraphView._collect_edges' graph edges). Add opens
+      ConnectInputPathDialog to create a new outgoing connection
+      (unchanged _on_connect logic); Edit/Remove only ever act on
+      ("connection", ...) rows — disabled via
+      _on_connected_selection_changed whenever the selected row is one of
+      this repo's own ("own", ...) entries, since those can only be
+      edited/removed through the other table. Direction (input/output) is
+      no longer shown as its own column here — it still round-trips
+      through RepoRef.direction and ConnectInputPathDialog unchanged.
 
     Same self-resolving-active-repo `refresh()` pattern
     interface/shared/base_repo_settings_page.py's BaseRepoSettingsPage
-    provides — scoped to a single repo, so it reads
-    local_config_store itself rather than waiting for a set_repo() call
-    MainWindow never makes for Settings pages."""
+    provides — scoped to a single repo, so it reads local_config_store
+    itself rather than waiting for a set_repo() call MainWindow never
+    makes for Settings pages."""
 
     def __init__(self, parent=None, *, store: MetadataStore, local_config_store: LocalConfigStore, pipeline_store: PipelineStore):
         super().__init__(parent)
@@ -196,78 +288,60 @@ class CustomPathsSettingsPage(QWidget):
 
         self.empty_label = QLabel("Select a repo to see this information.")
 
-        # -- "Create Input Path" ------------------------------------------
-        self._rows_container = QWidget()
-        self._rows_layout = QVBoxLayout(self._rows_container)
-        self._rows_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.new_label_edit = QLineEdit()
-        self.new_label_edit.setPlaceholderText("Label (e.g. Character)")
-        self.new_path_edit = QLineEdit()
-        self.new_path_edit.setPlaceholderText("Path relative to this repo's root (e.g. Character)")
-        browse_button = QPushButton("Browse...")
-        browse_button.clicked.connect(self._on_browse_new_path)
-        add_button = QPushButton("Add Custom Path")
-        add_button.clicked.connect(self._on_add)
-        add_row = QHBoxLayout()
-        add_row.addWidget(self.new_label_edit)
-        add_row.addWidget(self.new_path_edit, stretch=1)
-        add_row.addWidget(browse_button)
-        add_row.addWidget(add_button)
-
-        create_hint_label = QLabel(
-            "Other repos' Connect Input Path picks one of these when pointing at this repo — "
-            "add at least one before another repo can reference it."
-        )
-        create_hint_label.setWordWrap(True)
-        set_secondary_text(create_hint_label)
-
-        create_group = QGroupBox("Create Input Path")
-        create_layout = QVBoxLayout(create_group)
-        create_layout.addWidget(create_hint_label)
-        create_layout.addWidget(self._rows_container)
-        create_layout.addLayout(add_row)
-
-        # -- "Connect Input Path" -----------------------------------------
-        self._connections_container = QWidget()
-        self._connections_layout = QVBoxLayout(self._connections_container)
-        self._connections_layout.setContentsMargins(0, 0, 0, 0)
-
-        connect_hint_label = QLabel("Point this repo at another repo's declared Custom Path — shown as an edge in the Graph View.")
-        connect_hint_label.setWordWrap(True)
-        set_secondary_text(connect_hint_label)
-
-        connect_button = QPushButton("Connect...")
-        connect_button.clicked.connect(self._on_connect)
-
-        connect_group = QGroupBox("Connect Input Path")
-        connect_layout = QVBoxLayout(connect_group)
-        connect_layout.addWidget(connect_hint_label)
-        connect_layout.addWidget(self._connections_container)
-        connect_layout.addWidget(connect_button)
-
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.addWidget(create_group)
-        content_layout.addWidget(connect_group)
-        content_layout.addStretch()
-
-        scroll = wrap_scrollable(content)
+        loader = QUiLoader()
+        ui_file = QFile(str(_UI_FILE))
+        ui_file.open(QFile.ReadOnly)
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
 
         self.content_widget = QWidget()
-        content_wrap_layout = QVBoxLayout(self.content_widget)
-        content_wrap_layout.setContentsMargins(0, 0, 0, 0)
-        content_wrap_layout.addWidget(scroll)
+        content_layout = QVBoxLayout(self.content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self.ui)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.empty_label)
         layout.addWidget(self.content_widget)
 
+        self.connected_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_connected_custom_path")
+        self.current_repo_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_currrent_repo_custom_path")
+        self.connected_add_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_connected_custom_path_add")
+        self.connected_remove_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_connected_custom_path_remove")
+        self.connected_edit_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_connected_custom_path_edit")
+        self.current_repo_add_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_currrent_repo_custom_path_add")
+        self.current_repo_remove_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_currrent_repo_custom_path_remove")
+        self.current_repo_edit_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_currrent_repo_custom_path_edit")
+
+        self._setup_table(self.current_repo_table, _OWN_COLUMN_LABELS)
+        self._setup_table(self.connected_table, _CONNECTED_COLUMN_LABELS)
+
+        self.current_repo_table.itemSelectionChanged.connect(self._on_current_repo_selection_changed)
+        self.connected_table.itemSelectionChanged.connect(self._on_connected_selection_changed)
+        self._on_current_repo_selection_changed()
+        self._on_connected_selection_changed()
+
+        self.current_repo_add_button.clicked.connect(self._on_current_repo_add)
+        self.current_repo_edit_button.clicked.connect(self._on_current_repo_edit)
+        self.current_repo_remove_button.clicked.connect(self._on_current_repo_remove)
+        self.connected_add_button.clicked.connect(self._on_connect)
+        self.connected_edit_button.clicked.connect(self._on_edit_connection)
+        self.connected_remove_button.clicked.connect(self._on_remove_connection)
+
         self.refresh()
+
+    @staticmethod
+    def _setup_table(table: QTableWidget, column_labels: tuple[str, ...]) -> None:
+        table.setColumnCount(len(column_labels))
+        table.setHorizontalHeaderLabels(list(column_labels))
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.setSelectionMode(QTableWidget.SingleSelection)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
 
     def refresh(self) -> None:
         """Re-resolves the active project/repo from local_config_store and
-        rebuilds both sections — called on construction and every time this
+        rebuilds both tables — called on construction and every time this
         tab becomes active (SettingsTabSpec.on_activated)."""
         project_id = self.local_config_store.active_project_id
         repo_id = self.local_config_store.active_repo_id
@@ -287,105 +361,77 @@ class CustomPathsSettingsPage(QWidget):
         self._repo_id = repo_id
         show_exclusive(self.content_widget, self.empty_label)
         self._custom_paths = self.pipeline_store.get_custom_paths(project_id, repo_id)
-        self._rebuild_rows()
         self._connections = self.pipeline_store.get_inputs(project_id, repo_id)
-        self._rebuild_connections()
+        self._rebuild_current_repo_table()
+        self._rebuild_connected_table()
 
-    # -- "Create Input Path" ----------------------------------------------
-
-    def _rebuild_rows(self) -> None:
-        while self._rows_layout.count():
-            item = self._rows_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        for index, custom_path in enumerate(self._custom_paths):
-            row_widget = QWidget()
-            row = QHBoxLayout(row_widget)
-            row.setContentsMargins(0, 0, 0, 0)
-            row.addWidget(QLabel(f"<b>{custom_path.label}</b>"))
-            path_label = QLabel(custom_path.path)
-            path_label.setWordWrap(True)
-            row.addWidget(path_label, stretch=1)
-            rename_button = QPushButton("Rename")
-            rename_button.clicked.connect(lambda _checked, i=index: self._on_rename(i))
-            row.addWidget(rename_button)
-            edit_path_button = QPushButton("Edit Path")
-            edit_path_button.clicked.connect(lambda _checked, i=index: self._on_edit_path(i))
-            row.addWidget(edit_path_button)
-            remove_button = QPushButton("Remove")
-            remove_button.clicked.connect(lambda _checked, i=index: self._on_remove(i))
-            row.addWidget(remove_button)
-            self._rows_layout.addWidget(row_widget)
-
-    def _on_browse_new_path(self) -> None:
-        """Separate QFileDialog folder browser, rooted at the active repo's
-        own folder — easier than hand-typing a relative path (confirmed
-        with the user). Rejects a folder picked from outside the repo,
-        since CustomPath.path is always relative to the repo's own root
-        (see pipeline_store.py's CustomPath docstring); auto-fills the
-        label from the folder name too if the label field is still empty."""
+    def _repo_root(self) -> Path | None:
         if self._project_id is None or self._repo_id is None:
-            return
+            return None
         try:
             repo = self.store.get_repo(self._project_id, self._repo_id)
         except NotFoundError:
-            return
-        repo_root = Path(self.local_config_store.workspace_root) / repo.local_path
-        chosen = QFileDialog.getExistingDirectory(self, "Choose Folder", str(repo_root))
-        if not chosen:
-            return
-        chosen_path = Path(chosen)
-        try:
-            relative = chosen_path.relative_to(repo_root)
-        except ValueError:
-            QMessageBox.information(
-                self,
-                "Choose Folder",
-                "Pick a folder inside this repo's own root — Custom Paths are always relative to it.",
-            )
-            return
-        self.new_path_edit.setText(str(relative).replace("\\", "/"))
-        if not self.new_label_edit.text().strip():
-            self.new_label_edit.setText(chosen_path.name)
+            return None
+        return Path(self.local_config_store.workspace_root) / repo.local_path
 
-    def _on_add(self) -> None:
-        if self._project_id is None or self._repo_id is None:
+    # -- "Create This Repo Custom Path" ------------------------------------
+
+    def _rebuild_current_repo_table(self) -> None:
+        table = self.current_repo_table
+        table.setRowCount(len(self._custom_paths))
+        for row, custom_path in enumerate(self._custom_paths):
+            name_item = QTableWidgetItem(custom_path.label)
+            name_item.setData(Qt.UserRole, custom_path.id)
+            table.setItem(row, 0, name_item)
+            table.setItem(row, 1, QTableWidgetItem(custom_path.path))
+        self._on_current_repo_selection_changed()
+
+    def _on_current_repo_selection_changed(self) -> None:
+        has_selection = bool(self.current_repo_table.selectedItems())
+        self.current_repo_edit_button.setEnabled(has_selection)
+        self.current_repo_remove_button.setEnabled(has_selection)
+
+    def _selected_current_repo_index(self) -> int | None:
+        items = self.current_repo_table.selectedItems()
+        if not items:
+            return None
+        row = items[0].row()
+        custom_path_id = self.current_repo_table.item(row, 0).data(Qt.UserRole)
+        for index, custom_path in enumerate(self._custom_paths):
+            if custom_path.id == custom_path_id:
+                return index
+        return None
+
+    def _on_current_repo_add(self) -> None:
+        repo_root = self._repo_root()
+        if repo_root is None:
             return
-        label = self.new_label_edit.text().strip()
-        path = self.new_path_edit.text().strip()
-        if not label or not path:
-            QMessageBox.information(self, "Add Custom Path", "Enter both a label and a path.")
+        dialog = CustomPathEditDialog(self, repo_root=repo_root, title="Add Custom Path")
+        if not dialog.exec():
             return
+        label, path = dialog.result_values()
         custom_paths = list(self._custom_paths) + [CustomPath(id=CustomPath.new_id(), label=label, path=path)]
         self._save_custom_paths(custom_paths)
-        self.new_label_edit.clear()
-        self.new_path_edit.clear()
 
-    def _on_rename(self, index: int) -> None:
-        if not (0 <= index < len(self._custom_paths)):
+    def _on_current_repo_edit(self) -> None:
+        index = self._selected_current_repo_index()
+        if index is None:
+            return
+        repo_root = self._repo_root()
+        if repo_root is None:
             return
         current = self._custom_paths[index]
-        new_label, ok = QInputDialog.getText(self, "Rename Custom Path", "New label:", text=current.label)
-        if not ok or not new_label.strip():
+        dialog = CustomPathEditDialog(self, repo_root=repo_root, label=current.label, path=current.path, title="Edit Custom Path")
+        if not dialog.exec():
             return
+        label, path = dialog.result_values()
         custom_paths = list(self._custom_paths)
-        custom_paths[index] = CustomPath(id=current.id, label=new_label.strip(), path=current.path)
+        custom_paths[index] = CustomPath(id=current.id, label=label, path=path)
         self._save_custom_paths(custom_paths)
 
-    def _on_edit_path(self, index: int) -> None:
-        if not (0 <= index < len(self._custom_paths)):
-            return
-        current = self._custom_paths[index]
-        new_path, ok = QInputDialog.getText(self, "Edit Path", "Path relative to this repo's root:", text=current.path)
-        if not ok or not new_path.strip():
-            return
-        custom_paths = list(self._custom_paths)
-        custom_paths[index] = CustomPath(id=current.id, label=current.label, path=new_path.strip())
-        self._save_custom_paths(custom_paths)
-
-    def _on_remove(self, index: int) -> None:
-        if not (0 <= index < len(self._custom_paths)):
+    def _on_current_repo_remove(self) -> None:
+        index = self._selected_current_repo_index()
+        if index is None:
             return
         custom_paths = list(self._custom_paths)
         del custom_paths[index]
@@ -394,44 +440,57 @@ class CustomPathsSettingsPage(QWidget):
     def _save_custom_paths(self, custom_paths: list[CustomPath]) -> None:
         self.pipeline_store.set_custom_paths(self._project_id, self._repo_id, custom_paths)
         self._custom_paths = custom_paths
-        self._rebuild_rows()
+        self._rebuild_current_repo_table()
+        self._rebuild_connected_table()  # this repo's own paths also show up there
 
-    # -- "Connect Input Path" ----------------------------------------------
+    # -- "Connected Custom Path" --------------------------------------------
 
-    def _describe_connection(self, ref: RepoRef) -> str:
+    def _rebuild_connected_table(self) -> None:
+        table = self.connected_table
         try:
-            target_name = self.store.get_repo(ref.project_id, ref.repo_id).name
+            repo_name = self.store.get_repo(self._project_id, self._repo_id).name
         except NotFoundError:
-            target_name = "(deleted repo)"
-        custom_path = self.pipeline_store.get_custom_path(ref.project_id, ref.repo_id, ref.custom_path_id)
-        label = custom_path.label if custom_path is not None else "(deleted custom path)"
-        if ref.direction == "output":
-            return f"→ {target_name} — {label} (Output)"
-        return f"← {target_name} — {label} (Input)"
+            repo_name = ""
 
-    def _rebuild_connections(self) -> None:
-        while self._connections_layout.count():
-            item = self._connections_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        if not self._connections:
-            empty_row = QLabel("No connections yet.")
-            set_secondary_text(empty_row)
-            self._connections_layout.addWidget(empty_row)
-            return
+        rows: list[tuple[str, str, str, tuple]] = []
+        for custom_path in self._custom_paths:
+            rows.append((custom_path.label, repo_name, f"{repo_name}/{custom_path.path}", ("own", custom_path.id)))
         for index, ref in enumerate(self._connections):
-            row_widget = QWidget()
-            row = QHBoxLayout(row_widget)
-            row.setContentsMargins(0, 0, 0, 0)
-            row.addWidget(QLabel(self._describe_connection(ref)), stretch=1)
-            edit_button = QPushButton("Edit...")
-            edit_button.clicked.connect(lambda _checked, i=index: self._on_edit_connection(i))
-            row.addWidget(edit_button)
-            remove_button = QPushButton("Remove")
-            remove_button.clicked.connect(lambda _checked, i=index: self._on_remove_connection(i))
-            row.addWidget(remove_button)
-            self._connections_layout.addWidget(row_widget)
+            try:
+                target_name = self.store.get_repo(ref.project_id, ref.repo_id).name
+            except NotFoundError:
+                target_name = "(deleted repo)"
+            custom_path = self.pipeline_store.get_custom_path(ref.project_id, ref.repo_id, ref.custom_path_id)
+            if custom_path is not None:
+                label = custom_path.label
+                relative = f"{target_name}/{custom_path.path}"
+            else:
+                label = "(deleted custom path)"
+                relative = "—"
+            rows.append((label, target_name, relative, ("connection", index)))
+
+        table.setRowCount(len(rows))
+        for row, (name, repo, relative, tag) in enumerate(rows):
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, tag)
+            table.setItem(row, 0, name_item)
+            table.setItem(row, 1, QTableWidgetItem(repo))
+            table.setItem(row, 2, QTableWidgetItem(relative))
+        self._on_connected_selection_changed()
+
+    def _selected_connected_tag(self):
+        items = self.connected_table.selectedItems()
+        if not items:
+            return None
+        row = items[0].row()
+        name_item = self.connected_table.item(row, 0)
+        return name_item.data(Qt.UserRole) if name_item is not None else None
+
+    def _on_connected_selection_changed(self) -> None:
+        tag = self._selected_connected_tag()
+        is_connection = isinstance(tag, tuple) and tag[0] == "connection"
+        self.connected_edit_button.setEnabled(is_connection)
+        self.connected_remove_button.setEnabled(is_connection)
 
     def _run_connect_dialog(self, *, initial_ref: RepoRef | None, title: str) -> tuple[str, str, str, str] | None:
         """Shared by _on_connect (creating a new connection) and
@@ -483,7 +542,11 @@ class CustomPathsSettingsPage(QWidget):
         )
         self._save_connections(connections)
 
-    def _on_edit_connection(self, index: int) -> None:
+    def _on_edit_connection(self) -> None:
+        tag = self._selected_connected_tag()
+        if not (isinstance(tag, tuple) and tag[0] == "connection"):
+            return
+        index = tag[1]
         if not (0 <= index < len(self._connections)):
             return
         result = self._run_connect_dialog(initial_ref=self._connections[index], title="Edit Input Path")
@@ -509,7 +572,11 @@ class CustomPathsSettingsPage(QWidget):
         )
         self._save_connections(connections)
 
-    def _on_remove_connection(self, index: int) -> None:
+    def _on_remove_connection(self) -> None:
+        tag = self._selected_connected_tag()
+        if not (isinstance(tag, tuple) and tag[0] == "connection"):
+            return
+        index = tag[1]
         if not (0 <= index < len(self._connections)):
             return
         connections = list(self._connections)
@@ -519,4 +586,4 @@ class CustomPathsSettingsPage(QWidget):
     def _save_connections(self, connections: list[RepoRef]) -> None:
         self.pipeline_store.set_inputs(self._project_id, self._repo_id, connections)
         self._connections = connections
-        self._rebuild_connections()
+        self._rebuild_connected_table()

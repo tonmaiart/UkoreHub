@@ -21,7 +21,7 @@ def _wire(page: ProjectEditorPage, host: UICommandService) -> None:
 
 def register(api) -> None:
     migrate_legacy_data(api)
-    pipeline_store = PipelineStore(api.metadata)
+    pipeline_store = PipelineStore(api.metadata, api.project_plugin_config_store(PLUGIN_ID))
     page = ProjectEditorPage(
         store=api.metadata,
         local_config_store=api.local_config,

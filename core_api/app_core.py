@@ -64,6 +64,8 @@ class UkoreCore:
         assets_dir: Path,
         on_metadata_save: Callable[[str], None] | None = None,
         on_metadata_delete: Callable[[str], None] | None = None,
+        on_metadata_asset_upload: Callable[[str, Path], None] | None = None,
+        on_metadata_asset_missing: Callable[[str, Path], None] | None = None,
         on_system_config_save: Callable[[], None] | None = None,
         debug_bus: DebugLogBus | None = None,
     ):
@@ -74,6 +76,8 @@ class UkoreCore:
             assets_dir=assets_dir,
             on_save=on_metadata_save,
             on_delete=on_metadata_delete,
+            on_asset_upload=on_metadata_asset_upload,
+            on_asset_missing=on_metadata_asset_missing,
         )
         self.system_config = SystemConfigStore(
             self.data_dir / "system_config.json", on_save=on_system_config_save
