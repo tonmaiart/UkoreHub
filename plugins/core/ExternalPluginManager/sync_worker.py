@@ -10,8 +10,9 @@ from plugins.core.ExternalPluginManager.sync_engine import resolve_required_entr
 
 
 class ExternalPluginSyncWorker(QThread):
-    """Clones/pulls every External Plugins catalog entry the given repo
-    requires, sequentially — never in parallel, since two git commands
+    """Clones (if missing) / checks-for-updates (if already cloned) every
+    External Plugins catalog entry the given repo requires, sequentially —
+    never in parallel, since two git commands
     racing on the same cache/plugins/<folder> clone could corrupt it. Runs
     entirely off the main thread (see this plugin's README's "Auto-sync
     runs on a background thread"); every git call here is a plain

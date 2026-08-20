@@ -8,6 +8,7 @@ from plugins.core.ExternalPluginManager.catalog_store import CatalogEntry, Exter
 
 STATUS_CLONED = "cloned"
 STATUS_UP_TO_DATE = "up_to_date"
+STATUS_UPDATE_NEEDED = "update_needed"
 STATUS_CONFLICT = "conflict"
 STATUS_BROKEN_GIT = "broken_git"
 STATUS_ERROR = "error"
@@ -68,14 +69,21 @@ def resolve_required_entries(
 
 
 def sync_entry(git_service: GitService, plugins_root: Path, entry: CatalogEntry) -> SyncResult:
-    """Clone-if-missing / pull-if-present for one catalog entry. Never
-    forces, aborts, or discards anything — a merge conflict is left exactly
-    as git leaves it, for a dev to resolve by hand (e.g. via the settings
-    tab's existing "Open Git Directory" action) rather than being silently
-    papered over. A clone/folder already mid-merge from an earlier failed
-    sync is detected before attempting another pull() (which would just
-    fail again the same way), so it keeps reporting the same conflict
-    instead of retrying every launch."""
+    """Clone-if-missing / check-if-behind for one catalog entry. Never
+    pulls, forces, aborts, or discards anything on its own — a clone
+    already cloned locally is only ever fetched and compared against its
+    remote (STATUS_UPDATE_NEEDED when behind), never pulled automatically.
+    plugins/apply_plugins() only run once at startup, so a silent
+    background pull wouldn't even take effect until a restart anyway —
+    plugin.py's _SyncController surfaces STATUS_UPDATE_NEEDED as a Force
+    Update/Ignore popup instead, since "force update" and "restart" are the
+    same action here. A merge conflict is left exactly as git leaves it,
+    for a dev to resolve by hand (e.g. via the settings tab's existing
+    "Open Git Directory" action) rather than being silently papered over. A
+    clone/folder already mid-merge from an earlier failed sync is detected
+    before attempting another fetch (which would just fail again the same
+    way), so it keeps reporting the same conflict instead of retrying every
+    launch."""
     local_path = plugins_root / entry.folder_name
 
     if not git_service.is_cloned(local_path):
@@ -104,11 +112,17 @@ def sync_entry(git_service: GitService, plugins_root: Path, entry: CatalogEntry)
         )
 
     git_service.safe_untrack_and_clean_ignored(local_path)
-    
+
     try:
-        git_service.pull(local_path)
+        git_service.fetch(local_path)
+        ahead_behind = git_service.get_ahead_behind(local_path)
     except GitOperationError as exc:
-        if git_service.has_unresolved_merge(local_path):
-            return SyncResult(entry.id, STATUS_CONFLICT, str(exc))
         return SyncResult(entry.id, STATUS_ERROR, str(exc))
+
+    # ahead_behind is None when the local clone has no upstream configured
+    # — nothing to compare against, so treat it as up to date rather than
+    # flagging an update with no remote branch for Force Update to reset
+    # against.
+    if ahead_behind is not None and ahead_behind[1] > 0:
+        return SyncResult(entry.id, STATUS_UPDATE_NEEDED, f"{ahead_behind[1]} commit(s) behind")
     return SyncResult(entry.id, STATUS_UP_TO_DATE)

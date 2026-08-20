@@ -67,6 +67,7 @@ from core_api import (
     open_in_file_explorer,
     open_with_default_app,
     plugin_source,
+    relaunch_ukorehub_exe,
 )
 
 from plugin_api.plugin_api import PLUGIN_API_VERSION, PluginAPI, RepoContextDTO
@@ -175,6 +176,7 @@ __all__ = [
     "open_with_default_app",
     "pick_image_file",
     "plugin_source",
+    "relaunch_ukorehub_exe",
     "save_image_asset",
     "set_bold",
     "set_secondary_text",
