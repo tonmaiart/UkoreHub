@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QDir, QFile, QSize, Qt, QTimer
+from PySide6.QtCore import QDir, QFile, Qt, QTimer
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTableView,
@@ -36,14 +35,7 @@ from plugins.core.explorer.path_commit_history_panel import PathCommitHistoryPan
 COLUMN_COUNT = 5
 OPENING_POPUP_DURATION_MS = 3000
 _MAX_LAST_OPENED = 20
-NAV_ICON_SIZE = QSize(18, 18)
 _UI_FILE = Path(__file__).parent / "explorer_section.ui"
-
-
-def _apply_nav_icon(button: QPushButton, standard_icon: QStyle.StandardPixmap, fallback_text: str) -> None:
-    button.setIcon(button.style().standardIcon(standard_icon))
-    button.setIconSize(NAV_ICON_SIZE)
-    button.setToolTip(fallback_text)
 
 
 class _PaddedItemDelegate(QStyledItemDelegate):
@@ -120,20 +112,15 @@ class RepoBrowserWidget(QWidget):
         self.proxy = FileTableFilterProxy()
         self.proxy.setSourceModel(self.fs_model)
 
-        _apply_nav_icon(self.history_back_button, QStyle.SP_ArrowBack, "Back")
         self.history_back_button.setEnabled(False)
         self.history_back_button.clicked.connect(self._on_history_back)
 
-        _apply_nav_icon(self.up_button, QStyle.SP_FileDialogToParent, "Up")
         self.up_button.clicked.connect(self._on_up)
 
-        _apply_nav_icon(self.add_folder_button, QStyle.SP_FileDialogNewFolder, "New Folder")
         self.add_folder_button.clicked.connect(self._on_add_folder_clicked)
 
-        _apply_nav_icon(self.reload_button, QStyle.SP_BrowserReload, "Reload")
         self.reload_button.clicked.connect(self.reload)
 
-        _apply_nav_icon(self.open_directory_button, QStyle.SP_DirOpenIcon, "Open Directory")
         self.open_directory_button.clicked.connect(self._on_open_directory_clicked)
 
         self.breadcrumb.returnPressed.connect(self._on_breadcrumb_entered)

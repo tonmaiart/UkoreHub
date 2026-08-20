@@ -4,13 +4,18 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QFile, QSize, Qt, QTimer
+from PySide6.QtGui import QPixmap
+from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStackedWidget,
+    QTableWidget,
     QWidget,
 )
 
@@ -18,7 +23,7 @@ from core_api import APP_NAME, APP_VERSION, AppLifecycleContext, NotFoundError, 
 from interface import builtin_settings_tabs
 from interface.page_protocols import AutoSyncPage, PathFocusablePage, RefreshablePage, SetRepoPage
 from interface.settings.settings_view import SettingsDialog
-from interface.sidebar.sidebar import Sidebar
+from interface.sidebar.section_tab_list import SectionTabList
 from plugin_api import UICommandService, UIRegistryManager
 
 import subprocess
@@ -27,6 +32,23 @@ import subprocess
 # UkoreHub.exe for _relaunch_to_login (the launcher exe built at the repo
 # root by build_exe.py (UkoreHubLauncher repo)).
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Sidebar + view_stack shell, authored in Qt Designer and loaded at runtime
+# instead of being built widget-by-widget in code — same QUiLoader pattern
+# interface/repo_settings/requirements_and_plugins_page.py uses for
+# RepoSettingWindow.ui. Authored by hand in Designer (MainWindow.ui, not
+# main_window.py's own naming convention — keep the exact on-disk casing).
+# Sidebar used to be its own Sidebar(QWidget) class
+# (interface/sidebar/sidebar.py, removed) and the repo thumbnail/name used
+# to be ActiveRepoWidget (interface/sidebar/active_repo_widget.py, also
+# removed) — MainWindow now owns every widget directly, found by
+# objectName off the loaded .ui.
+_UI_FILE = Path(__file__).parent / "MainWindow.ui"
+
+# Fallback size for the repo thumbnail crop (_set_thumbnail) when
+# label_thumbnail hasn't been laid out yet (still 0x0 the first time a repo
+# is restored, since that runs before the window is ever shown/activated).
+_THUMBNAIL_FALLBACK_SIZE = QSize(230, 140)
 
 # Explicit floor rather than a computed one (minimumSizeHint() right after
 # setCentralWidget() is unreliable — layout isn't fully activated yet, and
@@ -83,7 +105,15 @@ class MainWindow(QMainWindow):
         self._active_project = None
         self._active_repo = None
         self.pages: dict[str, QWidget] = {}
-        self.sidebar: Sidebar | None = None
+        self.thumbnail_label: QLabel | None = None
+        self.repo_name_label: QLabel | None = None
+        self._thumbnail_source_pixmap: QPixmap | None = None
+        self.tab_list: SectionTabList | None = None
+        self.setting_button: QPushButton | None = None
+        # One widget per SidebarFooterActionRegistry entry, keyed by
+        # spec.key — so closeEvent can reach a plugin's own
+        # background_threads without knowing what they are.
+        self.footer_action_widgets: dict[str, QWidget] = {}
         self.view_stack: QStackedWidget | None = None
         self._section_view_index: dict[str, int] = {}
 
@@ -134,19 +164,53 @@ class MainWindow(QMainWindow):
             if spec.wire is not None:
                 spec.wire(self.pages[spec.key], command_service)
 
-        self.sidebar = Sidebar(
-            section_registry=section_registry, sidebar_footer_action_registry=self.sidebar_footer_action_registry
+        loader = QUiLoader()
+        ui_file = QFile(str(_UI_FILE))
+        ui_file.open(QFile.ReadOnly)
+        central = loader.load(ui_file, self)
+        ui_file.close()
+
+        self.thumbnail_label = central.findChild(QLabel, "label_thumbnail")
+        self.thumbnail_label.setText("")
+        self.thumbnail_label.setMinimumHeight(_THUMBNAIL_FALLBACK_SIZE.height())
+        self.repo_name_label = central.findChild(QLabel, "label_repo_name")
+        self.repo_name_label.setText("No Repo Selected")
+        self.repo_name_label.setWordWrap(True)
+
+        self.tab_list = SectionTabList(
+            central.findChild(QTableWidget, "tableWidget_tab"), section_registry=section_registry, parent=self
         )
-        self.sidebar.navigation_changed.connect(self._on_navigation_changed)
-        self.sidebar.settings_requested.connect(self._on_settings_requested)
+        self.tab_list.navigation_changed.connect(self._on_navigation_changed)
+
+        # widget_status/horizontalLayout_status (sync status label + progress
+        # bar) was dropped from the .ui — no visible home for
+        # SidebarFooterActionRegistry widgets anymore either, so their
+        # factories still run (closeEvent still needs footer_action_widgets
+        # to find a plugin's background_threads) but the resulting widget
+        # is never parented into any layout. Currently a no-op either way —
+        # nothing registers into this registry yet.
+        for spec in self.sidebar_footer_action_registry.ordered():
+            self.footer_action_widgets[spec.key] = spec.widget_factory()
+
+        # label_username was dropped from the .ui — the signed-in username
+        # is shown as pushButton_setting's own text now instead of a
+        # separate label + icon button.
+        self.setting_button = central.findChild(QPushButton, "pushButton_setting")
+        self.setting_button.setText("")
+        self.setting_button.setToolTip("Setting")
+        self.setting_button.clicked.connect(lambda: self._on_settings_requested())
 
         # Every section (including Project Editor, folded into this stack
         # like any other section as of this refactor — it used to be
         # SectionSpec.persistent=True, always visible docked beside
         # view_stack in a QSplitter rather than switched to) is its own
-        # full-width top-level page, switched to via the Sidebar's
-        # SectionTabList.
+        # full-width top-level page, switched to via the SectionTabList.
+        # widget_tab_display/horizontalLayout_tab_display is an otherwise
+        # empty placeholder in the .ui — view_stack itself is built here in
+        # code, not authored as a widget, since it's populated from
+        # SectionRegistry at runtime either way.
         self.view_stack = QStackedWidget()
+        central.findChild(QHBoxLayout, "horizontalLayout_tab_display").addWidget(self.view_stack)
         self._section_view_index = {
             spec.key: self.view_stack.addWidget(self.pages[spec.key]) for spec in section_registry.ordered()
         }
@@ -157,12 +221,6 @@ class MainWindow(QMainWindow):
         # same dialog (via UICommandService.open_settings_tab) rather than a
         # popup of its own.
 
-        central = QWidget()
-        central_layout = QHBoxLayout(central)
-        central_layout.setContentsMargins(0, 0, 0, 0)
-        central_layout.setSpacing(0)
-        central_layout.addWidget(self.sidebar)
-        central_layout.addWidget(self.view_stack, stretch=1)
         self.setCentralWidget(central)
 
         self.setMinimumHeight(MAIN_WINDOW_MIN_HEIGHT)
@@ -178,7 +236,7 @@ class MainWindow(QMainWindow):
             self.resize(self.width(), MAIN_WINDOW_MIN_HEIGHT)
 
     def _start_app(self) -> None:
-        self.sidebar.set_account_username(self.local_config_store.github_username)
+        self.setting_button.setText(self.local_config_store.github_username or "")
         self._restore_active_repo()
         self._apply_to_current_page()
         self._setup_auto_git_identity()
@@ -241,7 +299,12 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _set_status_message(self, message: str) -> None:
-        self.sidebar.set_sync_message(message)
+        # No-op — the sidebar's status label/progress bar were dropped from
+        # the .ui. Kept as a real method (not removed) since
+        # UICommandService.set_status_message is a required field plugins
+        # call unconditionally (see plugins/core/submit/plugin.py's sync
+        # start/finish/fail hooks).
+        del message
 
     def _navigate_and_focus(self, key: str, path: Path) -> None:
         # A page (e.g. Submit's "Inspect in Explorer") asking to jump to
@@ -249,7 +312,7 @@ class MainWindow(QMainWindow):
         # sidebar row + view stack to `key`, then calls that page's optional
         # browse_to_path(path) protocol method if it implements one (see
         # plugin_api/registries/section_registry.py's UICommandService).
-        self.sidebar.tab_list.select(key)
+        self.tab_list.select(key)
         self._on_navigation_changed(key)
         page = self.pages.get(key)
         if isinstance(page, PathFocusablePage):
@@ -292,7 +355,7 @@ class MainWindow(QMainWindow):
             elif plugin_id in self._opt_in_plugin_ids:
                 if plugin_id in required_ids:
                     visible_keys.add(key)
-        self.sidebar.tab_list.set_visible_keys(visible_keys)
+        self.tab_list.set_visible_keys(visible_keys)
 
         current_key = next(
             (key for key, index in self._section_view_index.items() if index == self.view_stack.currentIndex()),
@@ -302,10 +365,52 @@ class MainWindow(QMainWindow):
             # Insertion-order (registry order) fallback, same
             # determinism as _rebuild_dynamic_tabs' own fallback.
             fallback_key = next(key for key in self._section_view_index if key in visible_keys)
-            self.sidebar.tab_list.select(fallback_key)
+            self.tab_list.select(fallback_key)
             self._on_navigation_changed(fallback_key)
 
     # -- active repo -----------------------------------------------------
+
+    def _set_active_repo_labels(self, repo_name: str | None, project_name: str | None = None) -> None:
+        # Repo name only (project_name kept as a param for call-site
+        # compatibility, but no longer shown) — the sidebar used to show
+        # "Project / Repo" via ActiveRepoWidget, but that's redundant now
+        # that Project is fixed for the whole run anyway.
+        del project_name
+        self.repo_name_label.setText(repo_name or "No Repo Selected")
+
+    def _set_thumbnail(self, path: Path | None) -> None:
+        pixmap = QPixmap(str(path)) if path and Path(path).exists() else None
+        if pixmap is not None and pixmap.isNull():
+            pixmap = None
+        self._thumbnail_source_pixmap = pixmap
+        self._apply_thumbnail_crop()
+
+    def _apply_thumbnail_crop(self) -> None:
+        # Fill-crop (never letterboxed), matching the old
+        # ActiveRepoWidget/_ThumbnailBanner behavior. Re-run from
+        # resizeEvent, not just from _set_thumbnail — label_thumbnail has
+        # no real size yet the first time a repo is restored (that runs
+        # before the window is ever shown/maximized), so cropping once
+        # against a guessed fallback size left the image only filling part
+        # of the label once the real (larger) layout size kicked in.
+        if self._thumbnail_source_pixmap is None:
+            self.thumbnail_label.clear()
+            return
+        label_size = self.thumbnail_label.size()
+        if label_size.width() <= 0 or label_size.height() <= 0:
+            return
+        scaled = self._thumbnail_source_pixmap.scaled(label_size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        x = max(0, (scaled.width() - label_size.width()) // 2)
+        y = max(0, (scaled.height() - label_size.height()) // 2)
+        self.thumbnail_label.setPixmap(scaled.copy(x, y, label_size.width(), label_size.height()))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        # Guarded with getattr, not a plain None check — Qt can deliver a
+        # resizeEvent during super().__init__() itself, before
+        # thumbnail_label even exists as an attribute yet.
+        if getattr(self, "thumbnail_label", None) is not None:
+            self._apply_thumbnail_crop()
 
     def _restore_active_repo(self) -> None:
         project_id = self.local_config_store.active_project_id
@@ -320,8 +425,8 @@ class MainWindow(QMainWindow):
             return
         self._active_project = project
         self._active_repo = repo
-        self.sidebar.active_repo_widget.set_active_labels(repo.name, project.name)
-        self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(repo))
+        self._set_active_repo_labels(repo.name, project.name)
+        self._set_thumbnail(self.store.resolve_thumbnail_path(repo))
         self._apply_plugin_visibility()
 
     def _current_page(self):
@@ -348,8 +453,8 @@ class MainWindow(QMainWindow):
         self.local_config_store.set_active_repo(project_id, repo_id)
         self._active_project = self.store.get_project(project_id)
         self._active_repo = self.store.get_repo(project_id, repo_id)
-        self.sidebar.active_repo_widget.set_active_labels(self._active_repo.name, self._active_project.name)
-        self.sidebar.active_repo_widget.set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
+        self._set_active_repo_labels(self._active_repo.name, self._active_project.name)
+        self._set_thumbnail(self.store.resolve_thumbnail_path(self._active_repo))
         self._apply_plugin_visibility()
         self._apply_to_current_page()
         self._fire_repo_selected()
@@ -401,7 +506,7 @@ class MainWindow(QMainWindow):
         self._token_store.clear_token()
         self.local_config_store.set_github_username(None)
         self.local_config_store.set_github_login_at(None)
-        self.sidebar.set_account_username(None)
+        self.setting_button.setText("")
         self._relaunch_to_login()
 
     @staticmethod
@@ -467,10 +572,10 @@ class MainWindow(QMainWindow):
         # SectionSpec.background_threads, so main_window.py never needs to
         # know a section's internals.
         workers: list = []
-        if self.sidebar is not None:
+        if self.footer_action_widgets:
             for spec in self.sidebar_footer_action_registry.ordered():
                 if spec.background_threads is not None:
-                    workers.extend(spec.background_threads(self.sidebar.footer_action_widgets[spec.key]))
+                    workers.extend(spec.background_threads(self.footer_action_widgets[spec.key]))
         if self.pages:
             for spec in self.section_registry.ordered():
                 if spec.background_threads is not None:

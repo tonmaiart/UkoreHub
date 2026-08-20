@@ -5,10 +5,11 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ThemeColors:
-    """App-wide chrome now comes from qdarktheme (see theme_apply.py) — these
-    fields are only the ones custom QPainter-drawn widgets (project_graph_view.py)
-    and direct QColor/QPalette call sites still pull colors from directly,
-    to stay visually consistent with qdarktheme's own dark palette."""
+    """App-wide chrome now comes from a Fusion style + QPalette (see
+    theme_apply.py) — these fields are only the ones custom QPainter-drawn
+    widgets (project_graph_view.py) and direct QColor/QPalette call sites
+    still pull colors from directly, to stay visually consistent with the
+    app's own dark palette."""
 
     surface_alt: str
     accent: str

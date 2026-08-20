@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindowCentral</class>
+ <widget class="QWidget" name="MainWindowCentral">
+  <layout class="QHBoxLayout" name="rootLayout" stretch="0,1">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <property name="spacing"><number>0</number></property>
+   <item>
+    <widget class="QWidget" name="sidebarFrame">
+     <property name="minimumSize">
+      <size><width>230</width><height>0</height></size>
+     </property>
+     <property name="maximumSize">
+      <size><width>230</width><height>16777215</height></size>
+     </property>
+     <layout class="QVBoxLayout" name="sidebarLayout" stretch="0,1,0">
+      <property name="leftMargin"><number>0</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <property name="spacing"><number>0</number></property>
+      <item>
+       <widget class="QWidget" name="activeRepoContainer">
+        <layout class="QVBoxLayout" name="activeRepoContainerLayout">
+         <property name="leftMargin"><number>0</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>0</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <property name="spacing"><number>0</number></property>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="tabListContainer">
+        <layout class="QVBoxLayout" name="tabListContainerLayout">
+         <property name="leftMargin"><number>0</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>0</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <property name="spacing"><number>0</number></property>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="footerFrame">
+        <layout class="QVBoxLayout" name="footerLayout" stretch="0,0,0,0">
+         <property name="leftMargin"><number>10</number></property>
+         <property name="topMargin"><number>8</number></property>
+         <property name="rightMargin"><number>10</number></property>
+         <property name="bottomMargin"><number>10</number></property>
+         <property name="spacing"><number>6</number></property>
+         <item>
+          <widget class="QLabel" name="statusLabel">
+           <property name="text"><string/></property>
+           <property name="wordWrap"><bool>true</bool></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QProgressBar" name="syncProgressBar">
+           <property name="visible"><bool>false</bool></property>
+           <property name="minimum"><number>0</number></property>
+           <property name="maximum"><number>0</number></property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="footerActionsContainer">
+           <layout class="QVBoxLayout" name="footerActionsLayout">
+            <property name="leftMargin"><number>0</number></property>
+            <property name="topMargin"><number>0</number></property>
+            <property name="rightMargin"><number>0</number></property>
+            <property name="bottomMargin"><number>0</number></property>
+            <property name="spacing"><number>6</number></property>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="accountRow" stretch="1,0">
+           <item>
+            <widget class="QLabel" name="accountLabel">
+             <property name="text"><string/></property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="settingButton">
+             <property name="text"><string/></property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="viewStack">
+     <widget class="QWidget" name="viewStackPage0"/>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
