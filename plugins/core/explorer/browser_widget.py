@@ -182,7 +182,12 @@ class RepoBrowserWidget(QWidget):
         self.bookmarks_view.customContextMenuRequested.connect(self._on_bookmarks_context_menu)
 
     def browse_to_file(self, path: Path) -> None:
-        self._navigate_to(Path(path).parent)
+        path = Path(path)
+        if not path.exists():
+            QMessageBox.warning(self, "File Not Found", f"'{path.name}' no longer exists at:\n{path}")
+            return
+        self._navigate_to(path.parent)
+        self._select_file_in_table(path)
 
     def set_root(self, path: Path, *, repo_id: str, project_id: str | None = None) -> None:
         path = Path(path).resolve()

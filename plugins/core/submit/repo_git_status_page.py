@@ -479,7 +479,16 @@ class RepoGitStatusPage(QWidget):
             entry=self._commit_log_entries[row],
             on_browse_file=self.browse_file_requested.emit,
         )
+        # WA_DeleteOnClose destroys the underlying C++ object as soon as the
+        # dialog is closed (including via the window's own X button), but
+        # this Python attribute would otherwise keep pointing at it — the
+        # next double-click's .close() call above would then raise on the
+        # already-deleted object and never reach dialog creation.
+        self._commit_files_dialog.finished.connect(self._on_commit_files_dialog_finished)
         self._commit_files_dialog.show()
+
+    def _on_commit_files_dialog_finished(self) -> None:
+        self._commit_files_dialog = None
 
     def _on_repo_website_clicked(self) -> None:
         if self._repo is None:
