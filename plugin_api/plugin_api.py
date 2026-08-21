@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -28,6 +29,8 @@ from plugin_api.registries.sidebar_footer_action_registry import SidebarFooterAc
 from plugin_api.registries.ui_registry_manager import UIRegistryManager
 
 PLUGIN_API_VERSION = 1
+
+_cloud_sync_logger = logging.getLogger("CloudSync")
 
 
 @dataclass(frozen=True)
@@ -183,11 +186,15 @@ class PluginAPI:
         )
 
     @property
-    def debug_bus(self):
-        """The shared debug-log bus (core/events/debug_log.py's DebugLogBus)
-        — call .log(source, message) to publish an entry, consumed live by
-        plugins/core/DebugConsole/'s viewer page."""
-        return self._core.debug_bus
+    def debug_log_handler(self):
+        """The shared interface_api.QtLogHandler instance
+        plugins/core/DebugConsole/'s viewer page reads/subscribes to — or
+        None if no QApplication/launcher.py wiring exists (e.g. a bare test
+        construction). Not meant for general plugin use: just call
+        `logging.getLogger("YourPlugin").info(...)` directly instead, no api
+        needed at all — this property exists solely for DebugConsole
+        itself."""
+        return self._core.debug_log_handler
 
     @property
     def file_opener_registry(self) -> FileOpenerRegistry:
@@ -274,26 +281,26 @@ class PluginAPI:
         if self._cloud_sync is not None:
             try:
                 self._cloud_sync.pull(blob_name, json_path)
-                self._core.debug_bus.log("CloudSync", f"pulled '{blob_name}'")
+                _cloud_sync_logger.info(f"pulled '{blob_name}'")
             except Exception as exc:
                 # Same "never block on a cloud problem" rule as launcher.py's
                 # startup pull — a timeout/auth failure here shouldn't stop
                 # plugin registration, which runs synchronously at startup.
                 print(f"UkoreHub: cloud pull of '{blob_name}' failed ({exc}) — using local copy.")
-                self._core.debug_bus.log("CloudSync", f"pull of '{blob_name}' failed ({exc}) — using local copy")
+                _cloud_sync_logger.warning(f"pull of '{blob_name}' failed ({exc}) — using local copy")
 
         def _push_plugin_blob() -> None:
             if self._cloud_sync is None:
                 return
             try:
                 self._cloud_sync.push(blob_name, json_path)
-                self._core.debug_bus.log("CloudSync", f"pushed '{blob_name}'")
+                _cloud_sync_logger.info(f"pushed '{blob_name}'")
             except ConflictError as exc:
-                self._core.debug_bus.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
+                _cloud_sync_logger.warning(f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
                 raise
             except Exception as exc:
                 print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
-                self._core.debug_bus.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+                _cloud_sync_logger.warning(f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
         return PluginConfigStore(json_path, on_save=_push_plugin_blob)
 

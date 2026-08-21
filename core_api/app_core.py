@@ -2,7 +2,7 @@
 
 Collects the objects launcher.py used to construct one at a time
 (MetadataStore, SystemConfigStore, LocalConfigStore, AppLifecycleHooks,
-GitService, SecureTokenStore x2, DebugLogBus) behind a
+GitService, SecureTokenStore x2) behind a
 single object, so MainWindow/PluginAPI each take one `core` param instead
 of wiring each service individually.
 
@@ -25,13 +25,17 @@ UKOREHUB_R2_* env vars, replaces the old per-artist Google OAuth token),
 so unlike GitHub's SecureTokenStore below, no analogous token store exists
 for cloud sync at all.
 
-debug_bus is accepted as an optional constructor param rather than always
-built internally, because launcher.py needs a debug bus *before* UkoreCore
-can be constructed (the cloud-bootstrap pull sequence that determines
-system_config's bucket name runs first, and already logs to it). When not
-supplied (the common case, and every case in tests), a fresh instance is
-built here instead — same optional-injection shape `on_save` already
-uses.
+debug_log_handler is accepted as an optional constructor param — it's
+launcher.py's interface_api.QtLogHandler instance (a QObject, so this
+module deliberately types it loosely as `object` rather than importing
+interface_api and inverting the established core_api -> interface_api
+dependency direction). Passed in rather than built here because
+launcher.py needs to log *before* UkoreCore can be constructed (the
+cloud-bootstrap pull sequence that determines system_config's bucket name
+runs first) and, unlike the old DebugLogBus, a QtLogHandler needs PySide6
+and a live QApplication — neither of which core_api may construct itself.
+When not supplied (e.g. a bare test construction), it's simply None; see
+plugin_api's debug_log_handler property.
 
 Lives in app/core_api/ (not app/core/) since app/core/ is closed — nothing
 outside app/core/ and app/core_api/ may import core.* directly (see
@@ -46,8 +50,6 @@ from pathlib import Path
 from typing import Callable
 
 from core.auth.token_store import SecureTokenStore
-from core.events.bus import InMemoryEventBus
-from core.events.debug_log import DebugLogBus
 from core.events.hooks import AppLifecycleHooks
 from core.models import Project, Repo
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
@@ -67,7 +69,7 @@ class UkoreCore:
         on_metadata_asset_upload: Callable[[str, Path], None] | None = None,
         on_metadata_asset_missing: Callable[[str, Path], None] | None = None,
         on_system_config_save: Callable[[], None] | None = None,
-        debug_bus: DebugLogBus | None = None,
+        debug_log_handler: object | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.cache_dir = Path(cache_dir)
@@ -88,7 +90,7 @@ class UkoreCore:
         self.github_tokens = SecureTokenStore(
             "UkoreHub", "github_access_token", self.cache_dir / "github_token.json", token_label="GitHub"
         )
-        self.debug_bus: InMemoryEventBus = debug_bus or DebugLogBus(max_entries=1000)
+        self.debug_log_handler = debug_log_handler
 
     def get_active_workspace(self) -> tuple[Project | None, Repo | None]:
         """The Project/Repo local_config currently points at, or (None, None)

@@ -39,6 +39,7 @@ re-export above the main_window/builtin_settings_tabs imports, not below.
 from __future__ import annotations
 
 from interface.project_selector_dialog import ProjectSelectorDialog
+from interface.qt_log_handler import QtLogHandler, configure_app_logging
 from interface.repo_settings.local_repository_page import LOCAL_REPOSITORY
 from interface.shared.commit_history import (
     CommitCard,
@@ -67,9 +68,11 @@ __all__ = [
     "LOCAL_REPOSITORY",
     "MainWindow",
     "ProjectSelectorDialog",
+    "QtLogHandler",
     "RequirementsTreeWidget",
     "apply_theme",
     "confirm_action",
+    "configure_app_logging",
     "fetch_entries_via_github",
     "format_commit_date",
     "format_relative_time",

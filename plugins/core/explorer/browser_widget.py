@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 from typing import Callable
@@ -37,6 +38,8 @@ OPENING_POPUP_DURATION_MS = 3000
 _MAX_LAST_OPENED = 20
 _UI_FILE = Path(__file__).parent / "explorer_section.ui"
 
+logger = logging.getLogger("Explorer")
+
 
 class _PaddedItemDelegate(QStyledItemDelegate):
     """4px left/right item padding for the column list widgets below —
@@ -65,10 +68,8 @@ class RepoBrowserWidget(QWidget):
         open_file: Callable[[Path], None] | None = None,
         cache_dir: Path | None = None,
         metadata_store: MetadataStore | None = None,
-        debug_bus=None,
     ):
         super().__init__(parent)
-        self._debug_bus = debug_bus
         self._cache_dir = cache_dir
         self._metadata_store = metadata_store
         self._open_file = open_file or open_with_default_app
@@ -277,8 +278,7 @@ class RepoBrowserWidget(QWidget):
         try:
             path.relative_to(self._root)
         except ValueError:
-            if self._debug_bus:
-                self._debug_bus.log("Explorer", f"[WARN] Path {path} is outside root {self._root}. Falling back to root.")
+            logger.warning(f"Path {path} is outside root {self._root}. Falling back to root.")
             path = self._root
 
         if _record_history and self._current_path is not None and path != self._current_path:
@@ -292,11 +292,9 @@ class RepoBrowserWidget(QWidget):
         source_index = self.fs_model.index(posix_path)
         proxy_index = self.proxy.mapFromSource(source_index)
 
-        if self._debug_bus:
-            self._debug_bus.log(
-                "Explorer",
-                f"_navigate_to: {posix_path} | source_valid={source_index.isValid()} | proxy_valid={proxy_index.isValid()}",
-            )
+        logger.debug(
+            f"_navigate_to: {posix_path} | source_valid={source_index.isValid()} | proxy_valid={proxy_index.isValid()}"
+        )
 
         if proxy_index.isValid():
             self.table.setRootIndex(proxy_index)
@@ -313,8 +311,7 @@ class RepoBrowserWidget(QWidget):
 
             if proxy_index.isValid():
                 self.table.setRootIndex(proxy_index)
-                if self._debug_bus:
-                    self._debug_bus.log("Explorer", f"directoryLoaded success: {path_str}")
+                logger.debug(f"directoryLoaded success: {path_str}")
             elif source_index.isValid():
                 self.table.setRootIndex(self.proxy.mapFromSource(source_index))
 

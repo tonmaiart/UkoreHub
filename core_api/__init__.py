@@ -25,7 +25,6 @@ never imports it either).
 from __future__ import annotations
 
 from core.auth.github_auth import fetch_avatar_bytes
-from core.events.debug_log import DebugLogBus, DebugLogEntry
 from core.events.hooks import AppLifecycleContext, AppLifecycleHandler
 from core.exceptions import (
     ConflictError,
@@ -64,8 +63,6 @@ __all__ = [
     "AppLifecycleContext",
     "AppLifecycleHandler",
     "ConflictError",
-    "DebugLogBus",
-    "DebugLogEntry",
     "DiscoveredPlugin",
     "FileChange",
     "FileOpenerRegistry",

@@ -16,7 +16,6 @@ def register(api) -> None:
         cache_dir=api.cache_dir,
         api=api,
     )
-    api.debug_bus.register_source("Explorer")
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,

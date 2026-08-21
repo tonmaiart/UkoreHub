@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -198,7 +199,6 @@ def main() -> None:
 
     from core_api import (
         ConflictError,
-        DebugLogBus,
         FileOpenerRegistry,
         UkoreCore,
         apply_plugins,
@@ -208,7 +208,13 @@ def main() -> None:
         read_project_ids,
         relaunch_ukorehub_exe,
     )
-    from interface_api import MainWindow, apply_theme, register_builtin_settings_tabs
+    from interface_api import (
+        MainWindow,
+        QtLogHandler,
+        apply_theme,
+        configure_app_logging,
+        register_builtin_settings_tabs,
+    )
     from plugin_api import (
         PLUGIN_API_VERSION,
         PluginAPI,
@@ -218,6 +224,13 @@ def main() -> None:
         SidebarFooterActionRegistry,
         UIRegistryManager,
     )
+
+    # Constructed as early as possible (right after these imports resolve,
+    # before anything below has a chance to log) so every logging.getLogger(...)
+    # call anywhere in the app — including the cloud-bootstrap block right
+    # below — shows up live in DebugConsole.
+    qt_log_handler = QtLogHandler(max_entries=1000)
+    configure_app_logging(qt_log_handler)
 
     data_dir = DATA_DIR
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -246,13 +259,7 @@ def main() -> None:
     cache_dir = CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # debug_bus is built here, before UkoreCore exists, because the
-    # cloud-bootstrap block right below already needs to log to it —
-    # UkoreCore itself can't be constructed yet at this point
-    # (SystemConfigStore's bucket name isn't known until after the cloud
-    # pull completes). Passed into UkoreCore(...) further down so it isn't
-    # built twice.
-    debug_bus = DebugLogBus(max_entries=1000)
+    cloud_sync_logger = logging.getLogger("CloudSync")
 
     # projects.json, system_config.json, and programs.json are shared
     # studio-wide via Cloudflare R2 (core/vcs/cloud_sync.py), not git —
@@ -271,25 +278,25 @@ def main() -> None:
     cloud_sync = _build_cloud_sync(data_dir, appdata_dir)
     if cloud_sync is None:
         print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
-        debug_bus.log("CloudSync", "not configured on this machine — shared data stays local-only")
+        cloud_sync_logger.warning("not configured on this machine — shared data stays local-only")
     else:
         try:
             for blob_name in ("projects.json", "programs.json", "system_config.json"):
                 cloud_sync.pull(blob_name, data_dir / blob_name)
-                debug_bus.log("CloudSync", f"pulled '{blob_name}'")
+                cloud_sync_logger.info(f"pulled '{blob_name}'")
             project_ids = read_project_ids(data_dir / "projects.json")
             if project_ids is not None:
                 for project_id in project_ids:
                     blob_name = f"projects/{project_id}.json"
                     cloud_sync.pull(blob_name, data_dir / "projects" / f"{project_id}.json")
-                    debug_bus.log("CloudSync", f"pulled '{blob_name}'")
+                    cloud_sync_logger.info(f"pulled '{blob_name}'")
         except Exception as exc:
             # Revoked/rotated R2 key, no network, bucket not reachable,
             # etc. — never block the app from opening over a cloud problem;
             # fall back to local-only for this run, same as "not configured
             # at all".
             print(f"UkoreHub: cloud sync unavailable this run ({exc}) — shared data stays local-only.")
-            debug_bus.log("CloudSync", f"unavailable this run ({exc}) — shared data stays local-only")
+            cloud_sync_logger.warning(f"unavailable this run ({exc}) — shared data stays local-only")
             cloud_sync = None
 
     def _push_shared_blob(blob_name: str) -> None:
@@ -297,11 +304,11 @@ def main() -> None:
             return
         try:
             cloud_sync.push(blob_name, data_dir / blob_name)
-            debug_bus.log("CloudSync", f"pushed '{blob_name}'")
+            cloud_sync_logger.info(f"pushed '{blob_name}'")
         except ConflictError as exc:
             # Meaningful to the caller (a real conflicting edit elsewhere) —
             # let it propagate so the UI can tell the artist and reload.
-            debug_bus.log("CloudSync", f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
+            cloud_sync_logger.warning(f"push of '{blob_name}' conflicted ({exc}) — reloaded latest")
             raise
         except Exception as exc:
             # Timeout, no network, revoked login, etc. — the local save
@@ -309,7 +316,7 @@ def main() -> None:
             # don't fail the whole edit over a transient cloud problem;
             # just warn. The next successful save catches this file back up.
             print(f"UkoreHub: cloud push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
-            debug_bus.log("CloudSync", f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+            cloud_sync_logger.warning(f"push of '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
     def _delete_shared_blob(blob_name: str) -> None:
         # Only used by MetadataStore.delete_project, to clean up a removed
@@ -321,10 +328,10 @@ def main() -> None:
             return
         try:
             cloud_sync.delete(blob_name)
-            debug_bus.log("CloudSync", f"deleted '{blob_name}'")
+            cloud_sync_logger.info(f"deleted '{blob_name}'")
         except Exception as exc:
             print(f"UkoreHub: cloud delete of '{blob_name}' failed ({exc}) — it may linger in the bucket.")
-            debug_bus.log("CloudSync", f"delete of '{blob_name}' failed ({exc}) — it may linger in the bucket")
+            cloud_sync_logger.warning(f"delete of '{blob_name}' failed ({exc}) — it may linger in the bucket")
 
     def _push_asset(blob_name: str, local_path: Path) -> None:
         # Thumbnails/program icons: last-write-wins is fine (no structural
@@ -337,10 +344,10 @@ def main() -> None:
             return
         try:
             cloud_sync.push(blob_name, local_path)
-            debug_bus.log("CloudSync", f"pushed asset '{blob_name}'")
+            cloud_sync_logger.info(f"pushed asset '{blob_name}'")
         except Exception as exc:
             print(f"UkoreHub: cloud push of asset '{blob_name}' failed ({exc}) — local copy saved, not yet synced.")
-            debug_bus.log("CloudSync", f"push of asset '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
+            cloud_sync_logger.warning(f"push of asset '{blob_name}' failed ({exc}) — local copy saved, not yet synced")
 
     def _pull_asset(blob_name: str, local_path: Path) -> None:
         # Best-effort lazy pull, called by resolve_thumbnail_path/
@@ -352,9 +359,9 @@ def main() -> None:
             return
         try:
             cloud_sync.pull(blob_name, local_path)
-            debug_bus.log("CloudSync", f"pulled asset '{blob_name}'")
+            cloud_sync_logger.info(f"pulled asset '{blob_name}'")
         except Exception as exc:
-            debug_bus.log("CloudSync", f"pull of asset '{blob_name}' failed ({exc}) — leaving it unset")
+            cloud_sync_logger.warning(f"pull of asset '{blob_name}' failed ({exc}) — leaving it unset")
 
     core = UkoreCore(
         data_dir=data_dir,
@@ -365,7 +372,7 @@ def main() -> None:
         on_metadata_asset_upload=_push_asset,
         on_metadata_asset_missing=_pull_asset,
         on_system_config_save=lambda: _push_shared_blob("system_config.json"),
-        debug_bus=debug_bus,
+        debug_log_handler=qt_log_handler,
     )
     store = core.metadata
     system_config_store = core.system_config
@@ -475,6 +482,26 @@ def main() -> None:
         api_version=PLUGIN_API_VERSION,
     )
 
+    # "repo" (cache/plugins/, each its own separate git clone — see
+    # plugin_source() below) plugins are far more likely to break than a
+    # bundled "core" one, so their load/register results get their own
+    # DebugConsole source — same logger ExternalPluginManager's own
+    # plugin.py already uses for its sync status, so both show up together.
+    plugin_loader_logger = logging.getLogger("PluginLoader")
+    external_plugin_logger = logging.getLogger("ExternalPluginManager")
+
+    def _is_repo_plugin_dir(dir_path: Path) -> bool:
+        # Same check as core/extensibility/loader.py's plugin_source(), just
+        # against a bare dir_path (PluginLoadFailure has no DiscoveredPlugin
+        # to call plugin_source() on — discovery can fail before a manifest
+        # is even read).
+        parent = dir_path.parent
+        return parent.name == "plugins" and parent.parent.name == "cache"
+
+    for failure in discovery.failures:
+        logger = external_plugin_logger if _is_repo_plugin_dir(failure.dir_path) else plugin_loader_logger
+        logger.error(f"plugin at '{failure.dir_path}' failed to load: {failure.reason}")
+
     registries = UIRegistryManager(
         sections=SectionRegistry(),
         settings_tabs=SettingsTabRegistry(),
@@ -509,11 +536,15 @@ def main() -> None:
     # contributed — section_key_to_plugin_id below is what
     # MainWindow._apply_plugin_visibility uses for per-repo Plugin gating
     # (Settings > Repo > Requirements & Plugins).
-    plugin_apply_failures: list = []
     section_key_to_plugin_id: dict[str, str] = {}
     for plugin in discovery.loaded:
         keys_before = registries.sections.keys()
-        plugin_apply_failures += apply_plugins([plugin], plugin_api)
+        apply_result = apply_plugins([plugin], plugin_api)
+        logger = external_plugin_logger if plugin_source(plugin) == "repo" else plugin_loader_logger
+        if apply_result:
+            logger.error(f"{plugin.manifest.id}: register(api) failed — {apply_result[0].reason}")
+        else:
+            logger.info(f"{plugin.manifest.id}: registered successfully")
         for key in registries.sections.keys() - keys_before:
             section_key_to_plugin_id[key] = plugin.manifest.id
 
@@ -530,10 +561,6 @@ def main() -> None:
     opt_in_plugin_ids = {
         plugin.manifest.id for plugin in discovery.loaded if plugin_source(plugin) == "repo"
     }
-
-    plugin_failures = discovery.failures + plugin_apply_failures
-    for failure in plugin_failures:
-        print(f"UkoreHub: plugin at '{failure.dir_path}' failed to load: {failure.reason}")
 
     window = MainWindow(
         core,

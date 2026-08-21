@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable
 
@@ -15,6 +16,8 @@ from plugin_api import (
     show_exclusive,
 )
 from plugins.core.explorer.browser_widget import RepoBrowserWidget
+
+logger = logging.getLogger("Explorer")
 
 
 class RepoBrowserPage(QWidget):
@@ -44,7 +47,6 @@ class RepoBrowserPage(QWidget):
             git_service=git_service,
             open_file=self._open_file,
             cache_dir=cache_dir,
-            debug_bus=api.debug_bus if api else None,
             metadata_store=api.metadata if api else None,
         )
 
@@ -75,12 +77,10 @@ class RepoBrowserPage(QWidget):
 
         abs_path = (Path(workspace_root) / repo.local_path).resolve()
 
-        if self._api and self._api.debug_bus:
-            self._api.debug_bus.log("Explorer", f"set_repo: {repo.name} -> {abs_path}")
+        logger.info(f"set_repo: {repo.name} -> {abs_path}")
 
         if not abs_path.exists() or not (abs_path / ".git").exists():
-            if self._api and self._api.debug_bus:
-                self._api.debug_bus.log("Explorer", f"[WARN] Repo not cloned or missing .git at {abs_path}")
+            logger.warning(f"Repo not cloned or missing .git at {abs_path}")
             self._last_repo_id = None
             show_exclusive(self.not_cloned_label, self.empty_label, self.browser)
             return

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,8 @@ from plugins.core.ExternalPluginManager.last_check_store import LastCheckedStore
 from plugins.core.ExternalPluginManager.sync_engine import PERSISTENT_STATUSES
 from plugins.core.ExternalPluginManager.sync_status_store import ExternalPluginSyncStatusStore
 from plugins.core.ExternalPluginManager.sync_worker import ExternalPluginSyncWorker
+
+logger = logging.getLogger("ExternalPluginManager")
 
 PLUGIN_ID = "external_plugins"
 
@@ -125,7 +128,7 @@ class _SyncController:
             self.last_check_store.clear(entry_id)
 
         detail = f" — {message}" if message else ""
-        self._api.debug_bus.log("ExternalPluginManager", f"{entry_id}: {status}{detail}")
+        logger.info(f"{entry_id}: {status}{detail}")
 
     def _on_backfill_ready(self, entry_id: str, plugin_id: str) -> None:
         self.catalog.update_plugin_id(entry_id, plugin_id)

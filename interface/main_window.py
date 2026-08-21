@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -260,7 +261,9 @@ class MainWindow(QMainWindow):
 
                 if not current_name:
                     self.git_service.set_user_identity(context.repo_path, github_username, email)
-                    self._core.debug_bus.log("GitIdentity", f"Auto-configured git identity for {context.repo.name}: {github_username}")
+                    logging.getLogger("GitIdentity").info(
+                        f"Auto-configured git identity for {context.repo.name}: {github_username}"
+                    )
 
         # ผูกการทำงานเข้ากับ Hook ของระบบ
         self.hook_registry.subscribe_app_start(apply_identity)

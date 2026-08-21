@@ -9,7 +9,11 @@ SECTION_KEY = "debug_console"
 
 
 def register(api) -> None:
-    page = DebugConsolePage(debug_bus=api.debug_bus)
+    if api.debug_log_handler is None:
+        # No QApplication/launcher.py logging wiring (e.g. a bare
+        # UkoreCore() test construction) — nothing for this page to show.
+        return
+    page = DebugConsolePage(handler=api.debug_log_handler)
     api.register_section(
         SectionSpec(
             key=SECTION_KEY,
