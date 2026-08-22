@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QSize, Qt, QTimer
+from PySide6.QtCore import QFile, QSize, Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from core_api import APP_NAME, APP_VERSION, AppLifecycleContext, NotFoundError, UkoreCore, relaunch_ukorehub_exe
 from interface import builtin_settings_tabs
-from interface.page_protocols import AutoSyncPage, PathFocusablePage, RefreshablePage, SetRepoPage
+from interface.page_protocols import PathFocusablePage, RefreshablePage, SetRepoPage
 from interface.settings.settings_view import SettingsDialog
 from interface.sidebar.section_tab_list import SectionTabList
 from plugin_api import UICommandService, UIRegistryManager
@@ -241,7 +241,6 @@ class MainWindow(QMainWindow):
         self._restore_active_repo()
         self._apply_to_current_page()
         self._setup_auto_git_identity()
-        QTimer.singleShot(0, self._start_auto_sync)
         self._fire_app_started()
 
     def _setup_auto_git_identity(self) -> None:
@@ -461,7 +460,6 @@ class MainWindow(QMainWindow):
         self._apply_plugin_visibility()
         self._apply_to_current_page()
         self._fire_repo_selected()
-        self._start_auto_sync()
 
     def _fire_repo_selected(self) -> None:
         if not self.local_config_store.workspace_root:
@@ -477,25 +475,6 @@ class MainWindow(QMainWindow):
         self.hook_registry.fire_app_start(
             AppLifecycleContext(project=self._active_project, repo=self._active_repo, repo_path=repo_path)
         )
-
-    def _start_auto_sync(self) -> None:
-        """Clone/pull the active repo. Runs on every "Select Repo..." pick and
-        again on every app launch, so the working copy is always up to date
-        without the user having to remember to sync manually. Calls the
-        optional AutoSyncPage protocol method (interface/page_protocols.py)
-        on whichever registered page(s) implement it — today, just Submit —
-        rather than hardcoding a specific page type."""
-        if self._active_repo is None or self._active_project is None:
-            return
-        workspace_root = self.local_config_store.workspace_root
-        if not workspace_root:
-            QMessageBox.information(
-                self, "Select Repo", "Set a workspace folder in Setting > Common first."
-            )
-            return
-        for page in self.pages.values():
-            if isinstance(page, AutoSyncPage):
-                page.sync_active_repo(self._active_project, self._active_repo, workspace_root)
 
     # -- GitHub logout ----------------------------------------------------
 

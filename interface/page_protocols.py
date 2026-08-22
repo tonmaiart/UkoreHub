@@ -5,13 +5,13 @@ from typing import Protocol, runtime_checkable
 
 from core_api import Project, Repo
 
-# Three small, single-method Protocols instead of one combined one — a
-# page implements any subset of these (see main_window.py's three call
-# sites, isinstance-checked independently), never all three at once. A
-# single Protocol with all three methods would require isinstance() to
+# Small, single-method Protocols instead of one combined one — a page
+# implements any subset of these (see main_window.py's per-protocol call
+# sites, isinstance-checked independently), never all of them at once. A
+# single Protocol with all these methods would require isinstance() to
 # see every one of them before matching, which would break every page
 # that only implements one (e.g. Explorer's RepoBrowserPage implements
-# set_repo + browse_to_path but not sync_active_repo).
+# set_repo + browse_to_path but not refresh_content).
 #
 # These stay optional-per-page on purpose: making any of them mandatory
 # was tried and reverted after it crashed pages with no notion of "active
@@ -38,16 +38,6 @@ class PathFocusablePage(Protocol):
     "Inspect in Explorer")."""
 
     def browse_to_path(self, path: Path) -> None: ...
-
-
-@runtime_checkable
-class AutoSyncPage(Protocol):
-    """Wants to run its own clone/pull when the app auto-syncs the active
-    repo — called by interface/main_window.py's _start_auto_sync on every
-    "Select Repo..." pick and app launch, for every registered page that
-    implements it (today, just Submit)."""
-
-    def sync_active_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None: ...
 
 
 @runtime_checkable

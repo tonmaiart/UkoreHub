@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import webbrowser
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QFile, QSize, QTimer, Qt, Signal
@@ -57,6 +58,9 @@ FRESHNESS_WINDOW_MS = 10 * 60 * 1000
 COMMIT_LOG_POLL_INTERVAL_MS = 30 * 60 * 1000
 _STATUS_DOT_SIZE = 14
 _UI_FILE = Path(__file__).resolve().parent / "submit_section.ui"
+# Commit-history panels' merged Time column: relative ("3 days ago") inside
+# this window, absolute date ("15 Jan 2024") beyond it.
+_RELATIVE_TIME_CUTOFF_DAYS = 7
 
 # FileChange.change_type -> what the Modified column shows.
 _CHANGE_TYPE_LABELS = {
@@ -72,6 +76,24 @@ _CHANGE_TYPE_LABELS = {
 # item, so display formatting/sorting never has to be reverse-parsed.
 _PATH_ROLE = Qt.UserRole + 1
 _CHANGE_TYPE_ROLE = Qt.UserRole + 2
+
+
+def _format_commit_time(raw: str) -> str:
+    """format_relative_time ("3 days ago") within _RELATIVE_TIME_CUTOFF_DAYS,
+    otherwise format_commit_date ("15 Jan 2024") — the commit-history
+    panels' merged Time column replaces what used to be separate Time
+    Ago/Date columns with whichever of the two is more useful at a glance
+    for how old the commit is."""
+    if not raw:
+        return raw
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return format_relative_time(raw)
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+    if (now - dt).days < _RELATIVE_TIME_CUTOFF_DAYS:
+        return format_relative_time(raw)
+    return format_commit_date(raw)
 
 
 def _load_ui_form(parent: QWidget | None = None) -> QWidget:
@@ -112,7 +134,7 @@ class RepoGitStatusPage(QWidget):
         self._revert_worker: GitStreamWorker | None = None
         self._diagnostics_worker: GitStreamWorker | None = None
         self._commit_log_worker: CommitLogWorker | None = None
-        self._commit_log_entries: list[CommitHistoryEntry] = []
+        self._commit_log_entries: dict[str, list[CommitHistoryEntry]] = {"local": [], "new": []}
         self._commit_log_avatar_cache: dict[str, bytes | None] = {}
         self._commit_files_dialog: CommitFilesDialog | None = None
         self._last_status: RepoStatus | None = None
@@ -171,7 +193,8 @@ class RepoGitStatusPage(QWidget):
         self.table_git_status: QTableView = find(QTableView, "tableView_git_status")
         self.table_modified: QTableView = find(QTableView, "tableView_modified")
         self.table_staged: QTableView = find(QTableView, "tableView_staged")
-        self.table_commit_history: QTableView = find(QTableView, "tableView_commit_history")
+        self.table_local_commit_history: QTableView = find(QTableView, "tableView_local_commit_history")
+        self.table_new_commit_history: QTableView = find(QTableView, "tableView_new_commit_history")
 
         self.revert_button: QPushButton = find(QPushButton, "pushButton_revert")
         self.stage_button: QPushButton = find(QPushButton, "pushButton_stage")
@@ -196,9 +219,15 @@ class RepoGitStatusPage(QWidget):
             table.setContextMenuPolicy(Qt.CustomContextMenu)
             table.customContextMenuRequested.connect(lambda pos, t=table: self._show_inspect_menu(t, pos))
             header = table.horizontalHeader()
-            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            # Interactive (not ResizeToContents) so these start out wider
+            # than their content and the user can still drag them further —
+            # ResizeToContents would keep shrinking File Name/Modified back
+            # down to fit whatever's currently in the table.
+            header.setSectionResizeMode(0, QHeaderView.Interactive)
             header.setSectionResizeMode(1, QHeaderView.Stretch)
-            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.Interactive)
+            table.setColumnWidth(0, 240)
+            table.setColumnWidth(2, 110)
 
         self.git_status_model = QStandardItemModel(0, 3, self)
         self.git_status_model.setHorizontalHeaderLabels(["Name", "Detail", "Status"])
@@ -211,17 +240,8 @@ class RepoGitStatusPage(QWidget):
         status_header.setSectionResizeMode(1, QHeaderView.Stretch)
         status_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
 
-        self.commit_log_model = QStandardItemModel(0, 5, self)
-        self.commit_log_model.setHorizontalHeaderLabels(["", "Author", "Message", "Time Ago", "Date"])
-        self.table_commit_history.setModel(self.commit_log_model)
-        self.table_commit_history.setSelectionMode(QAbstractItemView.NoSelection)
-        self.table_commit_history.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table_commit_history.verticalHeader().setVisible(False)
-        self.table_commit_history.setIconSize(QSize(20, 20))
-        history_header = self.table_commit_history.horizontalHeader()
-        history_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        history_header.setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table_commit_history.doubleClicked.connect(self._on_commit_row_double_clicked)
+        self.local_commit_log_model = self._setup_commit_log_table(self.table_local_commit_history, "local")
+        self.new_commit_log_model = self._setup_commit_log_table(self.table_new_commit_history, "new")
 
         self.sync_button.clicked.connect(self.start_sync)
         self.refresh_button.clicked.connect(self.refresh_status)
@@ -231,6 +251,24 @@ class RepoGitStatusPage(QWidget):
         self.submit_all_staged_button.clicked.connect(self._on_submit_all_staged_clicked)
         self.local_dir_button.clicked.connect(self._on_local_dir_clicked)
         self.repo_website_button.clicked.connect(self._on_repo_website_clicked)
+
+    def _setup_commit_log_table(self, table: QTableView, entries_key: str) -> QStandardItemModel:
+        """Shared setup for tableView_local_commit_history/
+        tableView_new_commit_history — same 4-column layout and behavior,
+        differing only in which half of self._commit_log_entries a
+        double-click looks the row up in."""
+        model = QStandardItemModel(0, 4, self)
+        model.setHorizontalHeaderLabels(["", "Author", "Message", "Time"])
+        table.setModel(model)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.setIconSize(QSize(20, 20))
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        table.doubleClicked.connect(lambda index, key=entries_key: self._on_commit_row_double_clicked(key, index))
+        return model
 
     def set_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
         self._project = project
@@ -243,13 +281,6 @@ class RepoGitStatusPage(QWidget):
             return
         show_exclusive(self.content_widget, self.empty_label)
         self.refresh_status()
-
-    def sync_active_repo(self, project: Project | None, repo: Repo | None, workspace_root: str | None) -> None:
-        """Optional MainWindow generic-startup protocol — see
-        interface/main_window.py's _start_auto_sync, which calls this on
-        whichever registered page(s) implement it (today: just this one)."""
-        self.set_repo(project, repo, workspace_root)
-        self.start_sync()
 
     def _dest_path(self) -> Path:
         return Path(self._workspace_root) / self._repo.local_path
@@ -274,8 +305,8 @@ class RepoGitStatusPage(QWidget):
     def refresh_status(self) -> None:
         if self._repo is None or self._workspace_root is None:
             return
-        # Every refresh (Sync, Refresh Status, repo switch/auto-sync — the
-        # only triggers this dot reacts to) starts out "loading" until the
+        # Every refresh (Sync, Refresh Status, repo switch — the only
+        # triggers this dot reacts to) starts out "loading" until the
         # new check reports back, so the dot never shows a stale/wrong-repo
         # color while a fresh one is in flight.
         self._freshness_timer.stop()
@@ -439,9 +470,16 @@ class RepoGitStatusPage(QWidget):
         self._commit_log_worker.entries_ready.connect(self._on_commit_log_ready)
         self._commit_log_worker.start()
 
-    def _on_commit_log_ready(self, entries: list[CommitHistoryEntry]) -> None:
-        self._commit_log_entries = entries
-        self.commit_log_model.removeRows(0, self.commit_log_model.rowCount())
+    def _on_commit_log_ready(
+        self, local_entries: list[CommitHistoryEntry], new_entries: list[CommitHistoryEntry]
+    ) -> None:
+        self._commit_log_entries["local"] = local_entries
+        self._commit_log_entries["new"] = new_entries
+        self._populate_commit_log_model(self.local_commit_log_model, local_entries)
+        self._populate_commit_log_model(self.new_commit_log_model, new_entries)
+
+    def _populate_commit_log_model(self, model: QStandardItemModel, entries: list[CommitHistoryEntry]) -> None:
+        model.removeRows(0, model.rowCount())
         for entry in entries:
             avatar_item = QStandardItem()
             if entry.avatar_bytes:
@@ -449,24 +487,24 @@ class RepoGitStatusPage(QWidget):
                 pixmap.loadFromData(entry.avatar_bytes)
                 avatar_item.setIcon(QIcon(pixmap))
             else:
-                # No avatar (local-git fallback, or the download failed) —
-                # same generic person glyph the previous CommitCard-based
-                # panel fell back to.
+                # No avatar (local-git only, no GitHub API call for this
+                # panel) — same generic person glyph the previous
+                # CommitCard-based panel fell back to.
                 avatar_item.setText("\U0001F464")
                 avatar_item.setTextAlignment(Qt.AlignCenter)
-            self.commit_log_model.appendRow(
+            model.appendRow(
                 [
                     avatar_item,
                     QStandardItem(entry.author_display),
                     QStandardItem(entry.message),
-                    QStandardItem(format_relative_time(entry.date)),
-                    QStandardItem(format_commit_date(entry.date)),
+                    QStandardItem(_format_commit_time(entry.date)),
                 ]
             )
 
-    def _on_commit_row_double_clicked(self, index) -> None:
+    def _on_commit_row_double_clicked(self, entries_key: str, index) -> None:
+        entries = self._commit_log_entries[entries_key]
         row = index.row()
-        if not (0 <= row < len(self._commit_log_entries)):
+        if not (0 <= row < len(entries)):
             return
         # Non-modal, fresh dialog per double-click — replaces the previous
         # one (if a row was already open) rather than stacking windows.
@@ -476,7 +514,7 @@ class RepoGitStatusPage(QWidget):
             self,
             git_service=self.git_service,
             repo_path=self._dest_path(),
-            entry=self._commit_log_entries[row],
+            entry=entries[row],
             on_browse_file=self.browse_file_requested.emit,
         )
         # WA_DeleteOnClose destroys the underlying C++ object as soon as the
@@ -598,13 +636,11 @@ class RepoGitStatusPage(QWidget):
         if self._repo is None or self._workspace_root is None:
             return
         if self._git_worker is not None and self._git_worker.isRunning():
-            # A previous sync is still in flight (e.g. rapid repo switches
-            # via Project Editor's node double-click, each of which calls
-            # sync_active_repo -> start_sync again) — don't orphan it
-            # mid-run, which crashes the app when its QThread object gets
-            # garbage collected while still alive. Just let the in-flight
-            # one finish (same guard refresh_status() already has for
-            # _status_worker, below).
+            # A previous sync is still in flight (e.g. rapid clicks on
+            # "Sync Others Commit") — don't orphan it mid-run, which crashes
+            # the app when its QThread object gets garbage collected while
+            # still alive. Just let the in-flight one finish (same guard
+            # refresh_status() already has for _status_worker, below).
             return
         dest_path = self._dest_path()
         self.sync_button.setEnabled(False)
@@ -679,14 +715,29 @@ class RepoGitStatusPage(QWidget):
         self.sync_finished.emit()
 
     def _on_sync_failed(self, message: str) -> None:
+        dest_path = self._dest_path()
+        if self.git_service.has_unresolved_merge(dest_path):
+            # Sync's own pull (open_or_sync) can hit a real merge conflict
+            # too, not just the Submit-workflow's pull step — same
+            # per-file resolve dialog either way, then treat it as a
+            # successful sync (there's no push step to chain into here,
+            # unlike the commit workflow).
+            if self._resolve_merge_conflict(dest_path):
+                self._on_sync_finished("merged")
+            else:
+                self._mark_sync_error()
+            return
+        self._mark_sync_error()
+        self._append_log(f"--- Failed: {message} ---")
+        QMessageBox.warning(self, "Sync Failed", message)
+        self.sync_failed.emit(message)
+
+    def _mark_sync_error(self) -> None:
         self.sync_button.setEnabled(True)
         try:
             self.store.mark_status(self._project.id, self._repo.id, "error")
         except UkoreHubError:
             pass
-        self._append_log(f"--- Failed: {message} ---")
-        QMessageBox.warning(self, "Sync Failed", message)
-        self.sync_failed.emit(message)
 
     # -- commit -> pull -> (resolve conflicts) -> push -----------------------
 
@@ -736,24 +787,42 @@ class RepoGitStatusPage(QWidget):
             self._append_log(f"--- Pull failed: {message} ---")
             QMessageBox.warning(self, "Pull Failed", message)
             return
+        if not self._resolve_merge_conflict(dest_path):
+            self._set_workflow_running(False)
+            return
+        self._start_push_step()
+
+    def _resolve_merge_conflict(self, dest_path: Path) -> bool:
+        """Shows ConflictResolutionDialog and applies the user's per-file
+        choices — shared by the Submit workflow's pull step and Sync's own
+        pull (open_or_sync), since either can leave a real merge conflict
+        (MERGE_HEAD present) behind. Returns True if the merge was
+        completed, False if the user cancelled or resolution itself failed
+        (both cases already logged/warned here, caller just needs to know
+        whether to continue)."""
         self._append_log("--- Merge conflict detected ---")
         conflicted = self.git_service.get_conflicted_files(dest_path)
-        dialog = ConflictResolutionDialog(self, conflicted_files=conflicted)
+        dialog = ConflictResolutionDialog(
+            self,
+            git_service=self.git_service,
+            repo_path=dest_path,
+            github_token=self.git_service.get_github_token(),
+            my_username=self.local_config_store.github_username,
+            conflicted_files=conflicted,
+        )
         if not dialog.exec():
-            self._set_workflow_running(False)
             self._append_log("--- Conflicts left unresolved — resolve and try again ---")
-            return
+            return False
         resolutions = dialog.resolutions()
         try:
             for file_path, keep in resolutions.items():
                 self.git_service.resolve_conflict_file(dest_path, file_path, keep)
             self.git_service.complete_merge(dest_path)
         except GitOperationError as exc:
-            self._set_workflow_running(False)
             QMessageBox.warning(self, "Conflict Resolution Failed", str(exc))
-            return
+            return False
         self._append_log("--- Conflicts resolved, merge completed ---")
-        self._start_push_step()
+        return True
 
     def _start_push_step(self) -> None:
         dest_path = self._dest_path()

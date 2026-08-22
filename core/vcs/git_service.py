@@ -364,18 +364,25 @@ class GitService:
     def complete_merge(self, repo_path: Path) -> None:
         self._run_capture(["commit", "--no-edit"], cwd=Path(repo_path))
 
-    def get_commit_log(self, repo_path: Path, skip: int = 0, limit: int = 30, ref: str = "HEAD") -> list[CommitInfo]:
+    def get_commit_log(
+        self, repo_path: Path, skip: int = 0, limit: int = 30, ref: str = "HEAD", paths: list[str] | None = None
+    ) -> list[CommitInfo]:
+        """`paths`, when given, scopes the log to commits touching those
+        repo-relative paths (e.g. the merge conflict dialog's per-file
+        "other side" author lookup: `ref="MERGE_HEAD", paths=[conflicted_path],
+        limit=1` — who last touched this specific file on the incoming
+        side)."""
+        args = [
+            "log",
+            ref,
+            f"--skip={skip}",
+            f"--max-count={limit}",
+            f"--pretty=format:%H{_FIELD_SEP}%an{_FIELD_SEP}%ae{_FIELD_SEP}%aI{_FIELD_SEP}%s",
+        ]
+        if paths:
+            args += ["--", *paths]
         try:
-            output = self._run_capture(
-                [
-                    "log",
-                    ref,
-                    f"--skip={skip}",
-                    f"--max-count={limit}",
-                    f"--pretty=format:%H{_FIELD_SEP}%an{_FIELD_SEP}%ae{_FIELD_SEP}%aI{_FIELD_SEP}%s",
-                ],
-                cwd=Path(repo_path),
-            )
+            output = self._run_capture(args, cwd=Path(repo_path))
         except GitOperationError:
             return []
         commits = []

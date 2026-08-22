@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QFileIconProvider,
     QLineEdit,
@@ -32,6 +31,7 @@ from plugin_api import ProgramLaunchRegistry, Project, Repo, SectionSpec
 
 PLUGIN_ID = "software_linker"
 _UI_FILE = Path(__file__).parent / "ProgramLauncherWindow.ui"
+_BROWSE_UI_FILE = Path(__file__).parent / "BrowseProgramWindow.ui"
 _ICON_SIZE = 32
 
 # The same registry locations Windows' own "Programs and Features" /
@@ -182,53 +182,77 @@ def _resolve_path_for_program(program_name: str, version: str, installed: list[t
     return None
 
 class ProgramPickerDialog(QDialog):
-    """Simple icon+search picker over every installed program found in the
-    Windows registry — not a file-path browse (see "Browse Path..." for
-    that), this is specifically "pick from what's already installed"."""
+    """Icon+search picker over every installed program found in the Windows
+    registry, plus "Browse..." for an arbitrary executable path and "Clear
+    Link Path" to unlink — all three link-editing actions the tab used to
+    spread across its own "Browse Path.../Browse Program.../Clear Link
+    Path" buttons now live in this one dialog (BrowseProgramWindow.ui,
+    loaded via QUiLoader same as the tab itself), opened from the tab's
+    single "Edit Link..." button."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Choose Installed Program")
-        self.resize(480, 520)
+        self.setWindowTitle("Edit Link")
         self._selected_path: str | None = None
+        self._clear_requested = False
 
-        self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search installed programs...")
-        self.search_edit.textChanged.connect(self._apply_filter)
+        loader = QUiLoader()
+        ui_file = QFile(str(_BROWSE_UI_FILE))
+        ui_file.open(QFile.ReadOnly)
+        self.ui = loader.load(ui_file, self)
+        ui_file.close()
 
-        self.list_widget = QListWidget()
-        self.list_widget.setIconSize(QSize(32, 32))
-        self.list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.ui)
+        self.resize(self.ui.size())
+
+        self._search_edit: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_search_program")
+        self._list_widget: QListWidget = self.ui.findChild(QListWidget, "listWidget_register_program")
+        self._list_widget.setIconSize(QSize(_ICON_SIZE, _ICON_SIZE))
+        self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._browse_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_browse")
+        self._clear_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_clear_link_path")
+        self._ok_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_ok")
+        self._cancel_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_cancel")
 
         icon_provider = QFileIconProvider()
         for name, path in list_installed_programs():
             item = QListWidgetItem(icon_provider.icon(QFileInfo(path)), name)
             item.setData(Qt.UserRole, path)
             item.setToolTip(path)
-            self.list_widget.addItem(item)
+            self._list_widget.addItem(item)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.search_edit)
-        layout.addWidget(self.list_widget)
-        layout.addWidget(buttons)
+        self._search_edit.textChanged.connect(self._apply_filter)
+        self._list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._browse_btn.clicked.connect(self._on_browse)
+        self._clear_btn.clicked.connect(self._on_clear)
+        self._ok_btn.clicked.connect(self._on_accept)
+        self._cancel_btn.clicked.connect(self.reject)
 
     def _apply_filter(self, text: str) -> None:
         text = text.lower()
-        for row in range(self.list_widget.count()):
-            item = self.list_widget.item(row)
+        for row in range(self._list_widget.count()):
+            item = self._list_widget.item(row)
             item.setHidden(bool(text) and text not in item.text().lower())
 
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
         self._selected_path = item.data(Qt.UserRole)
         self.accept()
 
+    def _on_browse(self) -> None:
+        file_path, _filter = QFileDialog.getOpenFileName(self, "Select Executable")
+        if not file_path:
+            return
+        self._selected_path = file_path
+        self.accept()
+
+    def _on_clear(self) -> None:
+        self._clear_requested = True
+        self.accept()
+
     def _on_accept(self) -> None:
-        items = self.list_widget.selectedItems()
+        items = self._list_widget.selectedItems()
         if not items:
             return
         self._selected_path = items[0].data(Qt.UserRole)
@@ -236,6 +260,9 @@ class ProgramPickerDialog(QDialog):
 
     def selected_path(self) -> str | None:
         return self._selected_path
+
+    def clear_requested(self) -> bool:
+        return self._clear_requested
 
 
 def _linked_key(program, version: str = "") -> str:
@@ -286,9 +313,11 @@ class SoftwareLinkerPage(QWidget):
     runtime via QUiLoader instead of being built widget-by-widget in code
     (same convention as plugins/core/explorer/browser_widget.py) — one
     QListWidget row per linkable (Program, version) slot, with the
-    "Auto Resolve to Unlink Path"/"Browse Path..."/"Browse Program"/
-    "Clear Link Path" buttons acting on whichever row is currently
-    selected. All status styling (bold for linked, QPalette.PlaceholderText
+    "Auto Resolve"/"Edit Link..." buttons acting on whichever row is
+    currently selected. "Edit Link..." opens ProgramPickerDialog
+    (BrowseProgramWindow.ui, its own separate Designer file) instead of the
+    tab hosting its own "Browse Path.../Browse Program.../Clear Link Path"
+    buttons directly. All status styling (bold for linked, QPalette.PlaceholderText
     for not-linked) uses Qt's own QFont/QPalette directly rather than
     interface/shared/widget_helpers.py's set_bold/set_secondary_text, and
     launch feedback uses QToolTip.showText — no plugin-specific QSS in
@@ -330,15 +359,11 @@ class SoftwareLinkerPage(QWidget):
             "Already runs automatically for unlinked programs — use this to "
             "re-scan on demand and see a summary of how many were resolved."
         )
-        self._browse_path_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_browse_path")
-        self._browse_program_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_browse_program")
-        self._clear_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_clear_link_path")
+        self._edit_link_btn: QPushButton = self.ui.findChild(QPushButton, "pushButton_clear_link_path")
 
         self._require_filter_checkbox.toggled.connect(lambda _checked: self._rebuild_list())
         self._auto_resolve_btn.clicked.connect(self._on_auto_resolve_path)
-        self._browse_path_btn.clicked.connect(self._on_browse_path)
-        self._browse_program_btn.clicked.connect(self._on_browse_program)
-        self._clear_btn.clicked.connect(self._on_clear)
+        self._edit_link_btn.clicked.connect(self._on_edit_link)
         self._list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._list_widget.currentItemChanged.connect(lambda *_args: self._update_action_buttons_enabled())
 
@@ -357,9 +382,7 @@ class SoftwareLinkerPage(QWidget):
 
     def _update_action_buttons_enabled(self) -> None:
         has_selection = self._list_widget.currentItem() is not None
-        self._browse_path_btn.setEnabled(has_selection)
-        self._browse_program_btn.setEnabled(has_selection)
-        self._clear_btn.setEnabled(has_selection)
+        self._edit_link_btn.setEnabled(has_selection)
 
     def _selected_row(self) -> tuple[str, object, str, str] | None:
         item = self._list_widget.currentItem()
@@ -467,33 +490,18 @@ class SoftwareLinkerPage(QWidget):
             f"Resolved {resolved} program(s)." if resolved else "No new programs could be resolved automatically.",
         )
 
-    def _on_browse_program(self) -> None:
+    def _on_edit_link(self) -> None:
         row = self._selected_row()
         if row is None:
             return
         key, _program, _version, _label = row
         dialog = ProgramPickerDialog(self)
-        if dialog.exec() and dialog.selected_path():
+        if not dialog.exec():
+            return
+        if dialog.clear_requested():
+            self._config_store.set(key, None)
+        elif dialog.selected_path():
             self._config_store.set(key, dialog.selected_path())
-            self._apply_item_state(self._list_widget.currentItem())
-
-    def _on_browse_path(self) -> None:
-        row = self._selected_row()
-        if row is None:
-            return
-        key, _program, _version, _label = row
-        file_path, _filter = QFileDialog.getOpenFileName(self, "Select Executable")
-        if not file_path:
-            return
-        self._config_store.set(key, file_path)
-        self._apply_item_state(self._list_widget.currentItem())
-
-    def _on_clear(self) -> None:
-        row = self._selected_row()
-        if row is None:
-            return
-        key, _program, _version, _label = row
-        self._config_store.set(key, None)
         self._apply_item_state(self._list_widget.currentItem())
 
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
@@ -501,7 +509,7 @@ class SoftwareLinkerPage(QWidget):
         exe_path = self._config_store.get(key)
         if not exe_path:
             self._list_widget.setCurrentItem(item)
-            self._on_browse_program()
+            self._on_edit_link()
             return
         QToolTip.showText(QCursor.pos(), f"Opening {program.name}...", self._list_widget)
         # A plugin (e.g. maya_launcher) may need to launch this Program

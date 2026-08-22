@@ -56,14 +56,16 @@ class BookmarksStore:
         return self.get_bookmarks()
 
     def get_bookmarks(self) -> list[Path]:
+        # Filters missing-on-disk entries for display only — does not persist the
+        # removal. This store is cloud-synced/shared across the whole team, and a
+        # missing file here often just means this machine hasn't pulled/cloned it
+        # yet, not that the bookmark is actually gone; auto-saving the pruned list
+        # would delete it for every other artist too. Real removal only happens via
+        # remove() (the explicit "Remove Bookmark" action).
         relpaths = self._load()
-        still_valid = []
         paths = []
         for rel in relpaths:
             abs_path = self.repo_root / rel
             if abs_path.exists():
-                still_valid.append(rel)
                 paths.append(abs_path)
-        if still_valid != relpaths:
-            self._save(still_valid)
         return paths
