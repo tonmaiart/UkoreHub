@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QStyle,
     QTableView,
@@ -55,7 +56,7 @@ FRESHNESS_WINDOW_MS = 10 * 60 * 1000
 # Background repoll of the commit history panel while the app just sits
 # open on this tab — set_repo/refresh_status/push already trigger an
 # immediate poll, this just catches teammates' pushes in between.
-COMMIT_LOG_POLL_INTERVAL_MS = 30 * 60 * 1000
+COMMIT_LOG_POLL_INTERVAL_MS = 60 * 1000
 _STATUS_DOT_SIZE = 14
 _UI_FILE = Path(__file__).resolve().parent / "submit_section.ui"
 # Commit-history panels' merged Time column: relative ("3 days ago") inside
@@ -138,6 +139,10 @@ class RepoGitStatusPage(QWidget):
         self._commit_log_avatar_cache: dict[str, bytes | None] = {}
         self._commit_files_dialog: CommitFilesDialog | None = None
         self._last_status: RepoStatus | None = None
+        # Counts in-flight refresh/sync workers so the progressBar (added to
+        # submit_section.ui) only ever goes idle once every last one of them
+        # has actually finished — see _busy_begin/_busy_end.
+        self._busy_count = 0
 
         # Sidebar-row status indicator (SectionSpec.trailing_widget_factory —
         # see plugin.py) — a plain QLabel, no custom widget class. This page
@@ -181,6 +186,14 @@ class RepoGitStatusPage(QWidget):
         self._commit_log_timer.timeout.connect(self._poll_commit_log)
         self._commit_log_timer.start()
 
+        # sync_started/finished/failed already bracket the whole Sync New
+        # Commit flow (access-check sub-step included — see start_sync), so
+        # the progress bar's busy state can just ride those instead of
+        # tracking _git_worker directly.
+        self.sync_started.connect(lambda: self._busy_begin("Syncing..."))
+        self.sync_finished.connect(self._busy_end)
+        self.sync_failed.connect(lambda _message: self._busy_end())
+
     # -- .ui wiring -----------------------------------------------------
 
     def _setup_ui_widgets(self) -> None:
@@ -189,6 +202,11 @@ class RepoGitStatusPage(QWidget):
         self.refresh_button: QPushButton = find(QPushButton, "pushButton_refresh_status")
         self.plain_text_git_log: QPlainTextEdit = find(QPlainTextEdit, "plainTextEdit_git_log")
         self.plain_text_git_log.setMaximumBlockCount(5000)
+
+        self.progress_bar: QProgressBar = find(QProgressBar, "progressBar")
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("")
 
         self.table_git_status: QTableView = find(QTableView, "tableView_git_status")
         self.table_modified: QTableView = find(QTableView, "tableView_modified")
@@ -300,6 +318,19 @@ class RepoGitStatusPage(QWidget):
         self.status_dot.setToolTip("Uncommitted changes" if state == "dirty" else "Up to date")
         self.status_dot.setVisible(True)
 
+    def _busy_begin(self, label: str = "") -> None:
+        self._busy_count += 1
+        if self._busy_count == 1:
+            self.progress_bar.setRange(0, 0)  # indeterminate/marquee — no known duration for any git op here
+            self.progress_bar.setFormat(label)
+
+    def _busy_end(self) -> None:
+        self._busy_count = max(0, self._busy_count - 1)
+        if self._busy_count == 0:
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat("")
+
     # -- status (Modified / Staged tables + diagnostics) -----------------
 
     def refresh_status(self) -> None:
@@ -327,6 +358,8 @@ class RepoGitStatusPage(QWidget):
         self._status_worker = RepoStatusWorker(self.git_service, dest_path)
         self._status_worker.status_ready.connect(self._on_status_ready)
         self._status_worker.failed.connect(self._on_status_failed)
+        self._status_worker.finished.connect(self._busy_end)
+        self._busy_begin("Refreshing...")
         self._status_worker.start()
 
     def _on_status_ready(self, status: RepoStatus) -> None:
@@ -439,6 +472,8 @@ class RepoGitStatusPage(QWidget):
         self._diagnostics_worker.failed.connect(
             lambda message: self._append_log(f"--- Diagnostics check failed: {message} ---")
         )
+        self._diagnostics_worker.finished.connect(self._busy_end)
+        self._busy_begin("Refreshing...")
         self._diagnostics_worker.start()
 
     def _on_diagnostics_ready(self, results: list[tuple[str, str, bool]]) -> None:
@@ -468,6 +503,8 @@ class RepoGitStatusPage(QWidget):
             self.git_service, dest_path, self.git_service.get_github_token(), avatar_cache=self._commit_log_avatar_cache
         )
         self._commit_log_worker.entries_ready.connect(self._on_commit_log_ready)
+        self._commit_log_worker.finished.connect(self._busy_end)
+        self._busy_begin("Refreshing...")
         self._commit_log_worker.start()
 
     def _on_commit_log_ready(
