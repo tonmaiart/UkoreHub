@@ -36,7 +36,7 @@
           <property name="title">
            <string>Commit History</string>
           </property>
-          <layout class="QGridLayout" name="gridLayout_9" rowstretch="0,0,2,0,0,8,0,2,2,0" rowminimumheight="0,0,0,0,0,0,0,0,0,0">
+          <layout class="QGridLayout" name="gridLayout_9" rowstretch="0,0,5,0,0,6,0,2,2,0" rowminimumheight="0,0,0,0,0,0,0,0,0,0">
            <item row="7" column="0">
             <widget class="QTableView" name="tableView_git_status">
              <property name="selectionMode">

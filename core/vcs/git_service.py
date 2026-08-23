@@ -157,6 +157,7 @@ class GitService:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
             bufsize=1,
             env=_non_interactive_env(extra_env),
             creationflags=_NO_WINDOW_FLAGS,
@@ -452,6 +453,7 @@ class GitService:
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             env=_non_interactive_env(),
             creationflags=_NO_WINDOW_FLAGS,
         )
@@ -472,6 +474,7 @@ class GitService:
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 env=_non_interactive_env(extra_env),
                 creationflags=_NO_WINDOW_FLAGS,
                 timeout=timeout,
