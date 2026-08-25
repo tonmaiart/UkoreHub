@@ -22,6 +22,7 @@ from core_api import (
     SystemConfigStore,
     UkoreCore,
 )
+from plugin_api.registries.notification_registry import NotificationSpec
 from plugin_api.registries.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
 from plugin_api.registries.section_registry import SectionSpec
 from plugin_api.registries.settings_tab_registry import SettingsTabRegistry, SettingsTabSpec
@@ -93,6 +94,7 @@ class PluginAPI:
         self._file_opener_registry = registries.file_openers
         self._program_launch_registry = registries.program_launchers
         self._sidebar_footer_action_registry = registries.sidebar_footer_actions
+        self._notification_registry = registries.notifications
         self._plugins_data_dir = Path(plugins_data_dir)
         self._plugins_local_dir = Path(plugins_local_dir)
         self._cache_dir = Path(cache_dir)
@@ -253,6 +255,12 @@ class PluginAPI:
 
     def register_sidebar_footer_action(self, spec: SidebarFooterActionSpec) -> None:
         self._sidebar_footer_action_registry.register(spec)
+
+    def register_notification(self, spec: NotificationSpec) -> None:
+        """Adds a plugin's own widget as a row in Sidebar's
+        listWidget_notification — see NotificationSpec
+        (plugin_api/registries/notification_registry.py)."""
+        self._notification_registry.register(spec)
 
     def on_app_start(self, handler: AppLifecycleHandler) -> None:
         """Runs once, right after the app finishes launching (whichever

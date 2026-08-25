@@ -24,8 +24,8 @@ class LastCheckedStore:
     (plugin.py's _SyncController._on_entry_synced) on every app start/repo
     switch, which would otherwise wipe out a manual check's cached result.
 
-    external_plugins_page.py's fast, local-only _local_status() reads this
-    back on every refresh (e.g. reopening Settings) so a network-derived
+    external_plugin_updater_page.py's fast, local-only _local_status() reads
+    this back on every refresh (e.g. reopening the tab) so a network-derived
     result like "3 commits behind" survives instead of reverting to a bare
     "Up to date" until the next explicit Check for Status."""
 

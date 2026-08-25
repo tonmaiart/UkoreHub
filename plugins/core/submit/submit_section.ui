@@ -320,7 +320,7 @@
               <widget class="QTableView" name="tableView_modified"/>
              </item>
              <item row="1" column="0">
-              <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="0,2,1,1">
+              <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="0,0,0,0">
                <item>
                 <widget class="QPushButton" name="pushButton_revert">
                  <property name="minimumSize">
@@ -353,24 +353,6 @@
                 </spacer>
                </item>
                <item>
-                <widget class="QPushButton" name="pushButton_unstage">
-                 <property name="minimumSize">
-                  <size>
-                   <width>0</width>
-                   <height>30</height>
-                  </size>
-                 </property>
-                 <property name="font">
-                  <font>
-                   <pointsize>10</pointsize>
-                  </font>
-                 </property>
-                 <property name="text">
-                  <string>▲ Unstage</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
                 <widget class="QPushButton" name="pushButton_stage">
                  <property name="minimumSize">
                   <size>
@@ -384,9 +366,22 @@
                   </font>
                  </property>
                  <property name="text">
-                  <string>▼ Stage</string>
+                  <string>▼ Stage / ▲ Unstage</string>
                  </property>
                 </widget>
+               </item>
+               <item>
+                <spacer name="horizontalSpacer_5">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>20</height>
+                  </size>
+                 </property>
+                </spacer>
                </item>
               </layout>
              </item>

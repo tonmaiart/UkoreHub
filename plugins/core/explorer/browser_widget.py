@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import logging
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QDir, QFile, Qt, QTimer
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtCore import QDir, QFile, QFileInfo, QSize, Qt, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
+    QFileIconProvider,
     QFileSystemModel,
-    QGroupBox,
     QHeaderView,
     QInputDialog,
     QLineEdit,
-    QListView,
     QListWidget,
     QMenu,
     QMessageBox,
@@ -23,13 +24,23 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTableView,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from plugin_api import GitService, MetadataStore, open_in_file_explorer, open_with_default_app
+from plugin_api import GitService, LocalConfigStore, MetadataStore, open_in_file_explorer, open_with_default_app
 from plugins.core.explorer.bookmarks_store import BookmarksStore
-from plugins.core.explorer.file_table_proxy import FileTableFilterProxy, TIME_AGO_COLUMN
+from plugins.core.explorer.file_local_change_panel import FileLocalChangePanel
+from plugins.core.explorer.file_row_authors_worker import FileRowAuthorsWorker
+from plugins.core.explorer.file_table_proxy import (
+    LAST_COMMIT_BY_COLUMN,
+    LOCAL_MODIFIED_BY_COLUMN,
+    TIME_AGO_COLUMN,
+    FileTableFilterProxy,
+    format_time_ago,
+)
 from plugins.core.explorer.last_opened_store import LastOpenedStore
 from plugins.core.explorer.path_commit_history_panel import PathCommitHistoryPanel
 
@@ -37,8 +48,38 @@ COLUMN_COUNT = 5
 OPENING_POPUP_DURATION_MS = 3000
 _MAX_LAST_OPENED = 20
 _UI_FILE = Path(__file__).parent / "explorer_section.ui"
+_ICONS_DIR = Path(__file__).parent / "icons"
+_NAV_ICON_SIZE = QSize(20, 20)
+# (button attr name, icon filename, tooltip) — nav buttons are icon-only
+# (label text cleared) rather than the old text/emoji labels.
+_NAV_BUTTON_ICONS = (
+    ("history_back_button", "icons8-back-arrow-48.png", "Back"),
+    ("up_button", "icons8-up-48.png", "Up"),
+    ("reload_button", "icons8-refresh-60.png", "Refresh"),
+    ("add_folder_button", "icons8-add-folder-48.png", "Create New Folder"),
+    ("open_directory_button", "icons8-opened-folder-48.png", "Open Current Directory"),
+)
 
 logger = logging.getLogger("Explorer")
+
+_ICON_PROVIDER = QFileIconProvider()
+
+
+def _file_icon(path: Path) -> QIcon:
+    """File/folder icon for the Last Opened File and Bookmarks tables — the
+    OS-appropriate icon (folder glyph, or the file-type icon Windows
+    associates with the extension) via Qt's own QFileIconProvider rather
+    than a bundled bitmap, since a bookmark can point at either a file or a
+    folder."""
+    return _ICON_PROVIDER.icon(QFileInfo(str(path)))
+
+
+def _mtime_ago(path: Path) -> str:
+    try:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime)
+    except OSError:
+        return ""
+    return format_time_ago(mtime)
 
 
 class _PaddedItemDelegate(QStyledItemDelegate):
@@ -68,8 +109,11 @@ class RepoBrowserWidget(QWidget):
         open_file: Callable[[Path], None] | None = None,
         cache_dir: Path | None = None,
         metadata_store: MetadataStore | None = None,
+        local_config_store: LocalConfigStore | None = None,
     ):
         super().__init__(parent)
+        self._git_service = git_service
+        self._local_config_store = local_config_store
         self._cache_dir = cache_dir
         self._metadata_store = metadata_store
         self._open_file = open_file or open_with_default_app
@@ -80,6 +124,15 @@ class RepoBrowserWidget(QWidget):
         self._last_opened_store: LastOpenedStore | None = None
         self._bookmarks_store: BookmarksStore | None = None
         self._path_mode: str = "relative"
+
+        # "Last Commit By" per relative_path — fetched once (git log/GitHub,
+        # the expensive part) and reused on every later revisit; reset only
+        # on repo switch (set_root). "Local Modified By" is cheap (one git
+        # status call per navigation) and always recomputed fresh instead —
+        # see FileRowAuthorsWorker.
+        self._last_commit_cache: dict[str, tuple[str | None, QIcon | None]] = {}
+        self._authors_worker: FileRowAuthorsWorker | None = None
+        self._retiring_authors_workers: set[FileRowAuthorsWorker] = set()
 
         # UI is authored in Qt Designer (explorer_section.ui) and loaded at
         # runtime instead of being built widget-by-widget in code, so the
@@ -103,9 +156,12 @@ class RepoBrowserWidget(QWidget):
         self.breadcrumb: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_path")
         self.search_edit: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_search")
         self.table: QTableView = self.ui.findChild(QTableView, "tableView_current_directory")
-        self.last_opened_list: QListWidget = self.ui.findChild(QListWidget, "listWidget_last_opened_file")
-        self.bookmarks_view: QListView = self.ui.findChild(QListView, "listView_bookmarks")
-        commit_panel_container: QGroupBox = self.ui.findChild(QGroupBox, "groupBox_5")
+        self.last_opened_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_last_opened_file")
+        self.bookmarks_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_bookmarks")
+        self.commit_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_file_commit_history")
+        self.local_change_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_file_local_change")
+
+        self._apply_nav_icons()
 
         self.fs_model = QFileSystemModel()
         self.fs_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
@@ -134,6 +190,17 @@ class RepoBrowserWidget(QWidget):
         self.search_timer.timeout.connect(self._apply_search)
         self.search_edit.textChanged.connect(lambda _t: self.search_timer.start())
 
+        # Miller-column population (iterdir()+sorted() per column, on the UI
+        # thread) and the commit-history fetch are both too heavy to redo on
+        # every single navigation when the user double-clicks through several
+        # folders in quick succession — each _navigate_to call just restarts
+        # this timer, so only the folder the user actually settles on pays
+        # for the rescan/fetch instead of every folder along the way.
+        self._nav_settle_timer = QTimer(self)
+        self._nav_settle_timer.setSingleShot(True)
+        self._nav_settle_timer.setInterval(120)
+        self._nav_settle_timer.timeout.connect(self._apply_settled_navigation)
+
         self.columns: list[QListWidget] = []
         self.column_filters: list[QLineEdit] = []
         for i in range(COLUMN_COUNT):
@@ -155,32 +222,74 @@ class RepoBrowserWidget(QWidget):
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        # Stretch (auto-fills leftover space) would fight a fixed width, so
+        # Name is plain Interactive with a large starting width instead —
+        # still user-resizable, just wide by default for now.
+        header.setSectionResizeMode(0, QHeaderView.Interactive)
+        self.table.setColumnWidth(0, 500)
+        # Date Modified used to be Stretch too — with two Stretch columns,
+        # Qt splits leftover space between them evenly regardless of actual
+        # content width, so a short date string ended up as wide as Name.
+        # ResizeToContents sizes it to what it actually needs instead.
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.setColumnHidden(2, True)
         self.table.setColumnWidth(1, 80)
         self.table.setColumnWidth(TIME_AGO_COLUMN, 100)
+        self.table.setColumnWidth(LOCAL_MODIFIED_BY_COLUMN, 150)
+        self.table.setColumnWidth(LAST_COMMIT_BY_COLUMN, 150)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.table.doubleClicked.connect(self._on_table_double_clicked)
         self.table.selectionModel().currentRowChanged.connect(self._on_table_selection_changed)
 
-        self.commit_panel = PathCommitHistoryPanel(git_service)
-        commit_layout = commit_panel_container.layout()
-        if commit_layout is None:
-            commit_layout = QVBoxLayout(commit_panel_container)
-        commit_layout.setContentsMargins(0, 0, 0, 0)
-        commit_layout.addWidget(self.commit_panel)
+        self.commit_panel = PathCommitHistoryPanel(git_service, self.commit_table)
+        self.local_change_panel = FileLocalChangePanel(git_service, self.local_change_table, local_config_store)
 
-        self.last_opened_list.setSpacing(0)
-        self.last_opened_list.itemClicked.connect(self._on_last_opened_clicked)
+        self._setup_last_opened_table()
+        self._setup_bookmarks_table()
 
-        self.bookmarks_model = QStandardItemModel(self)
-        self.bookmarks_view.setModel(self.bookmarks_model)
-        self.bookmarks_view.setEditTriggers(QListView.NoEditTriggers)
-        self.bookmarks_view.clicked.connect(self._on_bookmark_clicked)
-        self.bookmarks_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.bookmarks_view.customContextMenuRequested.connect(self._on_bookmarks_context_menu)
+    def _apply_nav_icons(self) -> None:
+        for attr_name, filename, tooltip in _NAV_BUTTON_ICONS:
+            button: QPushButton = getattr(self, attr_name)
+            icon_path = _ICONS_DIR / filename
+            if not icon_path.is_file():
+                logger.warning(f"Nav icon missing: {icon_path}")
+                continue
+            button.setIcon(QIcon(str(icon_path)))
+            button.setIconSize(_NAV_ICON_SIZE)
+            button.setText("")
+            button.setToolTip(tooltip)
+
+    def _setup_last_opened_table(self) -> None:
+        table = self.last_opened_table
+        table.setColumnCount(3)
+        table.horizontalHeader().setVisible(False)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setShowGrid(False)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        table.setColumnWidth(0, 24)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        table.itemClicked.connect(self._on_last_opened_clicked)
+
+    def _setup_bookmarks_table(self) -> None:
+        table = self.bookmarks_table
+        table.setColumnCount(2)
+        table.horizontalHeader().setVisible(False)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setShowGrid(False)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        table.setColumnWidth(0, 24)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        table.itemClicked.connect(self._on_bookmark_clicked)
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(self._on_bookmarks_context_menu)
 
     def browse_to_file(self, path: Path) -> None:
         path = Path(path)
@@ -193,6 +302,12 @@ class RepoBrowserWidget(QWidget):
     def set_root(self, path: Path, *, repo_id: str, project_id: str | None = None) -> None:
         path = Path(path).resolve()
         self._root = path
+
+        # Relative paths are meaningless across repos — a cached "last
+        # commit by" for path "assets/model.ma" in one repo has nothing to
+        # do with a file of the same relative path in a different one.
+        self._last_commit_cache = {}
+        self.proxy.clear_author_cache()
 
         if self._cache_dir:
             self._last_opened_store = LastOpenedStore(
@@ -240,18 +355,31 @@ class RepoBrowserWidget(QWidget):
         self._refresh_bookmarks_list()
 
     def _refresh_bookmarks_list(self) -> None:
-        self.bookmarks_model.clear()
+        self.bookmarks_table.setRowCount(0)
         if self._bookmarks_store is None:
             return
-        for b_path in self._bookmarks_store.get_bookmarks():
-            item = QStandardItem(b_path.name)
-            item.setEditable(False)
-            item.setData(str(b_path), Qt.UserRole)
-            item.setToolTip(str(b_path))
-            self.bookmarks_model.appendRow(item)
+        bookmarks = self._bookmarks_store.get_bookmarks()
+        self.bookmarks_table.setRowCount(len(bookmarks))
+        for row, b_path in enumerate(bookmarks):
+            icon_item = QTableWidgetItem()
+            icon_item.setIcon(_file_icon(b_path))
+            icon_item.setData(Qt.UserRole, str(b_path))
+            icon_item.setToolTip(str(b_path))
 
-    def _on_bookmark_clicked(self, index) -> None:
-        path = Path(index.data(Qt.UserRole))
+            name_item = QTableWidgetItem(b_path.name)
+            name_item.setToolTip(str(b_path))
+
+            for item in (icon_item, name_item):
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+            self.bookmarks_table.setItem(row, 0, icon_item)
+            self.bookmarks_table.setItem(row, 1, name_item)
+
+    def _on_bookmark_clicked(self, item: QTableWidgetItem) -> None:
+        path_item = self.bookmarks_table.item(item.row(), 0)
+        if path_item is None:
+            return
+        path = Path(path_item.data(Qt.UserRole))
         if path.is_dir():
             self._navigate_to(path)
         else:
@@ -259,13 +387,14 @@ class RepoBrowserWidget(QWidget):
             self._select_file_in_table(path)
 
     def _on_bookmarks_context_menu(self, pos) -> None:
-        index = self.bookmarks_view.indexAt(pos)
-        if not index.isValid() or self._bookmarks_store is None:
+        item = self.bookmarks_table.itemAt(pos)
+        if item is None or self._bookmarks_store is None:
             return
-        path = Path(index.data(Qt.UserRole))
+        path_item = self.bookmarks_table.item(item.row(), 0)
+        path = Path(path_item.data(Qt.UserRole))
         menu = QMenu(self)
         act_remove = menu.addAction("Remove Bookmark")
-        action = menu.exec(self.bookmarks_view.viewport().mapToGlobal(pos))
+        action = menu.exec(self.bookmarks_table.viewport().mapToGlobal(pos))
         if action == act_remove:
             self._bookmarks_store.remove(path)
             self._refresh_bookmarks_list()
@@ -301,8 +430,78 @@ class RepoBrowserWidget(QWidget):
         elif source_index.isValid():
             self.table.setRootIndex(self.proxy.mapFromSource(source_index))
 
-        self._sync_columns_from_path(path)
-        self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
+        # setRootIndex doesn't itself invalidate a selection made in the
+        # previous folder — without this, a leftover current index can make
+        # _on_table_selection_changed keep showing commit history/local
+        # change for a file that isn't even in the folder being shown
+        # anymore. QItemSelectionModel.clear() resets both the selection and
+        # the current index, which synchronously fires currentRowChanged and
+        # lands in _on_table_selection_changed's "nothing selected" branch.
+        self.table.selectionModel().clear()
+
+        self._nav_settle_timer.start()
+
+    def _apply_settled_navigation(self) -> None:
+        if self._root is None or self._current_path is None:
+            return
+        self._sync_columns_from_path(self._current_path)
+        self._start_folder_authors_fetch(self._current_path)
+
+    def _start_folder_authors_fetch(self, folder: Path) -> None:
+        if self._authors_worker is not None:
+            self._retire_authors_worker(self._authors_worker)
+            self._authors_worker = None
+
+        try:
+            children = list(folder.iterdir())
+        except OSError:
+            children = []
+
+        entries: list[tuple[str, str, bool]] = []
+        for child in children:
+            relative = self._relative_path_str(child)
+            if not relative:
+                continue
+            try:
+                is_dir = child.is_dir()
+            except OSError:
+                continue
+            # as_posix() (not str()) so this key matches what
+            # FileTableFilterProxy.data() looks up via fs_model.filePath() —
+            # QFileSystemModel/QFileInfo always report paths with forward
+            # slashes (even on Windows), while pathlib's str() uses the
+            # native backslash separator. A mismatched key here means
+            # set_author_info() silently stores results under a path
+            # nothing ever queries, so the column stays permanently blank.
+            entries.append((child.as_posix(), relative, is_dir))
+
+        if not entries:
+            return
+
+        username = getattr(self._local_config_store, "github_username", None) if self._local_config_store else None
+        token = self._git_service.get_github_token()
+
+        worker = FileRowAuthorsWorker(
+            self._git_service, self._root, entries, username, token, self._last_commit_cache
+        )
+        worker.entry_ready.connect(self._on_folder_author_ready)
+        self._authors_worker = worker
+        worker.start()
+
+    def _on_folder_author_ready(self, abs_path: str, info) -> None:
+        self.proxy.set_author_info(abs_path, info)
+
+    def _retire_authors_worker(self, worker: FileRowAuthorsWorker) -> None:
+        # Same QThread-lifetime hazard as PathCommitHistoryPanel._retire_worker
+        # — never let Python's refcounting drop the last reference to a
+        # QThread before it has actually finished. requestInterruption() also
+        # lets the loop in run() stop between entries promptly instead of
+        # grinding through every remaining file in the old folder first.
+        worker.requestInterruption()
+        if worker.isFinished():
+            return
+        self._retiring_authors_workers.add(worker)
+        worker.finished.connect(lambda: self._retiring_authors_workers.discard(worker))
 
     def _on_directory_loaded(self, path_str: str) -> None:
         if self._current_path and Path(path_str).resolve() == self._current_path.resolve():
@@ -316,13 +515,17 @@ class RepoBrowserWidget(QWidget):
                 self.table.setRootIndex(self.proxy.mapFromSource(source_index))
 
     def _relative_path_str(self, path: Path) -> str:
+        # as_posix() (not str()) is required here: this value is fed to
+        # `git log -- <path>` and the GitHub commits API, both of which
+        # match pathspecs with forward slashes — a Windows-style
+        # backslash-separated relative path silently fails to match either.
         if self._root is None:
             return ""
         try:
             rel = path.relative_to(self._root)
         except ValueError:
             return ""
-        rel_str = str(rel)
+        rel_str = rel.as_posix()
         return "" if rel_str == "." else rel_str
 
     def _relative_display_str(self, path: Path) -> str:
@@ -375,12 +578,23 @@ class RepoBrowserWidget(QWidget):
 
     def _on_table_selection_changed(self, current, _previous) -> None:
         if not current.isValid():
+            self._clear_file_panels()
             return
         source_index = self.proxy.mapToSource(current)
         path = Path(self.fs_model.filePath(source_index))
         if self.fs_model.isDir(source_index):
+            self._clear_file_panels()
             return
-        self.commit_panel.show_commits_for(self._root, self._relative_path_str(path))
+        relative_path = self._relative_path_str(path)
+        self.commit_panel.show_commits_for(self._root, relative_path)
+        self.local_change_panel.show_local_change_for(self._root, relative_path)
+
+    def _clear_file_panels(self) -> None:
+        # File Commit History / File Local Change only ever reflect an
+        # actual selected file, never the folder being browsed — clear both
+        # rather than leaving a previous file's info on screen.
+        self.commit_panel.clear()
+        self.local_change_panel.clear()
 
     def _on_up(self) -> None:
         if self._current_path is None or self._root is None or self._current_path == self._root:
@@ -495,17 +709,34 @@ class RepoBrowserWidget(QWidget):
         self._refresh_last_opened_list()
 
     def _refresh_last_opened_list(self) -> None:
-        self.last_opened_list.clear()
+        self.last_opened_table.setRowCount(0)
         if self._last_opened_store is None:
             return
-        for opened_path in self._last_opened_store.get_last_opened():
-            self.last_opened_list.addItem(opened_path.name)
-            item = self.last_opened_list.item(self.last_opened_list.count() - 1)
-            item.setData(Qt.UserRole, str(opened_path))
-            item.setToolTip(str(opened_path))
+        entries = self._last_opened_store.get_last_opened()
+        self.last_opened_table.setRowCount(len(entries))
+        for row, opened_path in enumerate(entries):
+            icon_item = QTableWidgetItem()
+            icon_item.setIcon(_file_icon(opened_path))
+            icon_item.setData(Qt.UserRole, str(opened_path))
+            icon_item.setToolTip(str(opened_path))
 
-    def _on_last_opened_clicked(self, item) -> None:
-        path = Path(item.data(Qt.UserRole))
+            name_item = QTableWidgetItem(opened_path.name)
+            name_item.setToolTip(str(opened_path))
+
+            time_item = QTableWidgetItem(_mtime_ago(opened_path))
+
+            for item in (icon_item, name_item, time_item):
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+            self.last_opened_table.setItem(row, 0, icon_item)
+            self.last_opened_table.setItem(row, 1, name_item)
+            self.last_opened_table.setItem(row, 2, time_item)
+
+    def _on_last_opened_clicked(self, item: QTableWidgetItem) -> None:
+        path_item = self.last_opened_table.item(item.row(), 0)
+        if path_item is None:
+            return
+        path = Path(path_item.data(Qt.UserRole))
         self._navigate_to(path.parent)
         self._select_file_in_table(path)
 

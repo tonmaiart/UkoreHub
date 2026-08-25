@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         self.settings_tab_registry = registries.settings_tabs
         self.file_opener_registry = registries.file_openers
         self.sidebar_footer_action_registry = registries.sidebar_footer_actions
+        self.notification_registry = registries.notifications
         # Maps a SectionRegistry key back to the plugin id that registered
         # it (built in launcher.py by diffing section_registry.keys() around
         # each plugin's register(api) call) — used by _apply_plugin_visibility
@@ -115,6 +118,10 @@ class MainWindow(QMainWindow):
         # spec.key — so closeEvent can reach a plugin's own
         # background_threads without knowing what they are.
         self.footer_action_widgets: dict[str, QWidget] = {}
+        # One widget per NotificationRegistry entry, keyed by spec.key —
+        # same closeEvent-cleanup purpose as footer_action_widgets above.
+        self.notification_widgets: dict[str, QWidget] = {}
+        self.notification_list: QListWidget | None = None
         self.view_stack: QStackedWidget | None = None
         self._section_view_index: dict[str, int] = {}
 
@@ -192,6 +199,21 @@ class MainWindow(QMainWindow):
         # nothing registers into this registry yet.
         for spec in self.sidebar_footer_action_registry.ordered():
             self.footer_action_widgets[spec.key] = spec.widget_factory()
+
+        # listWidget_notification: any plugin can contribute its own row
+        # here via api.register_notification(NotificationSpec(...)) — see
+        # plugin_api/registries/notification_registry.py. Unlike
+        # footer_action_widgets above, this list actually has a home in the
+        # .ui, so each widget is really parented in as a row, not just kept
+        # alive for closeEvent bookkeeping.
+        self.notification_list = central.findChild(QListWidget, "listWidget_notification")
+        for spec in self.notification_registry.ordered():
+            widget = spec.widget_factory()
+            self.notification_widgets[spec.key] = widget
+            item = QListWidgetItem(self.notification_list)
+            item.setSizeHint(widget.sizeHint())
+            self.notification_list.addItem(item)
+            self.notification_list.setItemWidget(item, widget)
 
         # label_username was dropped from the .ui — the signed-in username
         # is shown as pushButton_setting's own text now instead of a
@@ -558,6 +580,10 @@ class MainWindow(QMainWindow):
             for spec in self.sidebar_footer_action_registry.ordered():
                 if spec.background_threads is not None:
                     workers.extend(spec.background_threads(self.footer_action_widgets[spec.key]))
+        if self.notification_widgets:
+            for spec in self.notification_registry.ordered():
+                if spec.background_threads is not None:
+                    workers.extend(spec.background_threads(self.notification_widgets[spec.key]))
         if self.pages:
             for spec in self.section_registry.ordered():
                 if spec.background_threads is not None:

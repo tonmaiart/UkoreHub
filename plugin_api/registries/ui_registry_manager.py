@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core_api import FileOpenerRegistry
+from plugin_api.registries.notification_registry import NotificationRegistry
 from plugin_api.registries.program_launch_registry import ProgramLaunchRegistry
 from plugin_api.registries.section_registry import SectionRegistry
 from plugin_api.registries.settings_tab_registry import SettingsTabRegistry
@@ -26,3 +27,4 @@ class UIRegistryManager:
     file_openers: FileOpenerRegistry
     program_launchers: ProgramLaunchRegistry
     sidebar_footer_actions: SidebarFooterActionRegistry
+    notifications: NotificationRegistry

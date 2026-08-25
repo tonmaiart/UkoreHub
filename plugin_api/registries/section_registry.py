@@ -76,13 +76,15 @@ class SectionSpec:
     icon_path: Path | None = None
     standard_icon: QStyle.StandardPixmap | None = None
     # Optional: a small widget shown at the right edge of this section's own
-    # row in Sidebar's SectionTabList (e.g. plugins/core/submit/'s
-    # status_dot QLabel) — built once, alongside page_factory, and never
-    # rebuilt by SectionTabList. The plugin that supplies the factory keeps
-    # its own reference to the returned widget and updates it directly
-    # (text/visibility/whatever) — SectionTabList only lays it out, it does
-    # not manage its content. A general "status widget" slot any current or
-    # future section can use — added 2026-08-03.
+    # row in Sidebar's SectionTabList — built once, alongside page_factory,
+    # and never rebuilt by SectionTabList. The plugin that supplies the
+    # factory keeps its own reference to the returned widget and updates it
+    # directly (text/visibility/whatever) — SectionTabList only lays it out,
+    # it does not manage its content. A general "status widget" slot any
+    # current or future section can use — added 2026-08-03. Submit used this
+    # for its status dot until 2026-08-25, when it moved to
+    # NotificationRegistry (plugin_api/registries/notification_registry.py)
+    # instead, so its own row can carry text, not just an icon.
     trailing_widget_factory: Callable[[], QWidget] | None = None
     # Optional: given the constructed page and a UICommandService, connect
     # whatever signals the page needs wired to app-level services (sidebar

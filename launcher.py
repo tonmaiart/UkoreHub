@@ -217,6 +217,7 @@ def main() -> None:
     )
     from plugin_api import (
         PLUGIN_API_VERSION,
+        NotificationRegistry,
         PluginAPI,
         ProgramLaunchRegistry,
         SectionRegistry,
@@ -508,6 +509,7 @@ def main() -> None:
         file_openers=FileOpenerRegistry(),
         program_launchers=ProgramLaunchRegistry(),
         sidebar_footer_actions=SidebarFooterActionRegistry(),
+        notifications=NotificationRegistry(),
     )
     register_builtin_settings_tabs(
         registries.settings_tabs,

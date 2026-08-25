@@ -8,6 +8,7 @@ import sys
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from plugin_api import (
+    CATEGORY_GENERAL,
     CATEGORY_PROJECT,
     AppLifecycleContext,
     GitOperationError,
@@ -16,6 +17,7 @@ from plugin_api import (
 )
 from plugins.core.ExternalPluginManager import sync_engine
 from plugins.core.ExternalPluginManager.catalog_store import CatalogEntry, ExternalPluginCatalog
+from plugins.core.ExternalPluginManager.external_plugin_updater_page import ExternalPluginUpdaterPage
 from plugins.core.ExternalPluginManager.external_plugins_page import ExternalPluginsPage
 from plugins.core.ExternalPluginManager.last_check_store import LastCheckedStore
 from plugins.core.ExternalPluginManager.sync_engine import PERSISTENT_STATUSES
@@ -209,8 +211,8 @@ class _SyncController:
 
 
 def register(api) -> None:
-    # A fresh page per Settings open (same page_factory convention as every
-    # other Settings tab — see interface/settings/settings_view.py's
+    # A fresh page per Settings open (same page_factory convention every
+    # Settings tab uses — see interface/settings/settings_view.py's
     # SettingsView docstring), but the sync controller itself is built once
     # for the whole app session so its background sync survives across
     # Settings dialog opens/closes.
@@ -218,6 +220,9 @@ def register(api) -> None:
     api.on_app_start(sync_controller.on_lifecycle_event)
     api.on_repo_changed(sync_controller.on_lifecycle_event)
 
+    # Backend catalog admin (Add/Edit/Remove a repo URL) — Settings >
+    # Project, rarely opened. The day-to-day clone/update/status side lives
+    # in the top-level section below instead.
     api.register_settings_tab(
         SettingsTabSpec(
             key=PLUGIN_ID,
@@ -228,6 +233,21 @@ def register(api) -> None:
             # plugins/core/project_editor/plugin.py.
             order=30,
             page_factory=lambda: ExternalPluginsPage(
+                catalog=sync_controller.catalog,
+                plugin_catalog=api.plugin_catalog,
+            ),
+            category=CATEGORY_PROJECT,
+        )
+    )
+
+    # Day-to-day clone/status/update UI — Settings > Account (CATEGORY_GENERAL),
+    # alongside the built-in "Account" tab (common_settings_page.py).
+    api.register_settings_tab(
+        SettingsTabSpec(
+            key="external_plugins_updater",
+            label="Plugins",
+            order=10,
+            page_factory=lambda: ExternalPluginUpdaterPage(
                 git_service=api.git,
                 plugins_root=api.cache_dir / "plugins",  # see _SyncController's own comment on this
                 catalog=sync_controller.catalog,
@@ -235,6 +255,6 @@ def register(api) -> None:
                 sync_status_store=sync_controller.status_store,
                 last_check_store=sync_controller.last_check_store,
             ),
-            category=CATEGORY_PROJECT,
+            category=CATEGORY_GENERAL,
         )
     )

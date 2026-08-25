@@ -70,6 +70,7 @@ from core_api import (
 )
 
 from plugin_api.plugin_api import PLUGIN_API_VERSION, PluginAPI, RepoContextDTO
+from plugin_api.registries.notification_registry import NotificationRegistry, NotificationSpec
 from plugin_api.registries.program_launch_registry import ProgramLaunchRegistry, ProgramLaunchSpec
 from plugin_api.registries.registry_base import KeyedOrderedRegistry
 from plugin_api.registries.section_registry import SectionRegistry, SectionSpec, UICommandService
@@ -139,6 +140,8 @@ __all__ = [
     "LocalConfigStore",
     "MetadataStore",
     "NotFoundError",
+    "NotificationRegistry",
+    "NotificationSpec",
     "PLUGIN_API_VERSION",
     "PluginAPI",
     "PluginConfigStore",

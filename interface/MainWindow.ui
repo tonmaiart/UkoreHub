@@ -27,7 +27,7 @@
        <property name="autoFillBackground">
         <bool>false</bool>
        </property>
-       <layout class="QGridLayout" name="gridLayout" rowstretch="0,0,0,0,0">
+       <layout class="QGridLayout" name="gridLayout" rowstretch="0,0,0,10,0,0">
         <property name="leftMargin">
          <number>0</number>
         </property>
@@ -43,12 +43,18 @@
         <property name="spacing">
          <number>0</number>
         </property>
-        <item row="4" column="0">
-         <widget class="QPushButton" name="pushButton_setting">
+        <item row="1" column="0">
+         <widget class="QLabel" name="label_thumbnail">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Maximum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>30</height>
+            <height>0</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -62,18 +68,12 @@
           </property>
          </widget>
         </item>
-        <item row="1" column="0">
-         <widget class="QLabel" name="label_thumbnail">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Minimum" vsizetype="Maximum">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
+        <item row="5" column="0">
+         <widget class="QPushButton" name="pushButton_setting">
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>0</height>
+            <height>30</height>
            </size>
           </property>
           <property name="maximumSize">
@@ -132,6 +132,9 @@ border-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 rgba(0,
            <number>10</number>
           </property>
          </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QListWidget" name="listWidget_notification"/>
         </item>
        </layout>
       </widget>

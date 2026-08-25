@@ -9,6 +9,7 @@ from PySide6.QtGui import QIcon, QPixmap, QStandardItem, QStandardItemModel
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QMenu,
@@ -49,19 +50,25 @@ from plugins.core.submit.conflict_dialog import ConflictResolutionDialog
 from plugins.core.submit.git_stream_worker import GitStreamWorker
 from plugins.core.submit.status_worker import RepoStatusWorker
 
-# How long a "clean" status stays "fresh" (blue) before the freshness timer
-# reverts the sidebar status dot to "loading" (no icon), pending the next
-# refresh_status() call.
+# How long a "fresh" (clean + synced) notification state stays valid before
+# the freshness timer reverts it to "loading" (hidden), pending the next
+# refresh_status() call. Only the reassuring "fresh" state expires this way —
+# a "dirty"/"behind" warning is left standing even if stale, since a false
+# warning is safer than a false all-clear.
 FRESHNESS_WINDOW_MS = 10 * 60 * 1000
 # Background repoll of the commit history panel while the app just sits
 # open on this tab — set_repo/refresh_status/push already trigger an
 # immediate poll, this just catches teammates' pushes in between.
 COMMIT_LOG_POLL_INTERVAL_MS = 60 * 1000
-_STATUS_DOT_SIZE = 14
+_NOTIFICATION_ICON_SIZE = 14
 _UI_FILE = Path(__file__).resolve().parent / "submit_section.ui"
 # Commit-history panels' merged Time column: relative ("3 days ago") inside
 # this window, absolute date ("15 Jan 2024") beyond it.
 _RELATIVE_TIME_CUTOFF_DAYS = 7
+# Modified/Staged tables' Time column uses a tighter 1-day window — these are
+# working-tree edits, so "today" is the boundary that actually matters, not a
+# week.
+_FILE_TIME_CUTOFF_DAYS = 1
 
 # FileChange.change_type -> what the Modified column shows.
 _CHANGE_TYPE_LABELS = {
@@ -79,12 +86,11 @@ _PATH_ROLE = Qt.UserRole + 1
 _CHANGE_TYPE_ROLE = Qt.UserRole + 2
 
 
-def _format_commit_time(raw: str) -> str:
-    """format_relative_time ("3 days ago") within _RELATIVE_TIME_CUTOFF_DAYS,
-    otherwise format_commit_date ("15 Jan 2024") — the commit-history
-    panels' merged Time column replaces what used to be separate Time
-    Ago/Date columns with whichever of the two is more useful at a glance
-    for how old the commit is."""
+def _format_relative_or_absolute(raw: str, cutoff_days: int) -> str:
+    """format_relative_time ("3 days ago") within cutoff_days, otherwise
+    format_commit_date ("15 Jan 2024") — shared by the commit-history
+    panels' Time column (_format_commit_time, 7-day cutoff) and the
+    Modified/Staged tables' Time column (_format_file_mtime, 1-day cutoff)."""
     if not raw:
         return raw
     try:
@@ -92,9 +98,24 @@ def _format_commit_time(raw: str) -> str:
     except ValueError:
         return format_relative_time(raw)
     now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-    if (now - dt).days < _RELATIVE_TIME_CUTOFF_DAYS:
+    if (now - dt).days < cutoff_days:
         return format_relative_time(raw)
     return format_commit_date(raw)
+
+
+def _format_commit_time(raw: str) -> str:
+    return _format_relative_or_absolute(raw, _RELATIVE_TIME_CUTOFF_DAYS)
+
+
+def _format_file_mtime(mtime: float | None) -> str:
+    """Modified/Staged tables' Time column — the file's on-disk last-modified
+    time (working-tree changes aren't committed yet, so there's no commit
+    timestamp to show instead). None (file already gone from disk, e.g. a
+    staged delete) shows as "—"."""
+    if mtime is None:
+        return "—"
+    raw = datetime.fromtimestamp(mtime).isoformat()
+    return _format_relative_or_absolute(raw, _FILE_TIME_CUTOFF_DAYS)
 
 
 def _load_ui_form(parent: QWidget | None = None) -> QWidget:
@@ -139,26 +160,45 @@ class RepoGitStatusPage(QWidget):
         self._commit_log_avatar_cache: dict[str, bytes | None] = {}
         self._commit_files_dialog: CommitFilesDialog | None = None
         self._last_status: RepoStatus | None = None
+        # Set from _on_commit_log_ready (the "Sync New Commit" list) —
+        # combined with _last_status.is_clean in _update_notification to pick
+        # the notification row's state.
+        self._has_new_commits = False
+        # Re-entrancy guard for _on_table_selected: clearSelection() on the
+        # other table fires its own selectionChanged, which would otherwise
+        # bounce back and forth between the two tables.
+        self._suppress_selection_sync = False
         # Counts in-flight refresh/sync workers so the progressBar (added to
         # submit_section.ui) only ever goes idle once every last one of them
         # has actually finished — see _busy_begin/_busy_end.
         self._busy_count = 0
 
-        # Sidebar-row status indicator (SectionSpec.trailing_widget_factory —
-        # see plugin.py) — a plain QLabel, no custom widget class. This page
-        # owns/updates it directly via _set_status_dot_state;
-        # _freshness_timer flips a "fresh" (clean, just-verified) state back
-        # to "loading" once that verification is more than
-        # FRESHNESS_WINDOW_MS old; every call to refresh_status() restarts
-        # it. Deliberately independent of tableView_git_status's diagnostics
-        # (auth/clone/up-to-date) — this only ever reflects working-tree
-        # cleanliness.
-        self.status_dot = QLabel()
-        self.status_dot.setFixedSize(_STATUS_DOT_SIZE, _STATUS_DOT_SIZE)
+        # listWidget_notification row (NotificationRegistry — see plugin.py's
+        # api.register_notification call) — replaces the old sidebar-row
+        # status dot (SectionSpec.trailing_widget_factory). This page
+        # owns/updates it directly via _set_notification_state, driven by
+        # _update_notification (called from _on_status_ready and
+        # _on_commit_log_ready, the two things this combines).
+        # _freshness_timer flips a "fresh" (clean + synced, just-verified)
+        # state back to "loading" (hidden) once that verification is more
+        # than FRESHNESS_WINDOW_MS old; every call to refresh_status()
+        # restarts it. Deliberately independent of tableView_git_status's
+        # diagnostics (auth/clone/up-to-date) — this only ever reflects
+        # working-tree cleanliness + whether "Sync New Commit" has anything
+        # pending.
+        self.notification_widget = QWidget()
+        notification_layout = QHBoxLayout(self.notification_widget)
+        notification_layout.setContentsMargins(6, 4, 6, 4)
+        notification_layout.setSpacing(6)
+        self._notification_icon = QLabel()
+        self._notification_icon.setFixedSize(_NOTIFICATION_ICON_SIZE, _NOTIFICATION_ICON_SIZE)
+        self._notification_text = QLabel()
+        notification_layout.addWidget(self._notification_icon)
+        notification_layout.addWidget(self._notification_text, 1)
         self._freshness_timer = QTimer(self)
         self._freshness_timer.setSingleShot(True)
-        self._freshness_timer.timeout.connect(lambda: self._set_status_dot_state("loading"))
-        self._set_status_dot_state("loading")
+        self._freshness_timer.timeout.connect(lambda: self._set_notification_state("loading"))
+        self._set_notification_state("loading")
 
         self.empty_label = QLabel("Select a repo to see this information.")
 
@@ -216,17 +256,16 @@ class RepoGitStatusPage(QWidget):
 
         self.revert_button: QPushButton = find(QPushButton, "pushButton_revert")
         self.stage_button: QPushButton = find(QPushButton, "pushButton_stage")
-        self.unstage_button: QPushButton = find(QPushButton, "pushButton_unstage")
         self.submit_all_staged_button: QPushButton = find(QPushButton, "pushButton_submit_all_staged")
         self.local_dir_button: QPushButton = find(QPushButton, "pushButton_local_dir")
         self.repo_website_button: QPushButton = find(QPushButton, "pushButton_repo_website")
 
-        self.modified_model = QStandardItemModel(0, 3, self)
-        self.modified_model.setHorizontalHeaderLabels(["File Name", "File Path", "Modified"])
+        self.modified_model = QStandardItemModel(0, 4, self)
+        self.modified_model.setHorizontalHeaderLabels(["File Name", "File Path", "Modified", "Time"])
         self.table_modified.setModel(self.modified_model)
 
-        self.staged_model = QStandardItemModel(0, 3, self)
-        self.staged_model.setHorizontalHeaderLabels(["File Name", "File Path", "Modified"])
+        self.staged_model = QStandardItemModel(0, 4, self)
+        self.staged_model.setHorizontalHeaderLabels(["File Name", "File Path", "Modified", "Time"])
         self.table_staged.setModel(self.staged_model)
 
         for table in (self.table_modified, self.table_staged):
@@ -244,8 +283,21 @@ class RepoGitStatusPage(QWidget):
             header.setSectionResizeMode(0, QHeaderView.Interactive)
             header.setSectionResizeMode(1, QHeaderView.Stretch)
             header.setSectionResizeMode(2, QHeaderView.Interactive)
+            header.setSectionResizeMode(3, QHeaderView.Interactive)
             table.setColumnWidth(0, 240)
             table.setColumnWidth(2, 110)
+            table.setColumnWidth(3, 130)
+
+        # Modified/Staged share one Stage/Unstage button (pushButton_stage),
+        # so only one table's selection can be "live" at a time — selecting
+        # rows in either table clears the other's, otherwise the click
+        # handler couldn't tell which direction to act in.
+        self.table_modified.selectionModel().selectionChanged.connect(
+            lambda *_: self._on_table_selected(self.table_modified, self.table_staged)
+        )
+        self.table_staged.selectionModel().selectionChanged.connect(
+            lambda *_: self._on_table_selected(self.table_staged, self.table_modified)
+        )
 
         self.git_status_model = QStandardItemModel(0, 3, self)
         self.git_status_model.setHorizontalHeaderLabels(["Name", "Detail", "Status"])
@@ -265,7 +317,6 @@ class RepoGitStatusPage(QWidget):
         self.refresh_button.clicked.connect(self.refresh_status)
         self.stage_button.clicked.connect(self._on_stage_clicked)
         self.revert_button.clicked.connect(self._on_revert_clicked)
-        self.unstage_button.clicked.connect(self._on_unstage_clicked)
         self.submit_all_staged_button.clicked.connect(self._on_submit_all_staged_clicked)
         self.local_dir_button.clicked.connect(self._on_local_dir_clicked)
         self.repo_website_button.clicked.connect(self._on_repo_website_clicked)
@@ -294,7 +345,7 @@ class RepoGitStatusPage(QWidget):
         self._workspace_root = workspace_root
         if repo is None:
             self._freshness_timer.stop()
-            self._set_status_dot_state("loading")
+            self._set_notification_state("loading")
             show_exclusive(self.empty_label, self.content_widget)
             return
         show_exclusive(self.content_widget, self.empty_label)
@@ -308,15 +359,51 @@ class RepoGitStatusPage(QWidget):
         scrollbar = self.plain_text_git_log.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
-    def _set_status_dot_state(self, state: str) -> None:
+    # state: "loading" (hidden — a check is in flight/stale), "behind"
+    # ("Sync New Commit" has entries), "dirty" (working tree not clean),
+    # "fresh" (clean and synced). "behind" outranks "dirty" in
+    # _update_notification since it needs a sync before anything else here
+    # is meaningful.
+    _NOTIFICATION_ICONS = {
+        "behind": QStyle.SP_MessageBoxWarning,
+        "dirty": QStyle.SP_MessageBoxWarning,
+        "fresh": QStyle.SP_DialogApplyButton,
+    }
+    _NOTIFICATION_TEXT = {
+        "behind": "New Commit Not Sync!",
+        "dirty": "You have modified!",
+        "fresh": "Up to date",
+    }
+
+    def _set_notification_state(self, state: str) -> None:
         if state == "loading":
-            self.status_dot.setVisible(False)
+            self.notification_widget.setVisible(False)
             return
-        standard_icon = QStyle.SP_MessageBoxWarning if state == "dirty" else QStyle.SP_DialogApplyButton
-        icon = self.style().standardIcon(standard_icon)
-        self.status_dot.setPixmap(icon.pixmap(_STATUS_DOT_SIZE, _STATUS_DOT_SIZE))
-        self.status_dot.setToolTip("Uncommitted changes" if state == "dirty" else "Up to date")
-        self.status_dot.setVisible(True)
+        icon = self.style().standardIcon(self._NOTIFICATION_ICONS[state])
+        text = self._NOTIFICATION_TEXT[state]
+        self._notification_icon.setPixmap(icon.pixmap(_NOTIFICATION_ICON_SIZE, _NOTIFICATION_ICON_SIZE))
+        self._notification_text.setText(text)
+        self.notification_widget.setToolTip(text)
+        self.notification_widget.setVisible(True)
+
+    def _update_notification(self) -> None:
+        """Combines the two things the notification row reports on —
+        _last_status.is_clean (from _on_status_ready) and _has_new_commits
+        (from _on_commit_log_ready) — called after either changes. Does
+        nothing until at least one status check has actually come back, so
+        the row stays hidden ("loading") rather than flashing a wrong
+        default state."""
+        if self._last_status is None:
+            return
+        if self._has_new_commits:
+            self._set_notification_state("behind")
+            self._freshness_timer.stop()
+        elif not self._last_status.is_clean:
+            self._set_notification_state("dirty")
+            self._freshness_timer.stop()
+        else:
+            self._set_notification_state("fresh")
+            self._freshness_timer.start(FRESHNESS_WINDOW_MS)
 
     def _busy_begin(self, label: str = "") -> None:
         self._busy_count += 1
@@ -337,11 +424,11 @@ class RepoGitStatusPage(QWidget):
         if self._repo is None or self._workspace_root is None:
             return
         # Every refresh (Sync, Refresh Status, repo switch — the only
-        # triggers this dot reacts to) starts out "loading" until the
-        # new check reports back, so the dot never shows a stale/wrong-repo
-        # color while a fresh one is in flight.
+        # triggers the notification row reacts to) starts out "loading"
+        # (hidden) until the new checks report back, so the row never shows
+        # a stale/wrong-repo state while a fresh one is in flight.
         self._freshness_timer.stop()
-        self._set_status_dot_state("loading")
+        self._set_notification_state("loading")
         dest_path = self._dest_path()
         if not (dest_path / ".git").exists():
             self.modified_model.removeRows(0, self.modified_model.rowCount())
@@ -366,18 +453,27 @@ class RepoGitStatusPage(QWidget):
         self._last_status = status
         self._populate_file_table(self.modified_model, status.unstaged_changes)
         self._populate_file_table(self.staged_model, status.staged_changes)
-        if status.is_clean:
-            self._set_status_dot_state("fresh")
-            self._freshness_timer.start(FRESHNESS_WINDOW_MS)
-        else:
-            self._set_status_dot_state("dirty")
+        self._update_notification()
 
     def _on_status_failed(self, message: str) -> None:
         self._append_log(f"--- Failed to read status: {message} ---")
 
     def _populate_file_table(self, model: QStandardItemModel, changes: list[FileChange]) -> None:
         model.removeRows(0, model.rowCount())
-        for change in sorted(changes, key=lambda c: c.path):
+        dest_path = self._dest_path()
+        rows: list[tuple[FileChange, float | None]] = []
+        for change in changes:
+            try:
+                mtime = (dest_path / change.path).stat().st_mtime
+            except OSError:
+                # Gone from disk already (e.g. a staged delete) — no
+                # filesystem timestamp to show.
+                mtime = None
+            rows.append((change, mtime))
+        # Latest-modified first by default; files with no mtime sort last
+        # instead of floating to the top ahead of everything real.
+        rows.sort(key=lambda row: (row[1] is None, -row[1] if row[1] is not None else 0, row[0].path))
+        for change, mtime in rows:
             pure_path = PurePosixPath(change.path)
             name_item = QStandardItem(pure_path.name)
             name_item.setData(change.path, _PATH_ROLE)
@@ -385,7 +481,8 @@ class RepoGitStatusPage(QWidget):
             parent = str(pure_path.parent)
             path_item = QStandardItem("" if parent == "." else parent)
             type_item = QStandardItem(_CHANGE_TYPE_LABELS.get(change.change_type, change.change_type.title()))
-            model.appendRow([name_item, path_item, type_item])
+            time_item = QStandardItem(_format_file_mtime(mtime))
+            model.appendRow([name_item, path_item, type_item, time_item])
 
     def _selected_rows_data(self, table: QTableView, model: QStandardItemModel) -> list[tuple[str, str]]:
         rows = {index.row() for index in table.selectionModel().selectedRows()}
@@ -514,6 +611,8 @@ class RepoGitStatusPage(QWidget):
         self._commit_log_entries["new"] = new_entries
         self._populate_commit_log_model(self.local_commit_log_model, local_entries)
         self._populate_commit_log_model(self.new_commit_log_model, new_entries)
+        self._has_new_commits = bool(new_entries)
+        self._update_notification()
 
     def _populate_commit_log_model(self, model: QStandardItemModel, entries: list[CommitHistoryEntry]) -> None:
         model.removeRows(0, model.rowCount())
@@ -582,12 +681,35 @@ class RepoGitStatusPage(QWidget):
 
     # -- stage / unstage / revert (multi-selection) --------------------------
 
+    def _on_table_selected(self, active_table: QTableView, other_table: QTableView) -> None:
+        """Modified and Staged share one Stage/Unstage button, so at most one
+        of them may have a selection at a time — otherwise _on_stage_clicked
+        couldn't tell which direction to act in. Selecting rows in
+        active_table clears other_table's selection; an empty selection
+        (e.g. the user ctrl-clicked down to zero rows) is left alone since
+        there's nothing to disambiguate."""
+        if self._suppress_selection_sync:
+            return
+        if not active_table.selectionModel().selectedRows():
+            return
+        self._suppress_selection_sync = True
+        try:
+            other_table.clearSelection()
+        finally:
+            self._suppress_selection_sync = False
+
     def _on_stage_clicked(self) -> None:
         if self._repo is None:
             return
-        paths = [path for path, _ in self._selected_rows_data(self.table_modified, self.modified_model)]
-        if not paths:
+        modified_paths = [path for path, _ in self._selected_rows_data(self.table_modified, self.modified_model)]
+        if modified_paths:
+            self._start_stage(modified_paths)
             return
+        staged_paths = [path for path, _ in self._selected_rows_data(self.table_staged, self.staged_model)]
+        if staged_paths:
+            self._start_unstage(staged_paths)
+
+    def _start_stage(self, paths: list[str]) -> None:
         if self._stage_worker is not None and self._stage_worker.isRunning():
             # Same "don't orphan an in-flight worker" guard as start_sync /
             # refresh_status — a rapid second click would otherwise crash the
@@ -608,27 +730,22 @@ class RepoGitStatusPage(QWidget):
         self.stage_button.setEnabled(True)
         QMessageBox.warning(self, "Stage Failed", message)
 
-    def _on_unstage_clicked(self) -> None:
-        if self._repo is None:
-            return
-        paths = [path for path, _ in self._selected_rows_data(self.table_staged, self.staged_model)]
-        if not paths:
-            return
+    def _start_unstage(self, paths: list[str]) -> None:
         if self._unstage_worker is not None and self._unstage_worker.isRunning():
             return
         dest_path = self._dest_path()
-        self.unstage_button.setEnabled(False)
+        self.stage_button.setEnabled(False)
         self._unstage_worker = GitStreamWorker(lambda on_output: self.git_service.unstage_paths(dest_path, paths))
         self._unstage_worker.finished_ok.connect(self._on_unstage_finished)
         self._unstage_worker.failed.connect(self._on_unstage_failed)
         self._unstage_worker.start()
 
     def _on_unstage_finished(self, _result: object) -> None:
-        self.unstage_button.setEnabled(True)
+        self.stage_button.setEnabled(True)
         self.refresh_status()
 
     def _on_unstage_failed(self, message: str) -> None:
-        self.unstage_button.setEnabled(True)
+        self.stage_button.setEnabled(True)
         QMessageBox.warning(self, "Restore Failed", message)
 
     def _on_revert_clicked(self) -> None:
@@ -799,7 +916,6 @@ class RepoGitStatusPage(QWidget):
     def _set_workflow_running(self, running: bool) -> None:
         self.submit_all_staged_button.setEnabled(not running)
         self.stage_button.setEnabled(not running)
-        self.unstage_button.setEnabled(not running)
 
     def _start_pull_step(self) -> None:
         dest_path = self._dest_path()

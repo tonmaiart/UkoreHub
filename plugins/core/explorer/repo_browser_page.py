@@ -48,6 +48,7 @@ class RepoBrowserPage(QWidget):
             open_file=self._open_file,
             cache_dir=cache_dir,
             metadata_store=api.metadata if api else None,
+            local_config_store=local_config_store,
         )
 
         layout = QVBoxLayout(self)

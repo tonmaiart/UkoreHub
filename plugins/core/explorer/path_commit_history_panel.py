@@ -2,21 +2,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem
 
-from plugin_api import CommitCard, CommitHistoryEntry, GitService, wrap_scrollable
+from plugin_api import CommitHistoryEntry, GitService, format_commit_date
 from plugins.core.explorer.path_commit_history_worker import PathCommitHistoryWorker
 
+_COLUMN_LABELS = ("Author", "Message", "Time")
+_MESSAGE_COLUMN = 1
 
-class PathCommitHistoryPanel(QWidget):
+
+class PathCommitHistoryPanel:
     """Commit history scoped to whichever path is currently being viewed in
-    the Repo Browser — narrower than the whole-repo log on Repo Git Status."""
+    the Repo Browser — narrower than the whole-repo log on Repo Git Status.
+    Renders into `tableWidget_file_commit_history` (authored directly in
+    explorer_section.ui) rather than owning its own widget tree."""
 
-    def __init__(self, git_service: GitService, parent=None):
-        super().__init__(parent)
+    def __init__(self, git_service: GitService, table: QTableWidget):
         self.git_service = git_service
+        self.table = table
         self._worker: PathCommitHistoryWorker | None = None
-        self.setFixedWidth(230)
 
         # Session-lifetime caches so re-visiting a file/folder you've already
         # clicked shows instantly instead of re-running git/GitHub every time.
@@ -29,23 +35,26 @@ class PathCommitHistoryPanel(QWidget):
         # old code silently dropped the new click. Remember it here and fire
         # it as soon as the in-flight worker finishes instead of losing it.
         self._pending_request: tuple[Path, str] | None = None
+        # Workers being replaced before their own run() has fully unwound on
+        # the OS thread — see _retire_worker below.
+        self._retiring_workers: set[PathCommitHistoryWorker] = set()
 
-        title = QLabel("Commit History")
-        title.setObjectName("commitHistoryTitle")
+        self.table.setColumnCount(len(_COLUMN_LABELS))
+        self.table.setHorizontalHeaderLabels(_COLUMN_LABELS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(_MESSAGE_COLUMN, QHeaderView.Stretch)
 
-        self._status_label = QLabel("")
-        self._status_label.setWordWrap(True)
+        self.clear()
 
-        self._cards_container = QWidget()
-        self._cards_layout = QVBoxLayout(self._cards_container)
-        self._cards_layout.addStretch()
-
-        scroll = wrap_scrollable(self._cards_container, object_name="commitHistoryScroll")
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(title)
-        layout.addWidget(self._status_label)
-        layout.addWidget(scroll, stretch=1)
+    def clear(self) -> None:
+        """No file selected (folder navigation, cleared selection, or a
+        directory row) — reset to empty instead of leaving the
+        previously-selected file's history on screen."""
+        self._current_key = None
+        self.table.clearSpans()
+        self.table.setRowCount(0)
 
     def show_commits_for(self, repo_path: Path, relative_path: str) -> None:
         cache_key = (str(repo_path), relative_path)
@@ -54,8 +63,7 @@ class PathCommitHistoryPanel(QWidget):
         if cached is not None:
             self._render_entries(cached)
         else:
-            self._clear_cards()
-            self._status_label.setText("Loading...")
+            self._show_message_row("Loading...")
 
         if self._worker is not None and self._worker.isRunning():
             self._pending_request = (repo_path, relative_path)
@@ -64,6 +72,9 @@ class PathCommitHistoryPanel(QWidget):
         self._start_fetch(repo_path, relative_path, cache_key)
 
     def _start_fetch(self, repo_path: Path, relative_path: str, cache_key: tuple[str, str]) -> None:
+        if self._worker is not None:
+            self._retire_worker(self._worker)
+
         token = self.git_service.get_github_token()
         self._worker = PathCommitHistoryWorker(
             self.git_service, repo_path, relative_path, token, avatar_cache=self._avatar_cache
@@ -71,18 +82,58 @@ class PathCommitHistoryPanel(QWidget):
         self._worker.entries_ready.connect(lambda entries: self._on_entries_ready(entries, cache_key))
         self._worker.start()
 
-    def _clear_cards(self) -> None:
-        while self._cards_layout.count() > 1:  # keep the trailing stretch
-            item = self._cards_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+    def _retire_worker(self, worker: PathCommitHistoryWorker) -> None:
+        # Reassigning self._worker must never drop the last Python reference
+        # to a QThread before it has actually finished. entries_ready is
+        # emitted as the very last line of run(), so _on_entries_ready can
+        # turn around and call _start_fetch again (for a queued pending
+        # request) while the old worker's OS thread is still unwinding —
+        # PySide6 destroys the underlying QThread the instant its Python
+        # refcount hits zero, and doing that before the thread has fully
+        # stopped is a documented Qt crash ("QThread: Destroyed while thread
+        # is still running"), one that gets far more likely the faster
+        # _start_fetch is called back-to-back, i.e. exactly when the user
+        # double-clicks through folders quickly. Keeping a strong reference
+        # around until finished() actually fires avoids that race entirely.
+        if worker.isFinished():
+            return
+        self._retiring_workers.add(worker)
+        worker.finished.connect(lambda: self._retiring_workers.discard(worker))
 
-    def _render_entries(self, entries: list) -> None:
-        self._clear_cards()
-        self._status_label.setText("No commit history found." if not entries else "")
-        for entry in entries:
-            self._cards_layout.insertWidget(self._cards_layout.count() - 1, CommitCard(entry))
+    def _show_message_row(self, message: str) -> None:
+        self.table.clearSpans()
+        self.table.setRowCount(1)
+        item = QTableWidgetItem(message)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(0, 0, item)
+        self.table.setSpan(0, 0, 1, len(_COLUMN_LABELS))
+
+    def _render_entries(self, entries: list[CommitHistoryEntry]) -> None:
+        self.table.clearSpans()
+        if not entries:
+            self._show_message_row("No commit history found.")
+            return
+
+        self.table.setRowCount(len(entries))
+        for row, entry in enumerate(entries):
+            author_item = QTableWidgetItem(entry.author_display)
+            if entry.avatar_bytes:
+                pixmap = QPixmap()
+                pixmap.loadFromData(entry.avatar_bytes)
+                if not pixmap.isNull():
+                    author_item.setIcon(QIcon(pixmap))
+
+            message_item = QTableWidgetItem(entry.message)
+            message_item.setToolTip(entry.message)
+
+            time_item = QTableWidgetItem(format_commit_date(entry.date))
+
+            for item in (author_item, message_item, time_item):
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+            self.table.setItem(row, 0, author_item)
+            self.table.setItem(row, 1, message_item)
+            self.table.setItem(row, 2, time_item)
 
     def _on_entries_ready(self, entries: list, cache_key: tuple[str, str]) -> None:
         self._entries_cache[cache_key] = entries

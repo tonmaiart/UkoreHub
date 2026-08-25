@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QStyle
 
-from plugin_api import SectionSpec, UICommandService
+from plugin_api import NotificationSpec, SectionSpec, UICommandService
 from plugins.core.submit.repo_git_status_page import RepoGitStatusPage
 
 SECTION_KEY = "repo_git_status"
@@ -45,9 +45,16 @@ def register(api) -> None:
             ],
             standard_icon=QStyle.SP_DialogSaveButton,
             wire=_wire,
-            # SectionTabList lays this out at the right edge of Submit's own
-            # row; the page updates its icon directly (see
-            # RepoGitStatusPage.status_dot / _set_status_dot_state).
-            trailing_widget_factory=lambda: page.status_dot,
+        )
+    )
+    # listWidget_notification row — replaces the old tab-row status dot
+    # (trailing_widget_factory) with a descriptive text row; the page
+    # updates it directly (see RepoGitStatusPage.notification_widget /
+    # _set_notification_state).
+    api.register_notification(
+        NotificationSpec(
+            key=SECTION_KEY,
+            order=20,
+            widget_factory=lambda: page.notification_widget,
         )
     )
