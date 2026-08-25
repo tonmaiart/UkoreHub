@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1152</width>
-    <height>737</height>
+    <height>709</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -143,7 +143,7 @@
         <item>
          <layout class="QHBoxLayout" name="horizontalLayout" stretch="8">
           <item>
-           <layout class="QVBoxLayout" name="verticalLayout" stretch="0,10">
+           <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0">
             <item>
              <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="0,0,0,10,0,0,0,0">
               <item>
@@ -332,15 +332,37 @@
              </layout>
             </item>
             <item>
-             <widget class="QTableView" name="tableView_current_directory">
-              <property name="font">
-               <font>
-                <pointsize>10</pointsize>
-               </font>
-              </property>
-              <attribute name="horizontalHeaderVisible">
-               <bool>true</bool>
-              </attribute>
+             <widget class="QTableWidget" name="tableWidget_current_directory">
+              <column>
+               <property name="text">
+                <string>Name</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Size</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Date Modified</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Time Ago</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Local Modified</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Last Commit</string>
+               </property>
+              </column>
              </widget>
             </item>
            </layout>

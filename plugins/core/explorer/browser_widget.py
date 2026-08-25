@@ -6,14 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QDir, QFile, QFileInfo, QSize, Qt, QTimer
+from PySide6.QtCore import QFile, QFileInfo, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QFileIconProvider,
-    QFileSystemModel,
     QHeaderView,
     QInputDialog,
     QLineEdit,
@@ -23,7 +22,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyledItemDelegate,
     QStyleOptionViewItem,
-    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -34,13 +32,7 @@ from plugin_api import GitService, LocalConfigStore, MetadataStore, open_in_file
 from plugins.core.explorer.bookmarks_store import BookmarksStore
 from plugins.core.explorer.file_local_change_panel import FileLocalChangePanel
 from plugins.core.explorer.file_row_authors_worker import FileRowAuthorsWorker
-from plugins.core.explorer.file_table_proxy import (
-    LAST_COMMIT_BY_COLUMN,
-    LOCAL_MODIFIED_BY_COLUMN,
-    TIME_AGO_COLUMN,
-    FileTableFilterProxy,
-    format_time_ago,
-)
+from plugins.core.explorer.file_table_proxy import format_time_ago
 from plugins.core.explorer.last_opened_store import LastOpenedStore
 from plugins.core.explorer.path_commit_history_panel import PathCommitHistoryPanel
 
@@ -50,6 +42,16 @@ _MAX_LAST_OPENED = 20
 _UI_FILE = Path(__file__).parent / "explorer_section.ui"
 _ICONS_DIR = Path(__file__).parent / "icons"
 _NAV_ICON_SIZE = QSize(20, 20)
+
+# tableWidget_current_directory's columns, authored directly in
+# explorer_section.ui (Designer <column> entries, so headers come from the
+# .ui rather than being set here).
+COL_NAME = 0
+COL_SIZE = 1
+COL_DATE_MODIFIED = 2
+COL_TIME_AGO = 3
+COL_LOCAL_MODIFIED = 4
+COL_LAST_COMMIT = 5
 # (button attr name, icon filename, tooltip) — nav buttons are icon-only
 # (label text cleared) rather than the old text/emoji labels.
 _NAV_BUTTON_ICONS = (
@@ -80,6 +82,31 @@ def _mtime_ago(path: Path) -> str:
     except OSError:
         return ""
     return format_time_ago(mtime)
+
+
+def _format_size(num_bytes: int) -> str:
+    size = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024:
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+class _SortableItem(QTableWidgetItem):
+    """A QTableWidgetItem that sorts by an explicit key instead of its
+    displayed text — needed for Size (numeric) and Date Modified/Time Ago
+    (chronological), where the shown string ("12.3 KB", "5 min ago")
+    doesn't sort correctly as plain text."""
+
+    def __init__(self, text: str, sort_key):
+        super().__init__(text)
+        self._sort_key = sort_key
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, _SortableItem):
+            return self._sort_key < other._sort_key
+        return super().__lt__(other)
 
 
 class _PaddedItemDelegate(QStyledItemDelegate):
@@ -155,19 +182,13 @@ class RepoBrowserWidget(QWidget):
         self.absolute_relative_switch: QPushButton = self.ui.findChild(QPushButton, "pushButton_absolute_relative_switch")
         self.breadcrumb: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_path")
         self.search_edit: QLineEdit = self.ui.findChild(QLineEdit, "lineEdit_search")
-        self.table: QTableView = self.ui.findChild(QTableView, "tableView_current_directory")
+        self.table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_current_directory")
         self.last_opened_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_last_opened_file")
         self.bookmarks_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_bookmarks")
         self.commit_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_file_commit_history")
         self.local_change_table: QTableWidget = self.ui.findChild(QTableWidget, "tableWidget_file_local_change")
 
         self._apply_nav_icons()
-
-        self.fs_model = QFileSystemModel()
-        self.fs_model.setFilter(QDir.NoDotAndDotDot | QDir.AllEntries)
-        self.fs_model.directoryLoaded.connect(self._on_directory_loaded)
-        self.proxy = FileTableFilterProxy()
-        self.proxy.setSourceModel(self.fs_model)
 
         self.history_back_button.setEnabled(False)
         self.history_back_button.clicked.connect(self._on_history_back)
@@ -213,9 +234,9 @@ class RepoBrowserWidget(QWidget):
             self.columns.append(list_widget)
             self.column_filters.append(filter_edit)
 
-        self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
-        self.table.setSelectionBehavior(QTableView.SelectRows)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(22)
@@ -225,18 +246,17 @@ class RepoBrowserWidget(QWidget):
         # Stretch (auto-fills leftover space) would fight a fixed width, so
         # Name is plain Interactive with a large starting width instead —
         # still user-resizable, just wide by default for now.
-        header.setSectionResizeMode(0, QHeaderView.Interactive)
-        self.table.setColumnWidth(0, 500)
+        header.setSectionResizeMode(COL_NAME, QHeaderView.Interactive)
+        self.table.setColumnWidth(COL_NAME, 500)
         # Date Modified used to be Stretch too — with two Stretch columns,
         # Qt splits leftover space between them evenly regardless of actual
         # content width, so a short date string ended up as wide as Name.
         # ResizeToContents sizes it to what it actually needs instead.
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.table.setColumnHidden(2, True)
-        self.table.setColumnWidth(1, 80)
-        self.table.setColumnWidth(TIME_AGO_COLUMN, 100)
-        self.table.setColumnWidth(LOCAL_MODIFIED_BY_COLUMN, 150)
-        self.table.setColumnWidth(LAST_COMMIT_BY_COLUMN, 150)
+        header.setSectionResizeMode(COL_DATE_MODIFIED, QHeaderView.ResizeToContents)
+        self.table.setColumnWidth(COL_SIZE, 80)
+        self.table.setColumnWidth(COL_TIME_AGO, 100)
+        self.table.setColumnWidth(COL_LOCAL_MODIFIED, 150)
+        self.table.setColumnWidth(COL_LAST_COMMIT, 150)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._on_table_context_menu)
         self.table.doubleClicked.connect(self._on_table_double_clicked)
@@ -307,7 +327,6 @@ class RepoBrowserWidget(QWidget):
         # commit by" for path "assets/model.ma" in one repo has nothing to
         # do with a file of the same relative path in a different one.
         self._last_commit_cache = {}
-        self.proxy.clear_author_cache()
 
         if self._cache_dir:
             self._last_opened_store = LastOpenedStore(
@@ -323,26 +342,20 @@ class RepoBrowserWidget(QWidget):
             self._bookmarks_store = None
         self._refresh_bookmarks_list()
 
-        self.fs_model.setRootPath(path.as_posix())
         self._navigate_to(path)
 
     def reload(self) -> None:
         """Forces the file table + Folder Navigator to re-read the current
         folder from disk, without changing which folder is open or touching
-        navigation history. QFileSystemModel has no public "rescan" call and
-        normally relies on its own filesystem watcher — which can miss or
-        lag behind a bulk change like a git clone/pull (many files
-        created/modified/deleted at once). Toggling setRootPath to "" and
-        back forces Qt to drop its cached listing and re-fetch instead of
-        waiting on the watcher. Wired to the Reload nav button, and to
-        RepoBrowserPage.refresh_content() (interface's RefreshablePage
-        protocol) for Submit's "Sync Others Commit" to call into
-        automatically."""
+        navigation history. The file table is populated directly from
+        iterdir() on every navigation (no cached filesystem-model listing to
+        invalidate), so this is just a re-navigate to the same path. Wired
+        to the Reload nav button, and to RepoBrowserPage.refresh_content()
+        (interface's RefreshablePage protocol) for Submit's "Sync Others
+        Commit" to call into automatically."""
         if self._root is None:
             return
         current = self._current_path or self._root
-        self.fs_model.setRootPath("")
-        self.fs_model.setRootPath(self._root.as_posix())
         self._navigate_to(current, _record_history=False)
 
     # -------------------------------------------------------------
@@ -416,30 +429,81 @@ class RepoBrowserWidget(QWidget):
 
         self._current_path = path
         self._update_breadcrumb_text(path)
-
-        posix_path = path.as_posix()
-        source_index = self.fs_model.index(posix_path)
-        proxy_index = self.proxy.mapFromSource(source_index)
-
-        logger.debug(
-            f"_navigate_to: {posix_path} | source_valid={source_index.isValid()} | proxy_valid={proxy_index.isValid()}"
-        )
-
-        if proxy_index.isValid():
-            self.table.setRootIndex(proxy_index)
-        elif source_index.isValid():
-            self.table.setRootIndex(self.proxy.mapFromSource(source_index))
-
-        # setRootIndex doesn't itself invalidate a selection made in the
-        # previous folder — without this, a leftover current index can make
-        # _on_table_selection_changed keep showing commit history/local
-        # change for a file that isn't even in the folder being shown
-        # anymore. QItemSelectionModel.clear() resets both the selection and
-        # the current index, which synchronously fires currentRowChanged and
-        # lands in _on_table_selection_changed's "nothing selected" branch.
-        self.table.selectionModel().clear()
+        self._populate_table(path)
+        # Rebuilding the table already drops any selection made in the
+        # previous folder — without this, File Commit History / File Local
+        # Change could otherwise keep showing a file that isn't even in the
+        # folder being shown anymore.
+        self._clear_file_panels()
 
         self._nav_settle_timer.start()
+
+    def _populate_table(self, folder: Path) -> None:
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        try:
+            entries = list(folder.iterdir())
+        except OSError:
+            entries = []
+        entries.sort(key=lambda p: p.name.lower())
+
+        self.table.setRowCount(len(entries))
+        for row, entry in enumerate(entries):
+            self._set_row(row, entry)
+
+        self.table.setSortingEnabled(True)
+        self._apply_search()
+
+    def _set_row(self, row: int, path: Path) -> None:
+        is_dir = path.is_dir()
+        try:
+            stat = path.stat()
+        except OSError:
+            stat = None
+
+        name_item = _SortableItem(path.name, path.name.lower())
+        name_item.setIcon(_file_icon(path))
+        name_item.setData(Qt.UserRole, str(path))
+        name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, COL_NAME, name_item)
+
+        if is_dir or stat is None:
+            size_item = _SortableItem("", -1)
+        else:
+            size_item = _SortableItem(_format_size(stat.st_size), stat.st_size)
+        size_item.setFlags(size_item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, COL_SIZE, size_item)
+
+        if stat is not None:
+            mod_dt = datetime.fromtimestamp(stat.st_mtime)
+            date_item = _SortableItem(mod_dt.strftime("%Y-%m-%d %H:%M:%S"), stat.st_mtime)
+            time_ago_item = _SortableItem(format_time_ago(mod_dt), stat.st_mtime)
+        else:
+            date_item = _SortableItem("", 0)
+            time_ago_item = _SortableItem("", 0)
+        for item in (date_item, time_ago_item):
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        self.table.setItem(row, COL_DATE_MODIFIED, date_item)
+        self.table.setItem(row, COL_TIME_AGO, time_ago_item)
+
+        for column in (COL_LOCAL_MODIFIED, COL_LAST_COMMIT):
+            item = QTableWidgetItem("")
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, column, item)
+
+    def _path_for_row(self, row: int) -> Path | None:
+        item = self.table.item(row, COL_NAME)
+        if item is None:
+            return None
+        data = item.data(Qt.UserRole)
+        return Path(data) if data else None
+
+    def _row_for_path(self, path: Path) -> int | None:
+        for row in range(self.table.rowCount()):
+            candidate = self._path_for_row(row)
+            if candidate is not None and candidate == path:
+                return row
+        return None
 
     def _apply_settled_navigation(self) -> None:
         if self._root is None or self._current_path is None:
@@ -466,13 +530,9 @@ class RepoBrowserWidget(QWidget):
                 is_dir = child.is_dir()
             except OSError:
                 continue
-            # as_posix() (not str()) so this key matches what
-            # FileTableFilterProxy.data() looks up via fs_model.filePath() —
-            # QFileSystemModel/QFileInfo always report paths with forward
-            # slashes (even on Windows), while pathlib's str() uses the
-            # native backslash separator. A mismatched key here means
-            # set_author_info() silently stores results under a path
-            # nothing ever queries, so the column stays permanently blank.
+            # _on_folder_author_ready looks the row up via Path equality
+            # (_row_for_path), so the exact separator style doesn't matter —
+            # any string Path() can parse works as the abs_path key.
             entries.append((child.as_posix(), relative, is_dir))
 
         if not entries:
@@ -489,7 +549,17 @@ class RepoBrowserWidget(QWidget):
         worker.start()
 
     def _on_folder_author_ready(self, abs_path: str, info) -> None:
-        self.proxy.set_author_info(abs_path, info)
+        row = self._row_for_path(Path(abs_path))
+        if row is None:
+            return
+        local_item = self.table.item(row, COL_LOCAL_MODIFIED)
+        if local_item is not None:
+            local_item.setText(info.local_modified_by or "")
+            local_item.setIcon(info.local_modified_icon or QIcon())
+        commit_item = self.table.item(row, COL_LAST_COMMIT)
+        if commit_item is not None:
+            commit_item.setText(info.last_commit_by or "")
+            commit_item.setIcon(info.last_commit_icon or QIcon())
 
     def _retire_authors_worker(self, worker: FileRowAuthorsWorker) -> None:
         # Same QThread-lifetime hazard as PathCommitHistoryPanel._retire_worker
@@ -502,17 +572,6 @@ class RepoBrowserWidget(QWidget):
             return
         self._retiring_authors_workers.add(worker)
         worker.finished.connect(lambda: self._retiring_authors_workers.discard(worker))
-
-    def _on_directory_loaded(self, path_str: str) -> None:
-        if self._current_path and Path(path_str).resolve() == self._current_path.resolve():
-            source_index = self.fs_model.index(path_str)
-            proxy_index = self.proxy.mapFromSource(source_index)
-
-            if proxy_index.isValid():
-                self.table.setRootIndex(proxy_index)
-                logger.debug(f"directoryLoaded success: {path_str}")
-            elif source_index.isValid():
-                self.table.setRootIndex(self.proxy.mapFromSource(source_index))
 
     def _relative_path_str(self, path: Path) -> str:
         # as_posix() (not str()) is required here: this value is fed to
@@ -580,9 +639,8 @@ class RepoBrowserWidget(QWidget):
         if not current.isValid():
             self._clear_file_panels()
             return
-        source_index = self.proxy.mapToSource(current)
-        path = Path(self.fs_model.filePath(source_index))
-        if self.fs_model.isDir(source_index):
+        path = self._path_for_row(current.row())
+        if path is None or path.is_dir():
             self._clear_file_panels()
             return
         relative_path = self._relative_path_str(path)
@@ -635,7 +693,11 @@ class RepoBrowserWidget(QWidget):
             self._update_breadcrumb_text(self._current_path)
 
     def _apply_search(self) -> None:
-        self.proxy.set_search_text(self.search_edit.text())
+        text = self.search_edit.text().strip().lower()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, COL_NAME)
+            name = item.text().lower() if item is not None else ""
+            self.table.setRowHidden(row, bool(text) and text not in name)
 
     def _populate_column(self, index: int, folder: Path) -> None:
         list_widget = self.columns[index]
@@ -692,10 +754,11 @@ class RepoBrowserWidget(QWidget):
                 list_widget.setCurrentItem(item)
                 return
 
-    def _on_table_double_clicked(self, proxy_index) -> None:
-        source_index = self.proxy.mapToSource(proxy_index)
-        path = Path(self.fs_model.filePath(source_index))
-        if self.fs_model.isDir(source_index):
+    def _on_table_double_clicked(self, index) -> None:
+        path = self._path_for_row(index.row())
+        if path is None:
+            return
+        if path.is_dir():
             self._navigate_to(path)
         else:
             self._show_opening_popup(path)
@@ -741,15 +804,13 @@ class RepoBrowserWidget(QWidget):
         self._select_file_in_table(path)
 
     def _select_file_in_table(self, path: Path) -> None:
-        source_index = self.fs_model.index(str(path))
-        if not source_index.isValid():
+        row = self._row_for_path(path)
+        if row is None:
             return
-        proxy_index = self.proxy.mapFromSource(source_index)
-        if not proxy_index.isValid():
-            return
-        self.table.setCurrentIndex(proxy_index)
-        self.table.selectRow(proxy_index.row())
-        self.table.scrollTo(proxy_index)
+        index = self.table.model().index(row, COL_NAME)
+        self.table.setCurrentIndex(index)
+        self.table.selectRow(row)
+        self.table.scrollTo(index)
 
     def _show_opening_popup(self, path: Path) -> None:
         if self._opening_popup is not None:
@@ -773,12 +834,11 @@ class RepoBrowserWidget(QWidget):
             self._opening_popup = None
 
     def _on_table_context_menu(self, pos) -> None:
-        proxy_index = self.table.indexAt(pos)
-        if not proxy_index.isValid():
+        index = self.table.indexAt(pos)
+        path = self._path_for_row(index.row()) if index.isValid() else None
+        if path is None:
             self._on_empty_area_context_menu(pos)
             return
-        source_index = self.proxy.mapToSource(proxy_index)
-        path = Path(self.fs_model.filePath(source_index))
 
         menu = QMenu(self)
         act_bookmark = menu.addAction("Add this to bookmarks")
