@@ -430,10 +430,14 @@ def main() -> None:
     # are constructed — every page downstream (Program Database, Software
     # Linker, Project Editor's Viewgraph, ...) now assumes
     # local_config_store.active_project_id already points at a real
-    # project, with no in-app way to change it to a *different* one (see
-    # plugins/core/project_editor/project_settings_page.py's "Switch
-    # Project...", which just restarts back through this same gate via
-    # interface/main_window.py's _request_switch_project). Skipped
+    # project, with no in-app way to change it to a *different* one at
+    # all — UkoreHub is designed to launch into one project only, so a
+    # different project means a full relaunch back through this same gate
+    # (there used to be a "Switch Project..." button in Settings that did
+    # this in-app via interface/main_window.py's _request_switch_project —
+    # removed 2026-09-01 along with the rest of
+    # plugins/core/project_editor/project_settings_page.py, per the user's
+    # own call that switching wasn't the app's job to begin with). Skipped
     # entirely — no dialog shown — when the remembered active_project_id
     # already resolves, or when there's at most one project to begin with
     # (nothing to actually choose), so an ordinary day-to-day launch stays
@@ -486,8 +490,11 @@ def main() -> None:
     # "repo" (cache/plugins/, each its own separate git clone — see
     # plugin_source() below) plugins are far more likely to break than a
     # bundled "core" one, so their load/register results get their own
-    # DebugConsole source — same logger ExternalPluginManager's own
-    # plugin.py already uses for its sync status, so both show up together.
+    # DebugConsole source — same logger name plugins/core/project_editor/'s
+    # own plugin.py already uses for its External Plugins sync status
+    # (kept as "ExternalPluginManager" even after that plugin was merged
+    # into project_editor 2026-09-01, for DebugConsole log continuity —
+    # see that file's own comment), so both show up together.
     plugin_loader_logger = logging.getLogger("PluginLoader")
     external_plugin_logger = logging.getLogger("ExternalPluginManager")
 
@@ -513,13 +520,10 @@ def main() -> None:
     )
     register_builtin_settings_tabs(
         registries.settings_tabs,
-        store=store,
         local_config_store=local_config_store,
         system_config_store=system_config_store,
         plugin_catalog=discovery.loaded,
         plugin_load_failures=discovery.failures,
-        git_service=git_service,
-        plugins_root=cache_plugins_root,
     )
 
     plugin_api = PluginAPI(

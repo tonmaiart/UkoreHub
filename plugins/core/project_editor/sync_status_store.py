@@ -21,9 +21,8 @@ class ExternalPluginSyncStatusStore:
     conflict/error/broken_git results are ever written here (see
     sync_engine.PERSISTENT_STATUSES) — the sync engine runs headless (no
     Settings tab necessarily open), so this is what lets a stuck plugin's
-    status survive until someone next opens Settings > Project > External
-    Plugins to notice it, instead of being lost the moment the sync
-    finishes."""
+    status survive until someone next opens Settings > Account > Plugins to
+    notice it, instead of being lost the moment the sync finishes."""
 
     def __init__(self, config_store: PluginConfigStore):
         self._store = config_store

@@ -38,9 +38,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Sidebar + view_stack shell, authored in Qt Designer and loaded at runtime
 # instead of being built widget-by-widget in code — same QUiLoader pattern
-# interface/repo_settings/requirements_and_plugins_page.py uses for
-# RepoSettingWindow.ui. Authored by hand in Designer (MainWindow.ui, not
-# main_window.py's own naming convention — keep the exact on-disk casing).
+# plugins/core/project_editor/project_editor_page.py uses for
+# ProjectEditorTabWindows.ui. Authored by hand in Designer (MainWindow.ui,
+# not main_window.py's own naming convention — keep the exact on-disk casing).
 # Sidebar used to be its own Sidebar(QWidget) class
 # (interface/sidebar/sidebar.py, removed) and the repo thumbnail/name used
 # to be ActiveRepoWidget (interface/sidebar/active_repo_widget.py, also
@@ -240,9 +240,9 @@ class MainWindow(QMainWindow):
 
         # Setting is a popup dialog (SettingsDialog), not a view_stack page
         # — see _on_settings_requested, which constructs one fresh on every
-        # open. A repo node's "Repository Setting..." right-click opens this
-        # same dialog (via UICommandService.open_settings_tab) rather than a
-        # popup of its own.
+        # open. A plugin can land directly on one of its own tabs via
+        # UICommandService.open_settings_tab (see section_registry.py)
+        # rather than opening a popup of its own.
 
         self.setCentralWidget(central)
 

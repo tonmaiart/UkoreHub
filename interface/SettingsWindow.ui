@@ -24,7 +24,7 @@
        <widget class="QListWidget" name="listWidget_settings">
         <property name="maximumSize">
          <size>
-          <width>200</width>
+          <width>300</width>
           <height>16777215</height>
          </size>
         </property>

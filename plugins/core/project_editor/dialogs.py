@@ -7,45 +7,20 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 
-from plugin_api import MetadataStore, RequirementsTreeWidget, pick_image_file
-from plugins.core.project_editor.pipeline_store import Category
-
-
-class ProjectDialog(QDialog):
-    def __init__(self, parent=None, *, name: str = ""):
-        super().__init__(parent)
-        self.setWindowTitle("Edit Project" if name else "Add Project")
-
-        self.name_edit = QLineEdit(name)
-
-        form = QFormLayout()
-        form.addRow("Name:", self.name_edit)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
-
-    def _on_accept(self) -> None:
-        if not self.name_edit.text().strip():
-            self.name_edit.setFocus()
-            return
-        self.accept()
-
-    def name(self) -> str:
-        return self.name_edit.text().strip()
+from plugin_api import MetadataStore, NotFoundError, RequirementsTreeWidget, pick_image_file
+from plugins.core.project_editor.pipeline_store import Category, CustomPath, PipelineStore, RepoRef
 
 
 class RepoDialog(QDialog):
@@ -152,9 +127,8 @@ class AssignCategoryDialog(QDialog):
     (Uncategorized), or a brand-new name for
     ProjectGraphView.assign_repo_category to create via
     PipelineStore.add_category — this dialog never talks to PipelineStore
-    itself, matching every other dialog in this file (RepoDialog/
-    ProjectDialog also just hand back plain values for the caller to act
-    on)."""
+    itself, matching every other dialog in this file (RepoDialog also just
+    hands back plain values for the caller to act on)."""
 
     _UNCATEGORIZED_DATA = "__uncategorized__"
     _NEW_CATEGORY_DATA = "__new__"
@@ -247,3 +221,217 @@ class EditInfoDialog(QDialog):
 
     def text(self) -> str:
         return self.text_edit.toPlainText()
+
+
+class ConnectInputPathDialog(QDialog):
+    """Compact single-window replacement for the old two-dialog
+    RepoPickerDialog -> CustomPathPickerDialog flow that used to live behind
+    the old node graph's "Connect Pipeline Input Path..." node context-menu
+    action (removed 2026-07-19, the graph itself removed later, 2026-08-19)
+    — one repo combo box plus one custom-path combo box, refreshed together
+    in a single small window instead of two separate modal round-trips
+    through a heavy thumbnail-card picker. Also picks this connection's
+    `direction` (added 2026-07-19) — purely cosmetic (see RepoRef.direction's
+    docstring): it only decides which end of the drawn edge gets the
+    arrowhead in the Graph View, never the layout/topology. Moved here from
+    the former custom_paths_settings_page.py 2026-09-01 when that file was
+    folded into project_editor_settings_page.py's merged Settings tab."""
+
+    def __init__(
+        self,
+        parent=None,
+        *,
+        store: MetadataStore,
+        pipeline_store: PipelineStore,
+        exclude_project_id: str,
+        exclude_repo_id: str,
+        initial_ref: RepoRef | None = None,
+        title: str = "Connect Input Path",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(380, 220)
+        self._store = store
+        self._pipeline_store = pipeline_store
+        self._repo_ids: list[tuple[str, str]] = []
+        self._custom_paths: list[CustomPath] = []
+
+        self.repo_combo = QComboBox()
+        for project in store.list_projects():
+            for repo in project.repos:
+                if project.id == exclude_project_id and repo.id == exclude_repo_id:
+                    continue
+                self.repo_combo.addItem(f"{project.name} / {repo.name}")
+                self._repo_ids.append((project.id, repo.id))
+        self.repo_combo.currentIndexChanged.connect(self._on_repo_changed)
+
+        self.path_combo = QComboBox()
+
+        self.input_radio = QRadioButton("Input — arrow points into this repo")
+        self.input_radio.setChecked(True)
+        self.output_radio = QRadioButton("Output — arrow points out to the target repo")
+
+        self.hint_label = QLabel("")
+        self.hint_label.setWordWrap(True)
+        self.hint_label.setVisible(False)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Repo:"))
+        layout.addWidget(self.repo_combo)
+        layout.addWidget(QLabel("Custom Path:"))
+        layout.addWidget(self.path_combo)
+        layout.addWidget(QLabel("Direction:"))
+        layout.addWidget(self.input_radio)
+        layout.addWidget(self.output_radio)
+        layout.addWidget(self.hint_label)
+        layout.addStretch()
+        layout.addWidget(self.buttons)
+
+        if self._repo_ids:
+            self._on_repo_changed(0)
+            if initial_ref is not None:
+                self._apply_initial_ref(initial_ref)
+        else:
+            self.hint_label.setText("No other repos exist yet.")
+            self.hint_label.setVisible(True)
+            self.repo_combo.setEnabled(False)
+            self.path_combo.setEnabled(False)
+            self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
+
+    def _apply_initial_ref(self, ref: RepoRef) -> None:
+        """Pre-selects everything to match an existing connection — used
+        when this dialog is opened to Edit one (see
+        CustomPathsSettingsPage._on_edit_connection) rather than create a
+        new one. A no-op for anything that can no longer be found (e.g.
+        the target repo or its custom path was deleted since this
+        connection was made) — the dialog just falls back to its normal
+        default selection for that part."""
+        for index, (project_id, repo_id) in enumerate(self._repo_ids):
+            if project_id == ref.project_id and repo_id == ref.repo_id:
+                self.repo_combo.setCurrentIndex(index)
+                break
+        for index, custom_path in enumerate(self._custom_paths):
+            if custom_path.id == ref.custom_path_id:
+                self.path_combo.setCurrentIndex(index)
+                break
+        if ref.direction == "output":
+            self.output_radio.setChecked(True)
+        else:
+            self.input_radio.setChecked(True)
+
+    def _on_repo_changed(self, index: int) -> None:
+        self.path_combo.clear()
+        self._custom_paths = []
+        if not (0 <= index < len(self._repo_ids)):
+            return
+        project_id, repo_id = self._repo_ids[index]
+        self._custom_paths = self._pipeline_store.get_custom_paths(project_id, repo_id)
+        if not self._custom_paths:
+            try:
+                repo_name = self._store.get_repo(project_id, repo_id).name
+            except NotFoundError:
+                repo_name = "This repo"
+            self.hint_label.setText(
+                f"{repo_name} has no Custom Paths declared yet — switch to it and add one under its own "
+                "Repository Setting > Custom Paths > Create This Repo Custom Path first."
+            )
+            self.hint_label.setVisible(True)
+            self.path_combo.setEnabled(False)
+            self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
+            return
+        self.hint_label.setVisible(False)
+        self.path_combo.setEnabled(True)
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
+        for custom_path in self._custom_paths:
+            self.path_combo.addItem(f"{custom_path.label}  ({custom_path.path})")
+
+    def selected_ref(self) -> tuple[str, str, str] | None:
+        repo_index = self.repo_combo.currentIndex()
+        path_index = self.path_combo.currentIndex()
+        if not (0 <= repo_index < len(self._repo_ids)) or not (0 <= path_index < len(self._custom_paths)):
+            return None
+        project_id, repo_id = self._repo_ids[repo_index]
+        return project_id, repo_id, self._custom_paths[path_index].id
+
+    def selected_direction(self) -> str:
+        return "output" if self.output_radio.isChecked() else "input"
+
+
+class CustomPathEditDialog(QDialog):
+    """Add/Edit dialog for one of this repo's own declared CustomPath
+    entries — used by tableWidget_currrent_repo_custom_path's Add/Edit
+    buttons (ProjectEditorSettingsWindow.ui). Replaces the old
+    always-visible label/path input row + separate "Rename"/"Edit Path" row
+    actions with a single small dialog, matching how ConnectInputPathDialog
+    already handles the "Connected Custom Path" side."""
+
+    def __init__(
+        self,
+        parent=None,
+        *,
+        repo_root: Path,
+        label: str = "",
+        path: str = "",
+        title: str = "Add Custom Path",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self._repo_root = repo_root
+
+        self.label_edit = QLineEdit(label)
+        self.label_edit.setPlaceholderText("Label (e.g. Character)")
+        self.path_edit = QLineEdit(path)
+        self.path_edit.setPlaceholderText("Path relative to this repo's root (e.g. Character)")
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self._on_browse)
+
+        path_row = QHBoxLayout()
+        path_row.addWidget(self.path_edit, stretch=1)
+        path_row.addWidget(browse_button)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.buttons.accepted.connect(self._on_accept)
+        self.buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Label:"))
+        layout.addWidget(self.label_edit)
+        layout.addWidget(QLabel("Path:"))
+        layout.addLayout(path_row)
+        layout.addStretch()
+        layout.addWidget(self.buttons)
+
+    def _on_browse(self) -> None:
+        """Rooted at the active repo's own folder; rejects a folder picked
+        from outside it, since CustomPath.path is always relative to the
+        repo's own root. Auto-fills the label from the folder name too if
+        the label field is still empty."""
+        chosen = QFileDialog.getExistingDirectory(self, "Choose Folder", str(self._repo_root))
+        if not chosen:
+            return
+        chosen_path = Path(chosen)
+        try:
+            relative = chosen_path.relative_to(self._repo_root)
+        except ValueError:
+            QMessageBox.information(
+                self,
+                "Choose Folder",
+                "Pick a folder inside this repo's own root — Custom Paths are always relative to it.",
+            )
+            return
+        self.path_edit.setText(str(relative).replace("\\", "/"))
+        if not self.label_edit.text().strip():
+            self.label_edit.setText(chosen_path.name)
+
+    def _on_accept(self) -> None:
+        if not self.label_edit.text().strip() or not self.path_edit.text().strip():
+            QMessageBox.information(self, self.windowTitle(), "Enter both a label and a path.")
+            return
+        self.accept()
+
+    def result_values(self) -> tuple[str, str]:
+        return self.label_edit.text().strip(), self.path_edit.text().strip()

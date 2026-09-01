@@ -13,8 +13,9 @@ from plugin_api.registries.registry_base import KeyedOrderedRegistry
 # between them. A plugin's own settings tab defaults to CATEGORY_GENERAL
 # (most plugin settings are machine/software-wide, e.g. Software Linker) —
 # opt into CATEGORY_PROJECT for tabs about the Project registry itself
-# (which project is being viewed/edited, add/rename/delete — see
-# plugins/core/project_editor/project_settings_page.py), CATEGORY_REPO
+# (its Program/External Plugin/Repository catalogs, per-repo requirements —
+# see plugins/core/project_editor/project_database_page.py and
+# repo_settings_page.py), CATEGORY_REPO
 # when the tab's content is actually about the active repo (e.g. Maya
 # Launcher's per-repo tool toggles), or CATEGORY_DEVELOPER for
 # studio-admin/internal-plumbing tabs (GitHub OAuth Client ID, Program
@@ -42,10 +43,12 @@ class SettingsTabSpec:
     order: int
     page_factory: Callable[[], QWidget]
     # Every settings page persists its own changes immediately (injecting
-    # whatever store it needs at construction time, like ProgramDatabasePage
-    # already does) — there's no dialog-level Save/Cancel anymore, so no
+    # whatever store it needs at construction time, like
+    # plugins/core/project_editor/project_database_page.py already does) —
+    # there's no dialog-level Save/Cancel anymore, so no
     # on_save/on_cancel here. on_activated is a different concern (display
-    # refresh when this tab becomes visible, e.g. LocalRepositoryPage).
+    # refresh when this tab becomes visible, e.g.
+    # plugins/core/project_editor/'s CustomPathsSettingsPage/RepoSettingsPage).
     on_activated: Callable[[QWidget], None] | None = None
     category: str = CATEGORY_GENERAL
 

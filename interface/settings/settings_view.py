@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
 )
 
 from interface.theme import DEFAULT_THEME_NAME, get_theme
-from interface.builtin_settings_tabs import LOCAL_REPOSITORY, REQUIREMENTS_AND_PLUGINS
 from plugin_api import (
     CATEGORY_DEVELOPER,
     CATEGORY_GENERAL,
@@ -38,22 +37,16 @@ _UI_FILE = Path(__file__).parent.parent / "SettingsWindow.ui"
 
 _ACCOUNT_GROUP_LABEL = "Account"
 
-# Duplicated from plugins/core/project_editor/plugin.py's own
-# CUSTOM_PATHS_SETTINGS_KEY rather than imported — importing that plugin's
-# module from here would import project_editor_page.py -> project_graph_view.py,
-# which itself imports interface.settings.settings_view (for
-# open_settings_tab's target keys), closing a circular-import loop. Keep
-# this string in sync with plugin.py's own constant by hand — same
-# precaution repo_settings_panel.py used to take before it was retired.
-_CUSTOM_PATHS_SETTINGS_KEY = "project_editor_custom_paths"
-
-# The built-in CATEGORY_REPO tabs that make up the "Repository" group —
-# everything else registered under CATEGORY_REPO (a plugin's own settings
-# tab, e.g. Maya Launcher, MayaPublisher, UkoreBrowser, ...) falls under
-# "Plugins" instead. Hardcoded rather than a new SettingsTabSpec field
-# since there are only ever these three built-ins to name — same
-# convention the now-retired RepoSettingsPanel used.
-_REPOSITORY_KEYS = {LOCAL_REPOSITORY, _CUSTOM_PATHS_SETTINGS_KEY, REQUIREMENTS_AND_PLUGINS}
+# There used to be a separate hardcoded "Repository" group here, splitting
+# CATEGORY_REPO specs between a handful of builtin tabs and everything else
+# (plugin-contributed, e.g. Maya Launcher, MayaPublisher, UkoreBrowser).
+# That builtin set shrank to zero over time — Requirements & Plugins moved
+# to plugins/core/project_editor/'s CATEGORY_PROJECT "Repository Settings"
+# tab, Custom Paths moved to that plugin's own CATEGORY_PROJECT group
+# directly, and Local Repository was removed outright (2026-09-01, redundant
+# with project_editor_page.py's own per-repo Unclone button) — so every
+# CATEGORY_REPO spec is plugin-contributed now and the split was retired;
+# they all render under "Plugins" (see `groups` below).
 
 
 class SettingsView(QWidget):
@@ -64,11 +57,11 @@ class SettingsView(QWidget):
 
     UI authored in Qt Designer (SettingsWindow.ui, interface/ root) and
     loaded at runtime via QUiLoader, same pattern
-    repo_settings/requirements_and_plugins_page.py uses for
-    RepoSettingWindow.ui. Every registered SettingsTabSpec (built-in or
+    plugins/core/project_editor/custom_paths_settings_page.py uses for
+    CustomPathWindow.ui. Every registered SettingsTabSpec (built-in or
     plugin-provided, via plugin_api.SettingsTabRegistry) renders as one row
     in a single flat listWidget_settings, grouped under a header per
-    category — Account, Project, Developer, Repository, Plugins — instead
+    category — Account, Project, Developer, Plugins — instead
     of the old nested QTabWidget-of-QTabWidgets (2026-08-25 consolidation,
     per user request). widget_setting_info hosts a QStackedWidget switched
     by the list's current row.
@@ -76,9 +69,9 @@ class SettingsView(QWidget):
     checkBox_admin_mode (unchecked by default) hides every group except
     Account — everything else here is Project/Developer/Repo-level
     plumbing most artists never need to see. select_tab() force-enables it
-    when jumping straight to an admin-only tab (e.g. project_graph_view.py's
-    "Repository Setting..."), since a caller asking for that tab by key
-    means it needs to be reachable regardless of the checkbox state."""
+    when jumping straight to an admin-only tab, since a caller asking for
+    that tab by key means it needs to be reachable regardless of the
+    checkbox state."""
 
     def __init__(self, parent=None, *, settings_tab_registry: SettingsTabRegistry):
         super().__init__(parent)
@@ -88,17 +81,12 @@ class SettingsView(QWidget):
         def specs_for(category: str) -> list[SettingsTabSpec]:
             return [spec for spec in specs if spec.category == category]
 
-        repo_specs = specs_for(CATEGORY_REPO)
-        repo_repository_specs = [spec for spec in repo_specs if spec.key in _REPOSITORY_KEYS]
-        repo_plugin_specs = [spec for spec in repo_specs if spec.key not in _REPOSITORY_KEYS]
-
         # (header label, specs, requires admin mode to be visible)
         groups: list[tuple[str, list[SettingsTabSpec], bool]] = [
             (_ACCOUNT_GROUP_LABEL, specs_for(CATEGORY_GENERAL), False),
             (CATEGORY_LABELS[CATEGORY_PROJECT], specs_for(CATEGORY_PROJECT), True),
             (CATEGORY_LABELS[CATEGORY_DEVELOPER], specs_for(CATEGORY_DEVELOPER), True),
-            ("Repository", repo_repository_specs, True),
-            ("Plugins", repo_plugin_specs, True),
+            ("Plugins", specs_for(CATEGORY_REPO), True),
         ]
 
         loader = QUiLoader()

@@ -82,7 +82,7 @@
         <property name="title">
          <string/>
         </property>
-        <layout class="QGridLayout" name="gridLayout_4" rowstretch="0,10,0,0,0,0,0,0">
+        <layout class="QGridLayout" name="gridLayout_4" rowstretch="0,10,0,0,0,0,0,0,0">
          <property name="leftMargin">
           <number>5</number>
          </property>
@@ -98,13 +98,23 @@
          <property name="spacing">
           <number>5</number>
          </property>
-         <item row="4" column="1">
-          <widget class="QTextBrowser" name="textBrowser_info"/>
-         </item>
          <item row="0" column="1">
           <widget class="QLabel" name="label_images">
            <property name="text">
             <string/>
+           </property>
+          </widget>
+         </item>
+         <item row="7" column="1">
+          <widget class="QPushButton" name="pushButton_unclone">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>30</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>Unclone</string>
            </property>
           </widget>
          </item>
@@ -121,18 +131,8 @@
            </property>
           </widget>
          </item>
-         <item row="7" column="1">
-          <widget class="QPushButton" name="pushButton_unclone">
-           <property name="minimumSize">
-            <size>
-             <width>0</width>
-             <height>30</height>
-            </size>
-           </property>
-           <property name="text">
-            <string>Unclone</string>
-           </property>
-          </widget>
+         <item row="4" column="1">
+          <widget class="QTextBrowser" name="textBrowser_info"/>
          </item>
          <item row="2" column="1">
           <widget class="QListWidget" name="listWidget_software_requirements"/>
@@ -154,6 +154,13 @@
             </widget>
            </item>
           </layout>
+         </item>
+         <item row="8" column="1">
+          <widget class="QPushButton" name="pushButton_open_local_directory">
+           <property name="text">
+            <string>Open Local Directory</string>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>

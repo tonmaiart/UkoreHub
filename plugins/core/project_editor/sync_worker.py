@@ -5,8 +5,8 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from plugin_api import DiscoveredPlugin, GitService, Repo
-from plugins.core.ExternalPluginManager.catalog_store import ExternalPluginCatalog
-from plugins.core.ExternalPluginManager.sync_engine import resolve_required_entries, sync_entry
+from plugins.core.project_editor.external_plugin_catalog import ExternalPluginCatalog
+from plugins.core.project_editor.sync_engine import resolve_required_entries, sync_entry
 
 
 class ExternalPluginSyncWorker(QThread):
@@ -14,7 +14,7 @@ class ExternalPluginSyncWorker(QThread):
     External Plugins catalog entry the given repo requires, sequentially —
     never in parallel, since two git commands
     racing on the same cache/plugins/<folder> clone could corrupt it. Runs
-    entirely off the main thread (see this plugin's README's "Auto-sync
+    entirely off the main thread (see this plugin's doc's "Auto-sync
     runs on a background thread"); every git call here is a plain
     subprocess call with no Qt/UI object touched from this thread.
 

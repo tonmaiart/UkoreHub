@@ -19,7 +19,7 @@ file) whenever a plugin needs a new core/ type; if `core_api` doesn't
 re-export it yet either, add it there first.
 
 Same doctrine applies to UI pieces a plugin page needs (shared widgets,
-theme helpers, the `LOCAL_REPOSITORY` settings-tab key) — sourced from
+theme helpers) — sourced from
 `interface_api` (the only thing besides `interface/` itself allowed to
 import `interface.*` directly, see `app/interface_api/__init__.py`)
 rather than `interface.*` itself. Add a new re-export here whenever a
@@ -99,7 +99,7 @@ from interface_api import (
     CommitFilesDialog,
     CommitHistoryEntry,
     DEFAULT_THEME_NAME,
-    LOCAL_REPOSITORY,
+    ProgramDialog,
     QtLogHandler,
     RequirementsTreeWidget,
     confirm_action,
@@ -136,7 +136,6 @@ __all__ = [
     "GitOperationError",
     "GitService",
     "KeyedOrderedRegistry",
-    "LOCAL_REPOSITORY",
     "LocalConfigStore",
     "MetadataStore",
     "NotFoundError",
@@ -147,6 +146,7 @@ __all__ = [
     "PluginConfigStore",
     "PluginManifest",
     "Program",
+    "ProgramDialog",
     "ProgramLaunchRegistry",
     "ProgramLaunchSpec",
     "Project",

@@ -11,10 +11,15 @@ class BaseRepoSettingsPage(QWidget):
     resolves the active project/repo itself from local_config_store, rather
     than waiting for a set_repo() call MainWindow never makes for Settings
     pages (see developer/app/docs/interface.md's repo_settings/ section —
-    that domain has a tab built on this). Collapses the empty_label/content_widget scaffolding and
-    refresh() preamble that LocalRepositoryPage and RequirementsAndPluginsPage
-    each had independently, byte-for-byte
-    identical, before 2026-07-20.
+    that domain has a tab built on this). Collapses the empty_label/content_widget
+    scaffolding and refresh() preamble that used to be duplicated,
+    byte-for-byte identical, across every CATEGORY_REPO Settings tab before
+    2026-07-20. The two builtin tabs that originally motivated this
+    (LocalRepositoryPage, RequirementsAndPluginsPage) are both gone now —
+    the sole subclass left is plugins/core/project_editor/'s
+    CustomPathsSettingsPage — but the base class stays, since any future
+    repo-scoped Settings tab (builtin or plugin) still wants this exact
+    pattern.
 
     This __init__ leaves content_widget layout-less on purpose — a
     subclass adds exactly one layout onto it in its own __init__, after
@@ -41,8 +46,9 @@ class BaseRepoSettingsPage(QWidget):
         """Re-resolves the active project/repo from local_config_store and,
         on success, calls _on_refresh_content() for the subclass's own
         rebuild. Called on construction and on every
-        SettingsTabSpec.on_activated (see
-        interface/builtin_settings_tabs.py's shared _trigger_refresh)."""
+        SettingsTabSpec.on_activated (e.g.
+        plugins/core/project_editor/plugin.py's
+        `on_activated=lambda widget: widget.refresh()`)."""
         project_id = self.local_config_store.active_project_id
         repo_id = self.local_config_store.active_repo_id
         if not project_id or not repo_id:

@@ -30,13 +30,13 @@ from plugin_api import (
     open_in_file_explorer,
     plugin_source,
 )
-from plugins.core.ExternalPluginManager import sync_engine
-from plugins.core.ExternalPluginManager.catalog_store import CatalogEntry, ExternalPluginCatalog
-from plugins.core.ExternalPluginManager.last_check_store import LastCheckedStore
-from plugins.core.ExternalPluginManager.sync_status_store import ExternalPluginSyncStatusStore
+from plugins.core.project_editor import sync_engine
+from plugins.core.project_editor.external_plugin_catalog import CatalogEntry, ExternalPluginCatalog
+from plugins.core.project_editor.last_check_store import LastCheckedStore
+from plugins.core.project_editor.sync_status_store import ExternalPluginSyncStatusStore
 
-# Same 5 canonical status buckets as external_plugins_page.py used to show
-# before the split — see this plugin's own doc.
+# Same 5 canonical status buckets external_plugins_page.py used to show
+# before the 2026-09 split — see this plugin's own doc.
 _ERROR = "Error"
 _NOT_CLONE = "Not Clone"
 _MODIFIED = "Modified"
@@ -208,7 +208,7 @@ class ExternalPluginUpdaterPage(QWidget):
         # Only used to tell "cloned but not yet discovered this session"
         # apart from a real up-to-date row (see _local_status's
         # _PENDING_RESTART_DETAIL branch) — the Requires column itself lives
-        # on the Manager page now, not here.
+        # on the Repository Settings page now, not here.
         self._plugin_by_folder = {
             plugin.dir_path.name: plugin for plugin in plugin_catalog if plugin_source(plugin) == "repo"
         }
@@ -229,8 +229,8 @@ class ExternalPluginUpdaterPage(QWidget):
         self._pending_checks = 0
 
         # UI is authored in Qt Designer and loaded at runtime, same
-        # QUiLoader pattern external_plugins_page.py uses for its own
-        # ExternalPluginManagerWindow.ui.
+        # QUiLoader pattern project_database_page.py uses for its own
+        # ProjectDatabaseWindow.ui.
         loader = QUiLoader()
         ui_file = QFile(str(_UI_FILE))
         ui_file.open(QFile.ReadOnly)
@@ -431,7 +431,7 @@ class ExternalPluginUpdaterPage(QWidget):
                             problems.append(f"{row.entry.name}: could not remove broken clone: {exc}")
                             continue
                     if not row.entry.git_url:
-                        problems.append(f"{row.entry.name}: no Git URL set — edit it in External Plugin Manager.")
+                        problems.append(f"{row.entry.name}: no Git URL set — edit it in Project Database.")
                         continue
                     try:
                         self.git_service.clone(row.entry.git_url, local_path)
@@ -491,7 +491,7 @@ class ExternalPluginUpdaterPage(QWidget):
         if self.git_service.is_cloned(local_path):
             return
         if not row.entry.git_url:
-            QMessageBox.warning(self, "Clone", "This entry has no Git URL set — edit it in External Plugin Manager.")
+            QMessageBox.warning(self, "Clone", "This entry has no Git URL set — edit it in Project Database.")
             return
 
         def action() -> None:

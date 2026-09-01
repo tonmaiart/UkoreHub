@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from plugin_api import DiscoveredPlugin, GitOperationError, GitService, Repo, plugin_source
-from plugins.core.ExternalPluginManager.catalog_store import CatalogEntry, ExternalPluginCatalog
+from plugins.core.project_editor.external_plugin_catalog import CatalogEntry, ExternalPluginCatalog
 
 STATUS_CLONED = "cloned"
 STATUS_UP_TO_DATE = "up_to_date"
@@ -46,7 +46,7 @@ def resolve_required_entries(
     A required manifest id with no catalog entry's plugin_id resolving to it
     (neither already cached nor backfillable from this session's discovered
     plugins) is simply skipped — nothing to clone/pull it from yet. See this
-    plugin's own README for why that's an accepted gap, not a bug."""
+    plugin's own doc for why that's an accepted gap, not a bug."""
     entries = catalog.list_entries()
     discovered_by_folder = {
         plugin.dir_path.name: plugin for plugin in plugin_catalog if plugin_source(plugin) == "repo"
@@ -79,7 +79,7 @@ def sync_entry(git_service: GitService, plugins_root: Path, entry: CatalogEntry)
     Update/Ignore popup instead, since "force update" and "restart" are the
     same action here. A merge conflict is left exactly as git leaves it,
     for a dev to resolve by hand (e.g. via the settings tab's existing
-    "Open Git Directory" action) rather than being silently papered over. A
+    "Open Directory" action) rather than being silently papered over. A
     clone/folder already mid-merge from an earlier failed sync is detected
     before attempting another fetch (which would just fail again the same
     way), so it keeps reporting the same conflict instead of retrying every
@@ -95,7 +95,7 @@ def sync_entry(git_service: GitService, plugins_root: Path, entry: CatalogEntry)
             return SyncResult(entry.id, STATUS_ERROR, str(exc))
         return SyncResult(entry.id, STATUS_CLONED)
 
-    # is_repo_root(), not just is_cloned() — see this plugin's README's "Why
+    # is_repo_root(), not just is_cloned() — see this plugin's doc's "Why
     # is_repo_root, not just is_cloned" (also the ukorehub-core skill): a
     # broken empty .git left by an interrupted clone must never have a real
     # git command run against it, since git's own discovery would silently
@@ -107,7 +107,7 @@ def sync_entry(git_service: GitService, plugins_root: Path, entry: CatalogEntry)
         return SyncResult(
             entry.id,
             STATUS_CONFLICT,
-            "Merge conflict from a previous update — resolve it in the clone (Open Git Directory), "
+            "Merge conflict from a previous update — resolve it in the clone (Open Directory), "
             "then commit or abort the merge.",
         )
 

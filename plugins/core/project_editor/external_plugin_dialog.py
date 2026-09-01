@@ -5,9 +5,12 @@ from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit,
 from plugin_api import extract_git_repo_name
 
 
-class CatalogEntryDialog(QDialog):
-    """Add/Edit form for one External Plugins catalog entry — same shape as
-    interface/settings/program_dialog.py's ProgramDialog."""
+class ExternalPluginCatalogEntryDialog(QDialog):
+    """Add/Edit form for one External Plugins catalog entry, same shape as
+    interface/settings/program_dialog.py's ProgramDialog. Used to be a
+    local duplicate of ExternalPluginManager's own catalog_entry_dialog.py
+    before that plugin was merged into this one 2026-09-01 — see
+    external_plugin_catalog.py's own docstring."""
 
     def __init__(self, parent=None, *, name: str = "", git_url: str = "", folder_name: str = ""):
         super().__init__(parent)
@@ -34,8 +37,6 @@ class CatalogEntryDialog(QDialog):
         layout.addWidget(buttons)
 
     def _on_git_url_changed(self, git_url: str) -> None:
-        # Only auto-fill fields the user hasn't already typed something
-        # into themselves — never overwrite an explicit Name/Folder Name.
         git_url = git_url.strip()
         if not git_url:
             return

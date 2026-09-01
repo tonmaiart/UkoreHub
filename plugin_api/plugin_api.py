@@ -117,8 +117,8 @@ class PluginAPI:
         launcher.py threads into register_builtin_settings_tabs/the
         "Plugins" Developer tab. Read-only snapshot — for a plugin that
         needs to resolve another plugin's id to its manifest (name,
-        requires, ...), e.g. plugins/core/ExternalPluginManager/
-        external_plugins_page.py showing a catalog entry's own requires."""
+        requires, ...), e.g. plugins/core/project_editor/
+        project_database_page.py showing a catalog entry's own requires."""
         return list(self._plugin_catalog)
 
     @property

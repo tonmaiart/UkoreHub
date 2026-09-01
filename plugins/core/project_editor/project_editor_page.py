@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
 )
 
 from plugin_api import (
-    LOCAL_REPOSITORY,
     ConflictError,
     GitService,
     LocalConfigStore,
@@ -37,6 +36,7 @@ from plugin_api import (
     Repo,
     UkoreHubError,
     confirm_action,
+    open_in_file_explorer,
     pick_image_file,
     save_image_asset,
 )
@@ -96,14 +96,20 @@ class ProjectEditorPage(QWidget):
     Clone/Unclone are the only things that change what's on disk, kept
     deliberately separate from selection.
 
-    Repo settings (Browser, Local Repository, Requirements & Plugins, any
-    plugin's own CATEGORY_REPO tab) render generically in the main
-    Settings dialog's Repo Setting (Dev) category — a row's right-click
-    "Repository Setting..." opens that dialog via
-    UICommandService.open_settings_tab, same as the graph view used to.
+    Any plugin's own CATEGORY_REPO tab still renders generically in the
+    main Settings dialog's Plugins category (Settings > Project > Repository
+    Settings covers per-repo Program/Plugin requirements instead — see
+    repo_settings_page.py). There is no "Repository Setting..." row
+    context-menu entry anymore — it used to jump straight to the builtin
+    "Local Repository" tab (Remove Local Repositories), which was removed
+    2026-09-01 as redundant with this table's own Unclone button (same
+    operation, just scoped to whichever repo is selected here instead of
+    only the active one); Open Local Directory (added the same day) covers
+    the other thing that tab was for, glancing at where a repo actually
+    lives on disk.
 
     current_project_id()/add_repo() are this page's own single source of
-    truth/entry points, same contract project_settings_page.py's callbacks
+    truth/entry points, same contract project_database_page.py's callbacks
     (bound in plugin.py) rely on. set_current_project() is the one place
     that actually (re)loads a project's repos into the table — as of the
     single-project-per-session change nothing calls it with a project id
@@ -132,9 +138,7 @@ class ProjectEditorPage(QWidget):
         self._repo_rows: dict[str, int] = {}
         self._status_scan_token = 0
         self._status_workers: list[RepoStatusScanWorker] = []
-        self._switch_project_callback: Callable[[], None] | None = None
         self._set_active_repo_callback: Callable[[str, str], None] | None = None
-        self._open_settings_tab_callback: Callable[[str], None] | None = None
 
         loader = QUiLoader()
         ui_file = QFile(str(_UI_FILE))
@@ -158,6 +162,9 @@ class ProjectEditorPage(QWidget):
         self.set_thumbnail_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_set_thubmnail")
         self.clone_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_clone")
         self.unclone_button: QPushButton = self.ui.findChild(QPushButton, "pushButton_unclone")
+        self.open_local_directory_button: QPushButton = self.ui.findChild(
+            QPushButton, "pushButton_open_local_directory"
+        )
 
         self.repo_table.setColumnCount(len(_COLUMN_LABELS))
         self.repo_table.setHorizontalHeaderLabels(list(_COLUMN_LABELS))
@@ -189,6 +196,7 @@ class ProjectEditorPage(QWidget):
         self.unclone_button.clicked.connect(self._on_unclone_clicked)
         self.edit_info_button.clicked.connect(self._on_edit_info_clicked)
         self.set_thumbnail_button.clicked.connect(self._on_set_thumbnail_clicked)
+        self.open_local_directory_button.clicked.connect(self._on_open_local_directory_clicked)
 
         # Fixed to whichever project launcher.py's mandatory Project
         # Selector gate locked in for this run — see the class docstring.
@@ -198,16 +206,6 @@ class ProjectEditorPage(QWidget):
 
     def bind_set_active_repo(self, callback: Callable[[str, str], None]) -> None:
         self._set_active_repo_callback = callback
-
-    def bind_open_settings_tab(self, callback: Callable[[str], None]) -> None:
-        self._open_settings_tab_callback = callback
-
-    def bind_switch_project(self, callback: Callable[[], None]) -> None:
-        self._switch_project_callback = callback
-
-    def switch_project(self) -> None:
-        if self._switch_project_callback is not None:
-            self._switch_project_callback()
 
     # -- page protocol (see plugin_api/registries/section_registry.py) ----------------
 
@@ -222,7 +220,7 @@ class ProjectEditorPage(QWidget):
             self._update_active_repo_highlight()
             self._refresh_connection_column()
 
-    # -- current project (see project_settings_page.py's callbacks) -------
+    # -- current project (see project_database_page.py's callbacks) -------
 
     def current_project_id(self) -> str | None:
         return self._project_id
@@ -454,6 +452,7 @@ class ProjectEditorPage(QWidget):
         self.unclone_button.setEnabled(has_selection and cloned)
         self.edit_info_button.setEnabled(has_selection)
         self.set_thumbnail_button.setEnabled(has_selection)
+        self.open_local_directory_button.setEnabled(has_selection and cloned)
 
     def _refresh_detail_panel(self) -> None:
         project_id, repo_id = self._project_id, self._selected_repo_id
@@ -524,6 +523,16 @@ class ProjectEditorPage(QWidget):
         if project_id is None or repo_id is None:
             return
         self._change_repo_thumbnail(project_id, repo_id)
+
+    # -- Open Local Directory -------------------------------------------------
+
+    def _on_open_local_directory_clicked(self) -> None:
+        project_id, repo_id = self._project_id, self._selected_repo_id
+        if project_id is None or repo_id is None or not self._is_repo_cloned(project_id, repo_id):
+            return
+        repo = self.store.get_repo(project_id, repo_id)
+        local_path = Path(self.local_config_store.workspace_root) / repo.local_path
+        open_in_file_explorer(local_path)
 
     # -- Clone / Unclone ---------------------------------------------------
 
@@ -630,34 +639,18 @@ class ProjectEditorPage(QWidget):
         repo_id = self.repo_table.item(row, _COL_NAME).data(Qt.UserRole)
 
         menu = QMenu(self)
-        settings_action = menu.addAction("Repository Setting...")
-        menu.addSeparator()
         rename_action = menu.addAction("Rename Repo...")
         thumbnail_action = menu.addAction("Change Thumbnail...")
         menu.addSeparator()
         delete_action = menu.addAction("Delete Repo")
         chosen = menu.exec(self.repo_table.viewport().mapToGlobal(pos))
 
-        if chosen is settings_action:
-            self._open_repo_settings()
-        elif chosen is rename_action:
+        if chosen is rename_action:
             self._rename_repo(project_id, repo_id)
         elif chosen is thumbnail_action:
             self._change_repo_thumbnail(project_id, repo_id)
         elif chosen is delete_action:
             self._delete_repo(project_id, repo_id)
-
-    def _open_repo_settings(self) -> None:
-        """Opens the unified Settings dialog on Repo Setting (Dev) > Local
-        Repository, for whichever repo is currently ACTIVE — every
-        CATEGORY_REPO tab self-resolves the active repo from
-        local_config_store, regardless of which row was right-clicked,
-        same as the old graph view's node menu."""
-        if self._open_settings_tab_callback is None:
-            return
-        self._open_settings_tab_callback(LOCAL_REPOSITORY)
-        self._reload_repo_table()
-        self._refresh_detail_panel()
 
     def _rename_repo(self, project_id: str, repo_id: str) -> None:
         repo = self.store.get_repo(project_id, repo_id)
@@ -705,3 +698,18 @@ class ProjectEditorPage(QWidget):
             self._selected_repo_id = None
         self._reload_repo_table()
         self._refresh_detail_panel()
+
+    # -- Repositories Database CRUD (called by Setting > Project's Project
+    # Database tab, project_database_page.py) — thin public wrappers around
+    # the same _rename_repo/_delete_repo the table's own right-click menu
+    # uses, so both entry points share one refresh path. ------------------
+
+    def rename_repo(self, repo_id: str) -> None:
+        if self._project_id is None:
+            return
+        self._rename_repo(self._project_id, repo_id)
+
+    def delete_repo(self, repo_id: str) -> None:
+        if self._project_id is None:
+            return
+        self._delete_repo(self._project_id, repo_id)

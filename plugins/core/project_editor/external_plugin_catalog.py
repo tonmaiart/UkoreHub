@@ -15,38 +15,35 @@ class CatalogEntry:
     git_url: str
     folder_name: str
     # Cache of "what PluginManifest.id does this entry produce once cloned"
-    # — unknown (None) until some machine's sync engine (or the Requirements
-    # & Plugins manual clone-on-check flow) has actually cloned it and read
-    # its manifest.json once. Needed because Repo.required_plugin_ids stores
-    # manifest ids, not this entry's own uuid id, and a machine that has
-    # never cloned this entry has no other way to map a required manifest id
-    # back to this entry's git_url/folder_name. See
-    # plugins/core/ExternalPluginManager/sync_engine.py's resolve_required_entries
-    # and this plugin's own doc.
+    # — unknown (None) until this session's sync engine (sync_engine.py) or
+    # the Repository Settings manual clone-on-check flow has actually
+    # cloned it and read its manifest.json once. Needed because
+    # Repo.required_plugin_ids stores manifest ids, not this entry's own
+    # uuid id, and a machine that has never cloned this entry has no other
+    # way to map a required manifest id back to its git_url/folder_name.
+    # See sync_engine.py's resolve_required_entries.
     plugin_id: str | None = None
 
 
 def _is_safe_folder_name(folder_name: str) -> bool:
-    """A single path segment — no separators or traversal, since this is
-    used directly as `cache/plugins/<folder_name>`."""
     return bool(folder_name) and folder_name not in (".", "..") and "/" not in folder_name and "\\" not in folder_name
 
 
 class ExternalPluginCatalog:
-    """Per-project list of known cache/plugins/ repo plugins (cloned or
-    not), backed by a ProjectPluginConfigStore — i.e. the active Project's
-    own Project.plugin_data["external_plugins"]["catalog"]
-    (core/models.py), not a studio-wide file anymore. config_store is None
-    when no project is active yet (plugin_api/plugin_api.py's
-    PluginAPI.project_plugin_config_store's documented contract) — every
-    method degrades to a no-op/empty list in that case rather than
-    crashing.
+    """The active Project's own catalog of cache/plugins/ repo plugins
+    (cloned or not) — CRUD (Project Database tab, project_database_page.py),
+    the auto-sync engine (sync_engine.py/sync_worker.py), and the "Plugins"
+    Settings > Account status tab (external_plugin_updater_page.py) all
+    share one instance of this class, built once in plugin.py's register().
 
-    Unlike the old shared=True PluginConfigStore this replaced, no
-    explicit re-read-before-use is needed here: ProjectPluginConfigStore
-    reads straight through to the single, live MetadataStore instance the
-    whole app shares (core/extensibility/config_store.py), so there's no
-    separate in-memory copy of the file that can go stale."""
+    Used to be plugins/core/ExternalPluginManager/'s own catalog_store.py,
+    with this file carrying a deliberate local duplicate (same
+    don't-import-a-sibling-plugin's-source boundary
+    required_repo_clone_worker.py still follows for its own case) — that
+    plugin was merged into this one 2026-09-01 (its Settings > Project CRUD
+    tab had already moved here earlier in the same 2026-09 merge), so
+    there's no sibling left to duplicate against and this became the one
+    canonical definition."""
 
     def __init__(self, config_store: ProjectPluginConfigStore | None):
         self._store = config_store
