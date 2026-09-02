@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QFile, QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -17,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from plugin_api import GitService, fetch_avatar_bytes, fetch_entries_via_github
+from plugin_api import GitService, avatar_table_icon, fetch_avatar_bytes, fetch_entries_via_github
 from plugins.core.submit.git_stream_worker import GitStreamWorker
 
 _UI_FILE = Path(__file__).resolve().parent / "MergeConflictResolveWindow.ui"
@@ -49,10 +48,9 @@ def _load_ui_form(parent: QWidget | None = None) -> QWidget:
 
 def _avatar_item(avatar_bytes: bytes | None) -> QTableWidgetItem:
     item = QTableWidgetItem()
-    if avatar_bytes:
-        pixmap = QPixmap()
-        pixmap.loadFromData(avatar_bytes)
-        item.setIcon(QIcon(pixmap))
+    icon = avatar_table_icon(avatar_bytes)
+    if icon:
+        item.setIcon(icon)
     else:
         item.setText(_FALLBACK_GLYPH)
         item.setTextAlignment(Qt.AlignCenter)

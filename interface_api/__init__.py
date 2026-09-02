@@ -51,7 +51,15 @@ from interface.shared.commit_history import (
 from interface.settings.program_dialog import ProgramDialog
 from interface.shared.image_asset import pick_image_file, save_image_asset
 from interface.shared.requirements_tree_widget import RequirementsTreeWidget
-from interface.shared.widget_helpers import confirm_action, set_bold, set_secondary_text, show_exclusive, wrap_scrollable
+from interface.shared.widget_helpers import (
+    avatar_table_icon,
+    confirm_action,
+    set_avatar_label,
+    set_bold,
+    set_secondary_text,
+    show_exclusive,
+    wrap_scrollable,
+)
 from interface.theme import DEFAULT_THEME_NAME, get_theme
 from interface.theme_apply import apply_theme
 
@@ -71,6 +79,7 @@ __all__ = [
     "QtLogHandler",
     "RequirementsTreeWidget",
     "apply_theme",
+    "avatar_table_icon",
     "confirm_action",
     "configure_app_logging",
     "fetch_entries_via_github",
@@ -80,6 +89,7 @@ __all__ = [
     "pick_image_file",
     "register_builtin_settings_tabs",
     "save_image_asset",
+    "set_avatar_label",
     "set_bold",
     "set_secondary_text",
     "show_exclusive",

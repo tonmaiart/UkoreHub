@@ -586,7 +586,18 @@ def main() -> None:
     # QTimer.singleShot(0, ...) queues this call to run right after the
     # event loop actually starts, once the native window exists — the
     # standard, reliable fix for this Qt/Windows quirk.
-    QTimer.singleShot(0, window.showMaximized)
+    def _reveal_window() -> None:
+        window.showMaximized()
+        # portal/main.py's _AppLaunchWaiter watches this process's stdout
+        # for this exact line before closing the Portal window — see that
+        # file's module docstring. flush=True matters here: stdout is a
+        # pipe when spawned from Portal (not a tty), so Python block-buffers
+        # by default and this print might otherwise sit unflushed for a
+        # while. Keep this literal in sync with portal/main.py's
+        # _APP_READY_MARKER if it ever changes.
+        print("UKOREHUB_APP_WINDOW_READY", flush=True)
+
+    QTimer.singleShot(0, _reveal_window)
     sys.exit(app.exec())
 
 

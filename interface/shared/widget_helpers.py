@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QScrollArea, QWidget
 
 from interface.theme import DEFAULT_THEME_NAME, get_theme
+
+_AVATAR_FALLBACK_GLYPH = "\U0001F464"
 
 
 def set_secondary_text(label: QLabel) -> None:
@@ -55,3 +58,31 @@ def show_exclusive(visible: QWidget, *hidden: QWidget) -> None:
     visible.setVisible(True)
     for widget in hidden:
         widget.setVisible(False)
+
+
+def avatar_table_icon(data: bytes | None) -> QIcon | None:
+    """QIcon from raw avatar image bytes, or None if there's no data or it
+    fails to decode — the shape every avatar-bearing QTableWidgetItem in
+    this app builds by hand (conflict_dialog.py's per-side avatar column,
+    path_commit_history_panel.py's author column)."""
+    if not data:
+        return None
+    pixmap = QPixmap()
+    if not pixmap.loadFromData(data) or pixmap.isNull():
+        return None
+    return QIcon(pixmap)
+
+
+def set_avatar_label(label: QLabel, data: bytes | None, size: int, *, fallback_glyph: str = _AVATAR_FALLBACK_GLYPH) -> None:
+    """Sets `label` to a size x size avatar pixmap scaled from raw image
+    bytes (KeepAspectRatioByExpanding + SmoothTransformation), or a
+    centered fallback glyph when there's no data or it fails to decode —
+    the avatar-QLabel shape CommitCard and the Settings account row both
+    build by hand."""
+    label.setFixedSize(size, size)
+    pixmap = QPixmap()
+    if data and pixmap.loadFromData(data) and not pixmap.isNull():
+        label.setPixmap(pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+    else:
+        label.setText(fallback_glyph)
+        label.setAlignment(Qt.AlignCenter)

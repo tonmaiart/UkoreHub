@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem
 
-from plugin_api import CommitHistoryEntry, GitService, format_commit_date
+from plugin_api import CommitHistoryEntry, GitService, avatar_table_icon, format_commit_date
 from plugins.core.explorer.path_commit_history_worker import PathCommitHistoryWorker
 
 _COLUMN_LABELS = ("Author", "Message", "Time")
@@ -117,11 +116,9 @@ class PathCommitHistoryPanel:
         self.table.setRowCount(len(entries))
         for row, entry in enumerate(entries):
             author_item = QTableWidgetItem(entry.author_display)
-            if entry.avatar_bytes:
-                pixmap = QPixmap()
-                pixmap.loadFromData(entry.avatar_bytes)
-                if not pixmap.isNull():
-                    author_item.setIcon(QIcon(pixmap))
+            icon = avatar_table_icon(entry.avatar_bytes)
+            if icon:
+                author_item.setIcon(icon)
 
             message_item = QTableWidgetItem(entry.message)
             message_item.setToolTip(entry.message)

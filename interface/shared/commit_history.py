@@ -6,11 +6,17 @@ from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from core_api import GitHubCommitsApiError, GitService, download_bytes, fetch_commits_for_path
-from interface.shared.widget_helpers import wrap_scrollable
+from core_api import (
+    GitHubCommitsApiError,
+    GitService,
+    download_bytes,
+    fetch_commits_for_path,
+    format_relative_datetime,
+    parse_iso_datetime,
+)
+from interface.shared.widget_helpers import set_avatar_label, wrap_scrollable
 
 AVATAR_SIZE = 22
 
@@ -42,30 +48,8 @@ def format_relative_time(raw: str) -> str:
     """Best-effort "3 hours ago" from the same git/GitHub ISO date strings
     format_commit_date parses — falls back to the raw string on a parse
     failure, same reasoning as format_commit_date."""
-    if not raw:
-        return raw
-    try:
-        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return raw
-    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-    seconds = (now - dt).total_seconds()
-    if seconds < 60:
-        return "just now"
-    minutes = int(seconds // 60)
-    if minutes < 60:
-        return f"{minutes} min{'s' if minutes != 1 else ''} ago"
-    hours = int(minutes // 60)
-    if hours < 24:
-        return f"{hours} hour{'s' if hours != 1 else ''} ago"
-    days = int(hours // 24)
-    if days < 30:
-        return f"{days} day{'s' if days != 1 else ''} ago"
-    months = int(days // 30)
-    if months < 12:
-        return f"{months} month{'s' if months != 1 else ''} ago"
-    years = int(days // 365)
-    return f"{years} year{'s' if years != 1 else ''} ago"
+    dt = parse_iso_datetime(raw)
+    return raw if dt is None else format_relative_datetime(dt)
 
 
 def fetch_entries_via_github(
@@ -153,16 +137,7 @@ class CommitCard(QFrame):
         self._expandable = git_service is not None and repo_path is not None
 
         avatar_label = QLabel()
-        avatar_label.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
-        if entry.avatar_bytes:
-            pixmap = QPixmap()
-            pixmap.loadFromData(entry.avatar_bytes)
-            avatar_label.setPixmap(
-                pixmap.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            )
-        else:
-            avatar_label.setText("\U0001F464")
-            avatar_label.setAlignment(Qt.AlignCenter)
+        set_avatar_label(avatar_label, entry.avatar_bytes, AVATAR_SIZE)
 
         header_label = QLabel(f"<b>{entry.author_display}</b>  ·  {format_commit_date(entry.date)}")
         header_label.setWordWrap(True)

@@ -49,6 +49,7 @@ from core.os_utils import open_in_file_explorer, open_with_default_app
 from core.relaunch import relaunch_ukorehub_exe
 from core.storage.config_store import LocalConfigStore, SystemConfigStore
 from core.storage.metadata_store import MetadataStore, migrate_legacy_programs, read_project_ids
+from core.time_utils import format_relative_datetime, parse_iso_datetime
 from core.vcs.commits_api import GitHubCommitsApiError, download_bytes, fetch_commits_for_path
 from core.vcs.git_service import GitService
 from core.vcs.paths import extract_git_repo_name
@@ -93,9 +94,11 @@ __all__ = [
     "extract_git_repo_name",
     "fetch_avatar_bytes",
     "fetch_commits_for_path",
+    "format_relative_datetime",
     "migrate_legacy_programs",
     "open_in_file_explorer",
     "open_with_default_app",
+    "parse_iso_datetime",
     "plugin_source",
     "read_project_ids",
     "relaunch_ukorehub_exe",

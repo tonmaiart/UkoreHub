@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QFile, QObject, QRunnable, Qt, QThreadPool, Signal
@@ -27,7 +26,9 @@ from plugin_api import (
     GitOperationError,
     GitService,
     confirm_action,
+    format_relative_datetime,
     open_in_file_explorer,
+    parse_iso_datetime,
     plugin_source,
 )
 from plugins.core.project_editor import sync_engine
@@ -58,27 +59,12 @@ _MAX_PARALLEL_CHECKS = 8
 
 
 def _format_relative(iso_str: str) -> str:
-    """"Never" for an entry with no last-check record yet; "Just now" / "N
-    minute(s)/hour(s)/day(s) ago" otherwise."""
+    """"Never" for an entry with no last-check record yet; the shared
+    relative-time format otherwise."""
     if not iso_str:
         return "Never"
-    try:
-        checked = datetime.fromisoformat(iso_str)
-    except ValueError:
-        return iso_str
-    if checked.tzinfo is None:
-        checked = checked.replace(tzinfo=timezone.utc)
-    seconds = (datetime.now(timezone.utc) - checked).total_seconds()
-    if seconds < 60:
-        return "Just now"
-    minutes = int(seconds // 60)
-    if minutes < 60:
-        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
-    hours = int(seconds // 3600)
-    if hours < 24:
-        return f"{hours} hour{'s' if hours != 1 else ''} ago"
-    days = int(seconds // 86400)
-    return f"{days} day{'s' if days != 1 else ''} ago"
+    dt = parse_iso_datetime(iso_str)
+    return iso_str if dt is None else format_relative_datetime(dt)
 
 
 def _format_status(

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from core_api import LocalConfigStore, fetch_avatar_bytes
-from interface.shared.widget_helpers import set_bold, set_secondary_text
+from interface.shared.widget_helpers import set_avatar_label, set_bold, set_secondary_text
 
 AVATAR_SIZE = 48
 
@@ -66,9 +65,7 @@ class CommonSettingsPage(QWidget):
         username = local_config_store.github_username
 
         self.avatar_label = QLabel()
-        self.avatar_label.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
-        self.avatar_label.setAlignment(Qt.AlignCenter)
-        self.avatar_label.setText("\U0001F464")
+        set_avatar_label(self.avatar_label, None, AVATAR_SIZE)
 
         self.username_label = QLabel(username or "Not signed in")
         set_bold(self.username_label)
@@ -113,8 +110,4 @@ class CommonSettingsPage(QWidget):
         self._avatar_worker.start()
 
     def _on_avatar_ready(self, avatar_bytes: bytes) -> None:
-        pixmap = QPixmap()
-        pixmap.loadFromData(avatar_bytes)
-        self.avatar_label.setPixmap(
-            pixmap.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-        )
+        set_avatar_label(self.avatar_label, avatar_bytes, AVATAR_SIZE)
