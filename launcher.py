@@ -66,6 +66,13 @@ REQUIRED_PACKAGES = [
 
 GIT_DOWNLOAD_URL = "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.3/Git-2.55.0.3-64-bit.exe"
 
+# Named-pipe server this process listens on so portal/main.py can detect an
+# already-running instance and raise its window instead of spawning a
+# duplicate (see main()'s QLocalServer setup below and
+# portal/main.py's _raise_existing_app_instance). Keep this string in sync
+# with portal/main.py's own _APP_SINGLETON_SERVER_NAME.
+SINGLETON_SERVER_NAME = "UkoreHubApp"
+
 
 def ensure_dependencies() -> None:
     for import_name, pip_spec in REQUIRED_PACKAGES:
@@ -154,6 +161,7 @@ def main() -> None:
 
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtGui import QIcon
+    from PySide6.QtNetwork import QLocalServer
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     # icon.ico is only baked into UkoreHubLauncher.exe itself (via
@@ -179,6 +187,125 @@ def main() -> None:
     icon_path = REPO_ROOT / "assets" / "icon.ico"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
+
+    # Single-instance guard: portal/main.py's own launch flow always checks
+    # this named pipe before spawning this file at all (see its
+    # _raise_existing_app_instance), so listening starts here — as early as
+    # possible, before the multi-second cloud-sync/plugin-discovery work
+    # below — rather than waiting until MainWindow exists, so Portal's
+    # check succeeds even while this process is still starting up.
+    # _singleton_window is populated once MainWindow is constructed further
+    # down; a connection that arrives before then is simply a no-op (the
+    # window is already on its way up regardless).
+    _singleton_window = None
+
+    def _raise_main_window() -> None:
+        if _singleton_window is None:
+            return
+        was_minimized = _singleton_window.isMinimized()
+        if was_minimized:
+            # MainWindow always opens maximized (see _reveal_window below)
+            # — showMaximized() un-minimizes back to that same expected
+            # state, unlike showNormal(), which would shrink it down to
+            # whatever its pre-maximize windowed geometry happened to be.
+            _singleton_window.showMaximized()
+        _singleton_window.raise_()
+        _singleton_window.activateWindow()
+        if sys.platform != "win32":
+            return
+        # Windows' foreground-lock rule blocks a process from stealing
+        # focus unless it currently owns the foreground itself — since the
+        # request to raise arrives over the singleton pipe rather than
+        # from a live user input event on this process, plain
+        # activateWindow() above only flashes the taskbar button instead
+        # of actually bringing the window to front. Temporarily attaching
+        # this thread's input state to the current foreground window's
+        # thread is the standard workaround: it makes Windows treat the
+        # SetForegroundWindow call as if it came from the already-active
+        # app, which it does allow.
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        # Explicit prototypes rather than ctypes' default (32-bit) int
+        # marshaling — an HWND is pointer-sized, and truncating one on
+        # 64-bit Windows would silently target the wrong window.
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND,
+            wintypes.HWND,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_void_p]
+        kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+        hwnd = wintypes.HWND(int(_singleton_window.winId()))
+        # SW_RESTORE un-minimizes but also un-maximizes back to the
+        # window's "restored" geometry — only call it when the window was
+        # actually minimized. Otherwise (already maximized/normal and just
+        # not in front) SW_SHOW makes it visible without touching size.
+        user32.ShowWindow(hwnd, 9 if was_minimized else 5)  # SW_RESTORE : SW_SHOW
+        foreground_hwnd = user32.GetForegroundWindow()
+        current_thread_id = kernel32.GetCurrentThreadId()
+        foreground_thread_id = user32.GetWindowThreadProcessId(foreground_hwnd, None)
+        attached = bool(foreground_thread_id) and foreground_thread_id != current_thread_id
+        if attached:
+            user32.AttachThreadInput(foreground_thread_id, current_thread_id, True)
+        try:
+            # A synthetic Alt press resets Windows' "did this thread just
+            # get real input" check, which is what SetForegroundWindow
+            # actually gates on — AttachThreadInput alone isn't reliably
+            # enough on current Windows versions.
+            VK_MENU = 0x12
+            KEYEVENTF_KEYUP = 0x0002
+            user32.keybd_event(VK_MENU, 0, 0, None)
+            user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, None)
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(foreground_thread_id, current_thread_id, False)
+        # Belt and suspenders: guaranteed to put the window visually above
+        # every other window's z-order even on the rare machine where the
+        # foreground-focus dance above still gets refused — toggling
+        # topmost on then immediately off (rather than leaving it
+        # permanently topmost) is what brings a window to front without
+        # pinning it there forever.
+        HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+        SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = 0x0002, 0x0001, 0x0040
+        flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+        user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+
+    def _on_singleton_connection() -> None:
+        socket = singleton_server.nextPendingConnection()
+        if socket is None:
+            return
+
+        def _consume() -> None:
+            socket.readAll()
+            _raise_main_window()
+            socket.disconnectFromServer()
+
+        socket.readyRead.connect(_consume)
+
+    singleton_server = QLocalServer(app)
+    if not singleton_server.listen(SINGLETON_SERVER_NAME):
+        print(
+            f"UkoreHub: singleton server failed to start ({singleton_server.errorString()}) "
+            "— another instance may already be running.",
+            flush=True,
+        )
+    singleton_server.newConnection.connect(_on_singleton_connection)
 
     if not check_git_prerequisite():
         box = QMessageBox(
@@ -582,6 +709,7 @@ def main() -> None:
         core_plugin_ids=core_plugin_ids,
         opt_in_plugin_ids=opt_in_plugin_ids,
     )
+    _singleton_window = window  # see the QLocalServer setup above
     # Explicit per-window icon too, not just the QApplication-wide default
     # set above — belt and suspenders, since this window is never shown
     # until _reveal_window() below runs.
