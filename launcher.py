@@ -156,21 +156,27 @@ def main() -> None:
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    # Fractional Windows display scaling (125%/150%/175%) can leave Qt's
-    # painted widget positions and the mouse-event coordinates Windows
-    # delivers rounded to slightly different pixel grids — on some
-    # machines this shows up as checkboxes/list rows that render fine but
-    # don't register clicks. Rounding the scale factor to a whole number
-    # keeps both grids aligned.
+    # icon.ico is only baked into UkoreHubLauncher.exe itself (via
+    # PyInstaller's --icon) — that exe just spawns portal/main.py, which in
+    # turn spawns `pythonw launcher.py` detached (see portal/main.py's
+    # _spawn_launcher), so this GUI process is plain python(w).exe and
+    # would otherwise show Windows' generic Python icon in the
+    # taskbar/title bar. Bundled under app/assets/ (not developer/, which
+    # a real artist install never has next to app/) so every release
+    # ships it. SetCurrentProcessExplicitAppUserModelID keeps Windows from
+    # grouping this taskbar button/pin under python(w).exe's own identity,
+    # which otherwise overrides the window icon in some taskbar/Alt-Tab
+    # contexts even after setWindowIcon.
+    if sys.platform == "win32":
+        import ctypes
+
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("UkoreHub.App")
+        except OSError:
+            pass
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Round)
     app = QApplication(sys.argv)
-    # icon.ico (UkoreHubLauncher repo) is only baked into UkoreHub.exe itself (via
-    # PyInstaller's --icon) — that thin exe just spawns `pythonw
-    # launcher.py` detached and exits (see exe_entry.py (UkoreHubLauncher repo)), so the
-    # actual GUI process is plain python(w).exe and would otherwise show
-    # Windows' generic Python icon in the taskbar/title bar unless the Qt
-    # app sets its own window icon here.
-    icon_path = REPO_ROOT / "developer" / "packaging" / "icon.ico"
+    icon_path = REPO_ROOT / "assets" / "icon.ico"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 
@@ -576,13 +582,17 @@ def main() -> None:
         core_plugin_ids=core_plugin_ids,
         opt_in_plugin_ids=opt_in_plugin_ids,
     )
-    # MainWindow.__init__ already calls showMaximized() early (so the real
-    # UI never flashes unmaximized before it's fully built), but
-    # that happens before this window has ever actually been realized on
-    # screen. A second showMaximized() call made synchronously here, still
-    # before app.exec() has run a single event, is *also* pre-realization —
-    # empirically it did not reliably override a clobbered maximized state
-    # on Windows (see the ukorehub-interface skill).
+    # Explicit per-window icon too, not just the QApplication-wide default
+    # set above — belt and suspenders, since this window is never shown
+    # until _reveal_window() below runs.
+    if icon_path.exists():
+        window.setWindowIcon(QIcon(str(icon_path)))
+    # MainWindow.__init__ builds the whole widget tree but never calls
+    # show()/showMaximized() itself (see main_window.py's own comment) —
+    # nothing is ever actually painted on screen until app.exec() starts
+    # running the event loop, so building everything first and only then
+    # showing it, once, here, is what makes the window reliably come up
+    # maximized with no flash of a smaller window first.
     # QTimer.singleShot(0, ...) queues this call to run right after the
     # event loop actually starts, once the native window exists — the
     # standard, reliable fix for this Qt/Windows quirk.
