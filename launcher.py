@@ -74,6 +74,21 @@ GIT_DOWNLOAD_URL = "https://github.com/git-for-windows/git/releases/download/v2.
 # with portal/main.py's own _APP_SINGLETON_SERVER_NAME.
 SINGLETON_SERVER_NAME = "UkoreHubApp"
 
+# Prefix portal/main.py's _AppLaunchWaiter looks for on each stdout line to
+# keep its own loading label live while this process does its slow
+# pre-window startup work (cloud sync, plugin discovery, ...) below — see
+# _report_status. Keep this literal in sync with portal/main.py's own
+# _APP_STATUS_PREFIX.
+_APP_STATUS_PREFIX = "UKOREHUB_APP_STATUS:"
+
+
+def _report_status(message: str) -> None:
+    # flush=True for the same reason _reveal_window's own print needs it:
+    # stdout is a pipe (not a tty) when spawned from Portal, so Python
+    # block-buffers by default and this line could otherwise sit unflushed
+    # long enough to make the label look stuck.
+    print(f"{_APP_STATUS_PREFIX}{message}", flush=True)
+
 
 def ensure_dependencies() -> None:
     for import_name, pip_spec in REQUIRED_PACKAGES:
@@ -158,6 +173,7 @@ def _build_cloud_sync(data_dir: Path, appdata_dir: Path):
 
 
 def main() -> None:
+    _report_status("Checking dependencies...")
     ensure_dependencies()
 
     from PySide6.QtCore import Qt, QTimer
@@ -331,6 +347,7 @@ def main() -> None:
             "may not sync correctly.",
         )
 
+    _report_status("Loading application modules...")
     from core_api import (
         ConflictError,
         FileOpenerRegistry,
@@ -410,11 +427,13 @@ def main() -> None:
     # there's nothing per-project to pull — MetadataStore.load()'s one-time
     # migration handles that locally and pushes the new blobs itself once
     # constructed below.
+    _report_status("Connecting to cloud sync...")
     cloud_sync = _build_cloud_sync(data_dir, appdata_dir)
     if cloud_sync is None:
         print("UkoreHub: cloud sync not configured on this machine — shared data stays local-only.")
         cloud_sync_logger.warning("not configured on this machine — shared data stays local-only")
     else:
+        _report_status("Syncing shared data from cloud...")
         try:
             def _pull(blob_name: str, local_path: Path) -> None:
                 cloud_sync.pull(blob_name, local_path)
@@ -436,6 +455,7 @@ def main() -> None:
                 def _pull_project(project_id: str) -> None:
                     _pull(f"projects/{project_id}.json", data_dir / "projects" / f"{project_id}.json")
 
+                _report_status("Syncing project data from cloud...")
                 with ThreadPoolExecutor(max_workers=8) as pool:
                     list(pool.map(_pull_project, project_ids))
         except Exception as exc:
@@ -511,6 +531,7 @@ def main() -> None:
         except Exception as exc:
             cloud_sync_logger.warning(f"pull of asset '{blob_name}' failed ({exc}) — leaving it unset")
 
+    _report_status("Loading project data...")
     core = UkoreCore(
         data_dir=data_dir,
         cache_dir=cache_dir,
@@ -625,6 +646,7 @@ def main() -> None:
     # Discovery runs before registry construction so its result (the plugin
     # catalog) can be threaded into the builtin registrations below (Plugins
     # settings tab, repo editor's plugin picker).
+    _report_status("Discovering plugins...")
     plugins_root = REPO_ROOT / "plugins"
     cache_plugins_root = cache_dir / "plugins"
     (plugins_root / "core").mkdir(parents=True, exist_ok=True)
@@ -632,6 +654,7 @@ def main() -> None:
     discovery = discover_plugins(
         [plugins_root / "core", cache_plugins_root],
         api_version=PLUGIN_API_VERSION,
+        on_discovering=lambda name: _report_status(f"Loading plugin: {name}"),
     )
 
     # "repo" (cache/plugins/, each its own separate git clone — see
@@ -689,8 +712,10 @@ def main() -> None:
     # contributed — section_key_to_plugin_id below is what
     # MainWindow._apply_plugin_visibility uses for per-repo Plugin gating
     # (Settings > Repo > Requirements & Plugins).
+    _report_status("Loading plugins...")
     section_key_to_plugin_id: dict[str, str] = {}
     for plugin in discovery.loaded:
+        _report_status(f"Registering plugin: {plugin.manifest.name}...")
         keys_before = registries.sections.keys()
         apply_result = apply_plugins([plugin], plugin_api)
         logger = external_plugin_logger if plugin_source(plugin) == "repo" else plugin_loader_logger
@@ -715,6 +740,7 @@ def main() -> None:
         plugin.manifest.id for plugin in discovery.loaded if plugin_source(plugin) == "repo"
     }
 
+    _report_status("Building interface...")
     window = MainWindow(
         core,
         cache_dir,

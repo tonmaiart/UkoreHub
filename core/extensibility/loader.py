@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
+from typing import Callable
 
 MANIFEST_FILENAME = "manifest.json"
 
@@ -51,22 +52,32 @@ class PluginDiscoveryResult:
     failures: list[PluginLoadFailure]
 
 
-def discover_plugins(roots: list[Path], api_version: int) -> PluginDiscoveryResult:
+def discover_plugins(
+    roots: list[Path], api_version: int, on_discovering: Callable[[str], None] | None = None
+) -> PluginDiscoveryResult:
     """Scans each root's immediate subdirectories for a manifest.json + entry
     point module, in the order `roots` is given (so passing [core,
     cache/plugins] means a duplicate plugin id under cache/plugins loses to
     core). Never raises —
     any problem with a single plugin directory is recorded as a
     PluginLoadFailure and skipped, so one broken plugin can't stop the app
-    from starting."""
+    from starting.
+
+    on_discovering, when given, is called with each plugin_dir's folder name
+    right before that plugin's entry_point is imported (the real cost here —
+    see _load_one) — launcher.py wires this to its own loading-screen status
+    reporting so a slow plugin's import is visible by name instead of one
+    opaque "Discovering plugins..." step covering all of them."""
     loaded: list[DiscoveredPlugin] = []
     failures: list[PluginLoadFailure] = []
     seen_ids: set[str] = set()
+    notify = on_discovering or (lambda _name: None)
 
     for root in roots:
         if not root.is_dir():
             continue
         for plugin_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+            notify(plugin_dir.name)
             result = _load_one(plugin_dir, api_version, seen_ids)
             if isinstance(result, PluginLoadFailure):
                 failures.append(result)
