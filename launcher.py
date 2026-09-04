@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -415,15 +416,28 @@ def main() -> None:
         cloud_sync_logger.warning("not configured on this machine — shared data stays local-only")
     else:
         try:
-            for blob_name in ("projects.json", "programs.json", "system_config.json"):
-                cloud_sync.pull(blob_name, data_dir / blob_name)
+            def _pull(blob_name: str, local_path: Path) -> None:
+                cloud_sync.pull(blob_name, local_path)
                 cloud_sync_logger.info(f"pulled '{blob_name}'")
+
+            # None of the three fixed blobs depend on each other, so pull
+            # them concurrently instead of one network round-trip at a
+            # time — R2JsonSync.pull is safe to call from multiple threads
+            # at once (each blob_name only ever touches its own key in the
+            # ETag dict it tracks, and boto3 clients support concurrent
+            # requests). list() forces pool.map to actually wait for every
+            # pull and re-raise the first failure, same as the sequential
+            # loop this replaced.
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                list(pool.map(lambda name: _pull(name, data_dir / name), ("projects.json", "programs.json", "system_config.json")))
+
             project_ids = read_project_ids(data_dir / "projects.json")
             if project_ids is not None:
-                for project_id in project_ids:
-                    blob_name = f"projects/{project_id}.json"
-                    cloud_sync.pull(blob_name, data_dir / "projects" / f"{project_id}.json")
-                    cloud_sync_logger.info(f"pulled '{blob_name}'")
+                def _pull_project(project_id: str) -> None:
+                    _pull(f"projects/{project_id}.json", data_dir / "projects" / f"{project_id}.json")
+
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    list(pool.map(_pull_project, project_ids))
         except Exception as exc:
             # Revoked/rotated R2 key, no network, bucket not reachable,
             # etc. — never block the app from opening over a cloud problem;
