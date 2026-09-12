@@ -16,6 +16,32 @@ import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# Must run before anything below imports PySide6 (~line 179's QApplication
+# setup, and everything downstream of it that transitively pulls it in).
+# PySide6 installs an import hook (shibokensupport) that calls
+# inspect.getsource() on every newly-imported module. The first time
+# anything imports a `six.moves` submodule while that hook is active, it
+# crashes with "AttributeError: '_SixMetaPathImporter' object has no
+# attribute '_path'" — a genuine CPython importlib bug, not a `six` version
+# problem (see importlib/_bootstrap.py's _module_repr_from_spec, which
+# assumes any loader with spec.origin=None is a namespace-package loader
+# and unconditionally reads `loader._path` off it; `six`'s loader has never
+# had that attribute, at any version). boto3 (core/vcs/cloud_sync.py's
+# `import boto3`, itself only reached much later via
+# interface_api -> plugin_api -> cloud_sync, well after PySide6 below)
+# pulls in python-dateutil, which does exactly `from six.moves import
+# _thread`. Importing boto3 here first caches every six.moves submodule its
+# whole dependency chain touches in sys.modules before PySide6's hook
+# exists to ever see a *new* import of one — a later `from six.moves
+# import _thread` then just hits the cache, no import machinery involved.
+# Not guaranteed installed yet on the bare `python launcher.py` dev path
+# (see ensure_dependencies() below) — skipped then, since nothing has
+# imported PySide6 yet either at that point for the conflict to matter.
+try:
+    import boto3  # noqa: F401
+except ImportError:
+    pass
+
 REPO_ROOT = Path(__file__).resolve().parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))

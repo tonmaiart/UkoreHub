@@ -1,12 +1,20 @@
 PySide6>=6.7,<7.0
 keyring>=24.0
 boto3>=1.36.0
-# botocore (a boto3 dependency) only requires python-dateutil>=2.1, which lets
-# pip resolve/keep a pre-2.9.0 version still built on the `six` compat shim.
-# Importing that shim's `six.moves` AFTER PySide6 is already loaded (as
-# happens here - see core/vcs/cloud_sync.py's `import boto3`) crashes with
+# python-dateutil (pulled in by botocore, a boto3 dependency) unconditionally
+# does `import six` / `from six.moves import _thread` in dateutil/tz/tz.py —
+# still true even in current dateutil, so pinning dateutil's own version (an
+# earlier, wrong fix) does nothing. The actual bug is in `six` itself:
+# `six`'s `_SixMetaPathImporter` (on sys.meta_path) only got a proper
+# find_spec() in six 1.16.0 (2021, also six's final release) — importlib's
+# module-repr machinery on Python 3.10+ expects that, and PySide6's own
+# shibokensupport import hook (which runs inspect.getsource() on every
+# newly-imported module to detect old/new-style signal usage) is what
+# actually triggers building that repr for six.moves. Without this pin, an
+# older `six` already sitting in site-packages (e.g. from an earlier partial
+# install) never gets upgraded — nothing else in this dependency chain
+# requires >=1.16.0, so pip has no reason to touch an already-"satisfying"
+# older six — and every launch crashes with
 # "AttributeError: '_SixMetaPathImporter' object has no attribute '_path'"
-# inside PySide6's own shibokensupport import hook. dateutil 2.9.0 dropped
-# the six dependency entirely, so pinning this floor avoids the interaction
-# outright rather than working around PySide6's hook.
-python-dateutil>=2.9.0
+# a few imports into core/vcs/cloud_sync.py's `import boto3`.
+six>=1.16.0
