@@ -895,6 +895,20 @@ class RepoGitStatusPage(QWidget):
 
     # -- commit -> pull -> (resolve conflicts) -> push -----------------------
 
+    def _ensure_git_identity(self, dest_path) -> None:
+        """A machine that has never had git.name/email set (a new artist's
+        first-ever commit) fails the commit below with "Author identity
+        unknown" instead of anything actionable. Checked right at the
+        commit call itself, not just on app-start/repo-switch, so it still
+        catches a repo that only just got cloned via Sync."""
+        if self.git_service.has_user_identity(dest_path):
+            return
+        github_username = self.local_config_store.github_username
+        if not github_username:
+            return
+        email = f"{github_username.lower().replace(' ', '_')}@users.noreply.github.com"
+        self.git_service.set_user_identity(dest_path, github_username, email)
+
     def _on_submit_all_staged_clicked(self) -> None:
         if self._repo is None:
             return
@@ -905,6 +919,7 @@ class RepoGitStatusPage(QWidget):
         amend = dialog.amend()
 
         dest_path = self._dest_path()
+        self._ensure_git_identity(dest_path)
         try:
             self.git_service.commit(dest_path, message, amend=amend)
         except GitOperationError as exc:

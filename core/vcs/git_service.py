@@ -625,6 +625,17 @@ class GitService:
         if email:
             self._run_capture(["config", "user.email", email], cwd=repo_path)
 
+    def has_user_identity(self, repo_path: Path) -> bool:
+        """True if git can resolve a commit author for repo_path — checks the
+        effective user.name (local config, falling back to global exactly as
+        `git commit` itself does) rather than only the local scope, so a
+        machine with a real global identity already set isn't flagged as
+        missing one."""
+        try:
+            return bool(self._run_capture(["config", "user.name"], cwd=Path(repo_path)).strip())
+        except GitOperationError:
+            return False
+
 
     def safe_untrack_and_clean_ignored(self, repo_path: Path, username: str = "UkoreHub Automation") -> None:
         """Untrack ไฟล์ที่อยู่ใน .gitignore และจัดการ Commit การเปลี่ยนแปลงอัตโนมัติ
