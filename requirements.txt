@@ -1,3 +1,12 @@
 PySide6>=6.7,<7.0
 keyring>=24.0
 boto3>=1.36.0
+# botocore (a boto3 dependency) only requires python-dateutil>=2.1, which lets
+# pip resolve/keep a pre-2.9.0 version still built on the `six` compat shim.
+# Importing that shim's `six.moves` AFTER PySide6 is already loaded (as
+# happens here - see core/vcs/cloud_sync.py's `import boto3`) crashes with
+# "AttributeError: '_SixMetaPathImporter' object has no attribute '_path'"
+# inside PySide6's own shibokensupport import hook. dateutil 2.9.0 dropped
+# the six dependency entirely, so pinning this floor avoids the interaction
+# outright rather than working around PySide6's hook.
+python-dateutil>=2.9.0
