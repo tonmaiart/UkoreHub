@@ -912,20 +912,30 @@ class RepoGitStatusPage(QWidget):
     def _on_submit_all_staged_clicked(self) -> None:
         if self._repo is None:
             return
-        dialog = CommitDialog(self)
-        if not dialog.exec():
-            return
-        message = dialog.message()
-        amend = dialog.amend()
+        # Nothing staged doesn't mean nothing to do — a previous push can
+        # have failed (e.g. an auth hiccup) after the commit already
+        # succeeded locally, leaving commits sitting ahead of origin with no
+        # staged files at all. Skip straight to pull -> push in that case
+        # instead of opening CommitDialog only to fail on git's own "nothing
+        # to commit", so Submit always finishes syncing whatever is pending.
+        has_staged = bool(self._last_status and self._last_status.staged_changes)
+        if has_staged:
+            dialog = CommitDialog(self)
+            if not dialog.exec():
+                return
+            message = dialog.message()
+            amend = dialog.amend()
 
-        dest_path = self._dest_path()
-        self._ensure_git_identity(dest_path)
-        try:
-            self.git_service.commit(dest_path, message, amend=amend)
-        except GitOperationError as exc:
-            QMessageBox.warning(self, "Commit Failed", str(exc))
-            return
-        self._append_log("--- Committed ---")
+            dest_path = self._dest_path()
+            self._ensure_git_identity(dest_path)
+            try:
+                self.git_service.commit(dest_path, message, amend=amend)
+            except GitOperationError as exc:
+                QMessageBox.warning(self, "Commit Failed", str(exc))
+                return
+            self._append_log("--- Committed ---")
+        else:
+            self._append_log("--- Nothing staged, pushing pending local commits ---")
         self._start_pull_step()
 
     def _set_workflow_running(self, running: bool) -> None:

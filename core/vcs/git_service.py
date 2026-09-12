@@ -87,7 +87,21 @@ class GitService:
         # command line or written to disk, so they can't leak through `ps aux`
         # or a leftover temp file.
         helper = f'!f() {{ echo username=x-access-token; echo "password=${_GITHUB_TOKEN_ENV_VAR}"; }}; f'
-        return ["-c", f"credential.helper={helper}"], {_GITHUB_TOKEN_ENV_VAR: self._github_token}
+        # credential.helper is a multi-valued config key — git runs every
+        # configured helper in order until one answers, so appending ours via
+        # `-c` alone still lets a machine-wide helper (Git for Windows
+        # installs and configures Git Credential Manager globally by
+        # default) run first and win, popping its own GitHub sign-in window
+        # instead of ever reaching ours — and if the account signed into
+        # there lacks push access, that fails as an opaque "permission
+        # denied" with the app's own token never even tried. An empty
+        # `credential.helper=` value first clears every helper configured
+        # ahead of it (system/global/local), so ours ends up the only one
+        # git runs.
+        return (
+            ["-c", "credential.helper=", "-c", f"credential.helper={helper}"],
+            {_GITHUB_TOKEN_ENV_VAR: self._github_token},
+        )
 
     def is_cloned(self, local_path: Path) -> bool:
         return (Path(local_path) / ".git").exists()
