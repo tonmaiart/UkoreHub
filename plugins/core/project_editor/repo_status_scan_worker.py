@@ -11,10 +11,11 @@ class RepoStatusScanWorker(QThread):
     """Background working-tree status check for every currently-cloned repo
     in the table (tableWidget_Repo's Status column) — a local duplicate of
     submit/git_stream_worker.py's QThread-wraps-a-callable shape rather than
-    an import of it, same boundary rule required_repo_clone_worker.py
-    already follows in this plugin. Unlike that worker, this one does NOT
-    stop at the first failure — one repo's git status has no bearing on any
-    other row, so every target is still checked."""
+    an import of it, same don't-import-a-sibling-plugin's-source boundary
+    rule this plugin follows elsewhere (see external_plugin_catalog.py).
+    Unlike a worker that stops at the first failure, this one does NOT —
+    one repo's git status has no bearing on any other row, so every target
+    is still checked."""
 
     status_ready = Signal(str, bool)  # repo_id, is_dirty
     status_failed = Signal(str)  # repo_id

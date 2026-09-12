@@ -4,6 +4,7 @@ import logging
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QStyle
 
@@ -237,8 +238,20 @@ class _SyncController:
         QApplication.quit()
 
 
+# plugins/core/submit's own SectionRegistry key — a literal string, not an
+# import, so this plugin's register(api) doesn't fail to load if Submit's
+# plugin were ever missing/broken (same convention submit/plugin.py itself
+# uses for Explorer's "repo_browser" key).
+_SUBMIT_SECTION_KEY = "repo_git_status"
+
+
 def _wire(page: ProjectEditorPage, host: UICommandService) -> None:
     page.bind_set_active_repo(host.set_active_repo)
+    # navigate_and_focus's `path` argument only matters to a page that
+    # implements PathFocusablePage (interface/page_protocols.py) — Submit's
+    # RepoGitStatusPage doesn't, so this just switches the tab; the empty
+    # Path is a harmless placeholder that's never read.
+    page.bind_navigate_to_submit(lambda: host.navigate_and_focus(_SUBMIT_SECTION_KEY, Path()))
 
 
 def register(api) -> None:

@@ -38,12 +38,11 @@ class ExternalPluginCatalog:
 
     Used to be plugins/core/ExternalPluginManager/'s own catalog_store.py,
     with this file carrying a deliberate local duplicate (same
-    don't-import-a-sibling-plugin's-source boundary
-    required_repo_clone_worker.py still follows for its own case) — that
-    plugin was merged into this one 2026-09-01 (its Settings > Project CRUD
-    tab had already moved here earlier in the same 2026-09 merge), so
-    there's no sibling left to duplicate against and this became the one
-    canonical definition."""
+    don't-import-a-sibling-plugin's-source boundary repo_status_scan_worker.py
+    still follows for its own case) — that plugin was merged into this one
+    2026-09-01 (its Settings > Project CRUD tab had already moved here
+    earlier in the same 2026-09 merge), so there's no sibling left to
+    duplicate against and this became the one canonical definition."""
 
     def __init__(self, config_store: ProjectPluginConfigStore | None):
         self._store = config_store

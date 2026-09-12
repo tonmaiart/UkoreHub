@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QEventLoop, QFile, QSize, Qt, QTimer
+from PySide6.QtCore import QFile, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QMessageBox,
-    QProgressDialog,
     QPushButton,
     QStyle,
     QTableWidget,
@@ -43,7 +42,6 @@ from plugin_api import (
 from plugins.core.project_editor.dialogs import EditInfoDialog, RepoDialog
 from plugins.core.project_editor.pipeline_store import PipelineStore
 from plugins.core.project_editor.repo_status_scan_worker import RepoStatusScanWorker
-from plugins.core.project_editor.required_repo_clone_worker import RequiredRepoCloneWorker
 
 _UI_FILE = Path(__file__).parent / "ProjectEditorTabWindows.ui"
 _STATUS_ICON_SIZE = QSize(18, 18)
@@ -92,9 +90,13 @@ class ProjectEditorPage(QWidget):
     (SP_MediaSkipBackward for an Input connection, SP_MediaSkipForward for
     Output — see _refresh_connection_column). Selecting a row only updates
     the detail panel on the right — it never clones anything and never
-    changes the active repo unless the selected repo is already cloned;
-    Clone/Unclone are the only things that change what's on disk, kept
-    deliberately separate from selection.
+    changes the active repo unless the selected repo is already cloned.
+    Clone doesn't touch disk itself anymore (see _on_clone_clicked) — it
+    switches the active repo and jumps to the Submit tab, whose own "Sync
+    New Commit" already knows how to clone a not-yet-cloned repo
+    (submit/repo_git_status_page.py's start_sync), with its own progress/
+    log feedback instead of a second, redundant one here. Unclone still
+    directly deletes the local folder.
 
     Any plugin's own CATEGORY_REPO tab still renders generically in the
     main Settings dialog's Plugins category (Settings > Project > Repository
@@ -139,6 +141,7 @@ class ProjectEditorPage(QWidget):
         self._status_scan_token = 0
         self._status_workers: list[RepoStatusScanWorker] = []
         self._set_active_repo_callback: Callable[[str, str], None] | None = None
+        self._navigate_to_submit_callback: Callable[[], None] | None = None
 
         loader = QUiLoader()
         ui_file = QFile(str(_UI_FILE))
@@ -206,6 +209,9 @@ class ProjectEditorPage(QWidget):
 
     def bind_set_active_repo(self, callback: Callable[[str, str], None]) -> None:
         self._set_active_repo_callback = callback
+
+    def bind_navigate_to_submit(self, callback: Callable[[], None]) -> None:
+        self._navigate_to_submit_callback = callback
 
     # -- page protocol (see plugin_api/registries/section_registry.py) ----------------
 
@@ -536,49 +542,14 @@ class ProjectEditorPage(QWidget):
 
     # -- Clone / Unclone ---------------------------------------------------
 
-    def _run_clone_worker(self, targets: list[tuple[str, Repo]]) -> bool:
-        workspace_root = self.local_config_store.workspace_root
-        progress = QProgressDialog("Preparing...", None, 0, len(targets), self)
-        progress.setWindowTitle("Cloning")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
-
-        worker = RequiredRepoCloneWorker(git_service=self.git_service, workspace_root=workspace_root, targets=targets)
-        loop = QEventLoop()
-        outcome: dict[str, object] = {"ok": False, "repo_name": None, "error": None}
-        step = {"n": 0}
-
-        def on_progress(repo_name: str) -> None:
-            progress.setLabelText(f"Cloning '{repo_name}'...")
-            progress.setValue(step["n"])
-            step["n"] += 1
-
-        def on_finished_ok() -> None:
-            outcome["ok"] = True
-            loop.quit()
-
-        def on_failed(repo_name: str, error: str) -> None:
-            outcome["repo_name"] = repo_name
-            outcome["error"] = error
-            loop.quit()
-
-        worker.repo_progress.connect(on_progress)
-        worker.finished_ok.connect(on_finished_ok)
-        worker.failed.connect(on_failed)
-        worker.start()
-        loop.exec()
-        progress.close()
-        worker.wait()
-
-        if not outcome["ok"]:
-            QMessageBox.warning(
-                self, "Clone Failed", f"Cloning '{outcome['repo_name']}' failed:\n\n{outcome['error']}"
-            )
-            return False
-        return True
-
     def _on_clone_clicked(self) -> None:
+        """Doesn't clone anything itself anymore (see the class docstring)
+        — just switches the active repo and jumps to the Submit tab, whose
+        own "Sync New Commit" (start_sync) already clones a not-yet-cloned
+        repo before syncing, with its own progress/log feedback. Deferred
+        one event-loop tick (same reasoning as _on_repo_selection_changed's
+        callback) since set_active_repo can round-trip back into this
+        page's own set_repo()."""
         project_id, repo_id = self._project_id, self._selected_repo_id
         if project_id is None or repo_id is None:
             return
@@ -591,15 +562,20 @@ class ProjectEditorPage(QWidget):
         if not self.local_config_store.workspace_root:
             QMessageBox.information(self, "Clone Repo", "Set and save a workspace folder in Setting > Common first.")
             return
-        if not confirm_action(self, "Clone Repo", f"Clone '{repo.name}' now?"):
+        if not confirm_action(
+            self, "Clone Repo", f"Switch to '{repo.name}' and clone it from the Submit tab's Sync New Commit?"
+        ):
             return
-        if not self._run_clone_worker([(project_id, repo)]):
-            return
-        self._reload_repo_table()
-        self._refresh_detail_panel()
-        if self._set_active_repo_callback is not None:
-            callback = self._set_active_repo_callback
-            QTimer.singleShot(0, lambda: callback(project_id, repo_id))
+        set_active_repo = self._set_active_repo_callback
+        navigate_to_submit = self._navigate_to_submit_callback
+
+        def _switch_and_open_submit() -> None:
+            if set_active_repo is not None:
+                set_active_repo(project_id, repo_id)
+            if navigate_to_submit is not None:
+                navigate_to_submit()
+
+        QTimer.singleShot(0, _switch_and_open_submit)
 
     def _on_unclone_clicked(self) -> None:
         project_id, repo_id = self._project_id, self._selected_repo_id
